@@ -1,0 +1,305 @@
+# syntax=docker/dockerfile:1.7
+
+# CP2K 2026.1 ROCm InfinityHub flow with Stage3-style runtime assembly.
+# - Build in ROCm complete image
+# - Assemble runtime artifacts into slim ROCm runtime image
+
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+ARG BUILDER_IMAGE="docker.io/rocm/dev-ubuntu-24.04:7.2.1-complete"
+ARG RUNTIME_IMAGE="docker.io/rocm/dev-ubuntu-24.04:7.2.1"
+
+FROM ${BUILDER_IMAGE} AS builder
+
+LABEL stage="cp2k-rocm-infinityhub-builder" \
+      maintainer="s8ga" \
+      upstream_repo="https://github.com/amd/InfinityHub-CI" \
+      upstream_component="cp2k/docker/cp2k_environment"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Keep upstream argument names for compatibility with existing command patterns.
+ARG UCX_BRANCH="v1.19.0"
+ARG UCC_BRANCH="v1.5.1"
+ARG OMPI_BRANCH="v5.0.8"
+ARG AMDGPU_TARGETS="gfx942"
+ARG CP2K_BRANCH="v2026.1"
+ARG SPACK_MAKE_JOBS=0
+
+# Use USTC mirror for better CN network reliability.
+RUN sed -i "s@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s@//security.ubuntu.com@//mirrors.ustc.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources
+
+# System dependencies for Spack and compilation
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    curl \
+    environment-modules \
+    gfortran \
+    git \
+    openssh-client \
+    openssh-server \
+    pkg-config \
+    unzip \
+    vim \
+    wget \
+    rsync \
+    nano \
+    cmake \
+    file \
+    automake \
+    bzip2 \
+    xxd \
+    xz-utils \
+    zstd \
+    ninja-build \
+    patch \
+    pkgconf \
+    libncurses-dev \
+    libssh-dev \
+    libssl-dev \
+    libtool-bin \
+    lsb-release \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    zlib1g-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt
+
+ENV SPACK_ROOT=/opt/spack-exe
+ENV PATH="${SPACK_ROOT}/bin:${PATH}"
+
+COPY assets/spack-v1.1.0.tar.gz /tmp/spack.tar.gz
+RUN mkdir -p "${SPACK_ROOT}" && \
+    tar -axf /tmp/spack.tar.gz --strip-components=1 -C "${SPACK_ROOT}" && \
+    rm -f /tmp/spack.tar.gz && \
+    /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && spack --version'
+
+COPY assets/bootstrap /opt/bootstrap
+RUN /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
+    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
+    spack bootstrap disable github-actions-v2 && \
+    spack bootstrap disable github-actions-v0.6 && \
+    spack bootstrap disable spack-install && \
+    spack bootstrap now'
+
+RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
+    spack mirror list'
+
+WORKDIR /opt
+COPY spack-envs/cp2k-rocm-2026.1-gfx942 /opt/hpc-env-file
+
+# Create env first, then import lock/config/repo from source directory.
+RUN /bin/bash -lc 'set -euo pipefail; \
+    . "${SPACK_ROOT}/share/spack/setup-env.sh"; \
+    spack env create /opt/hpc-env /opt/hpc-env-file/spack.yaml; \
+    if [[ -f /opt/hpc-env-file/config.yaml ]]; then cp -f /opt/hpc-env-file/config.yaml /opt/hpc-env/config.yaml; fi; \
+    if [[ -d /opt/hpc-env-file/repos ]]; then rm -rf /opt/hpc-env/repos && cp -a /opt/hpc-env-file/repos /opt/hpc-env/repos; fi; \
+    if [[ -f /opt/hpc-env-file/spack.lock ]]; then cp -f /opt/hpc-env-file/spack.lock /opt/hpc-env/spack.lock; echo "Imported existing spack.lock"; else echo "No spack.lock provided; install step will concretize"; fi'
+
+# Explicitly register the custom CP2K repo before concretize.
+RUN /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+        if ! spack repo list 2>/dev/null | grep -q "/opt/hpc-env/repos"; then \
+            spack repo add --scope site /opt/hpc-env/repos; \
+        fi && \
+        spack -e /opt/hpc-env repo ls'
+
+# Map upstream-style build args to concrete Spack versions and target arch.
+RUN /bin/bash -lc 'set -euo pipefail; \
+    UCX_VER="${UCX_BRANCH#v}"; \
+    UCC_VER="${UCC_BRANCH#v}"; \
+    OMPI_VER="${OMPI_BRANCH#v}"; \
+    CP2K_VER="${CP2K_BRANCH#v}"; \
+    GPU_ARCH="${AMDGPU_TARGETS%%,*}"; \
+    sed -i -E "s/ucx@[0-9]+\.[0-9]+\.[0-9]+\+rocm/ucx@${UCX_VER}+rocm/g" /opt/hpc-env/spack.yaml; \
+    sed -i -E "s/ucc@[0-9]+\.[0-9]+\.[0-9]+\+rocm/ucc@${UCC_VER}+rocm/g" /opt/hpc-env/spack.yaml; \
+    sed -i -E "s/openmpi@[0-9]+\.[0-9]+\.[0-9]+/openmpi@${OMPI_VER}/g" /opt/hpc-env/spack.yaml; \
+    sed -i -E "s/cp2k@[0-9]+\.[0-9]+/cp2k@${CP2K_VER}/g" /opt/hpc-env/spack.yaml; \
+    sed -i -E "s/amdgpu_target=gfx[0-9a-z]+/amdgpu_target=${GPU_ARCH}/g" /opt/hpc-env/spack.yaml; \
+    sed -i -E "s/amdgpu_target_sram_ecc=gfx[0-9a-z]+/amdgpu_target_sram_ecc=${GPU_ARCH}/g" /opt/hpc-env/spack.yaml'
+
+# ROCm 7.x compatibility for BLT FindHIP.cmake.
+RUN ln -sf /opt/rocm /opt/rocm/hip
+
+RUN /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+    spack compiler find && \
+    spack external find --all --not-buildable'
+
+# No explicit pre-concretize guard here: install consumes spack.lock when present.
+
+RUN {% if use_mirror %}
+    --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    {% endif %}
+    /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+    if [[ "${SPACK_MAKE_JOBS}" == "0" || -z "${SPACK_MAKE_JOBS}" ]]; then JOBS="$(nproc)"; else JOBS="${SPACK_MAKE_JOBS}"; fi && \
+    echo "Running spack install with -j ${JOBS}" && \
+    spack -e /opt/hpc-env install --fail-fast -j "${JOBS}"'
+
+RUN /bin/bash -lc '. "${SPACK_ROOT}/share/spack/setup-env.sh" && \
+    echo "=== Core communication stack from Spack ===" && \
+    spack -e /opt/hpc-env find openmpi ucx ucc && \
+    echo "=== DLAF from Spack ===" && \
+    spack -e /opt/hpc-env find dla-future-fortran'
+
+# Clone CP2K source for tests.
+RUN git clone --depth 1 --recursive -b support/v2026.1 https://github.com/cp2k/cp2k.git /opt/cp2k-src-full && \
+    mkdir -p /opt/runtime-export/cp2k-tests/src/grid && \
+    cp -a /opt/cp2k-src-full/tests /opt/runtime-export/cp2k-tests/ && \
+    rm -rf /opt/cp2k-src-full && \
+    echo "CP2K tests/data exported: $(du -sh /opt/runtime-export/cp2k-tests/ | cut -f1)"
+
+# Export runtime payloads with dereferenced view files (avoid broken symlink-farm in final image).
+# ROCm payload follows Stage3 notes: copy non-complete missing compute libs plus required kernel data dirs.
+RUN /bin/bash -lc 'set -euo pipefail; \
+    . "${SPACK_ROOT}/share/spack/setup-env.sh"; \
+    CP2K_VER="${CP2K_BRANCH#v}"; \
+    ROCM_ARCH="${AMDGPU_TARGETS%%,*}"; \
+    CP2K_PREFIX="$(spack -e /opt/hpc-env find -p cp2k@${CP2K_VER} | tail -n 1 | awk "{print \$2}")"; \
+    test -n "${CP2K_PREFIX}"; \
+    mkdir -p /opt/runtime-export/cp2k-runtime /opt/runtime-export/hpc/view /opt/runtime-export/cp2k-src /opt/runtime-export/rocm/lib; \
+    cp -a "${CP2K_PREFIX}/bin" /opt/runtime-export/cp2k-runtime/; \
+    if [[ -d "${CP2K_PREFIX}/lib" ]]; then cp -a "${CP2K_PREFIX}/lib" /opt/runtime-export/cp2k-runtime/; fi; \
+    if [[ -d "${CP2K_PREFIX}/lib64" ]]; then cp -a "${CP2K_PREFIX}/lib64" /opt/runtime-export/cp2k-runtime/; fi; \
+    if [[ -d "${CP2K_PREFIX}/share" ]]; then cp -a "${CP2K_PREFIX}/share" /opt/runtime-export/cp2k-runtime/; fi; \
+    rsync -a --copy-links --ignore-missing-args /opt/hpc-env/.spack-env/view/ /opt/runtime-export/hpc/view/ || true; \
+    if [[ -d /opt/cp2k-src/tools/toolchain/install ]]; then \
+        mkdir -p /opt/runtime-export/cp2k-src/tools/toolchain; \
+        cp -aL /opt/cp2k-src/tools/toolchain/install /opt/runtime-export/cp2k-src/tools/toolchain/; \
+    fi; \
+    if [[ -d /opt/cp2k-src/data ]]; then \
+        cp -a /opt/cp2k-src/data /opt/runtime-export/cp2k-src/; \
+    fi; \
+    for lib in librocblas libhipblas libhipblaslt libhipfft librocfft librocsolver librocroller; do \
+        for f in /opt/rocm/lib/${lib}*; do \
+            if [[ -e "${f}" ]]; then cp -a "${f}" /opt/runtime-export/rocm/lib/; fi; \
+        done; \
+    done; \
+    if [[ -d /opt/rocm/lib/rocblas/library ]]; then \
+        mkdir -p /opt/runtime-export/rocm/lib/rocblas/library; \
+        cp -a /opt/rocm/lib/rocblas/library/*${ROCM_ARCH}* /opt/runtime-export/rocm/lib/rocblas/library/ 2>/dev/null || true; \
+        cp -a /opt/rocm/lib/rocblas/library/TensileLibrary.dat /opt/runtime-export/rocm/lib/rocblas/library/ 2>/dev/null || true; \
+    fi; \
+    if [[ -d /opt/rocm/lib/hipblaslt/library ]]; then \
+        mkdir -p /opt/runtime-export/rocm/lib/hipblaslt/library; \
+        cp -a /opt/rocm/lib/hipblaslt/library/*${ROCM_ARCH}* /opt/runtime-export/rocm/lib/hipblaslt/library/ 2>/dev/null || true; \
+    fi; \
+    if [[ -d /opt/rocm/lib/rocfft ]]; then \
+        cp -a /opt/rocm/lib/rocfft /opt/runtime-export/rocm/lib/; \
+    fi; \
+    ls -1 /opt/runtime-export/rocm/lib/librocblas.so* >/dev/null; \
+    ls -1 /opt/runtime-export/rocm/lib/libhipblas.so* >/dev/null; \
+    test -x /opt/runtime-export/cp2k-runtime/bin/cp2k.psmp'
+
+
+{% if not build_only %}
+# ============================================================================
+# STAGE 2: RUNTIME - Minimal container with CP2K + ROCm runtime libraries
+# ============================================================================
+FROM ${RUNTIME_IMAGE} AS runtime
+
+ARG UCX_BRANCH="v1.19.0"
+ARG UCC_BRANCH="v1.5.1"
+ARG OMPI_BRANCH="v5.0.8"
+ARG AMDGPU_TARGETS="gfx942"
+ARG CP2K_BRANCH="v2026.1"
+ARG SPACK_MAKE_JOBS=0
+
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+
+LABEL stage="cp2k-rocm-infinityhub-runtime" \
+      description="Runtime stage: Minimal CP2K 2026.1 with ROCm gfx942" \
+      maintainer="s8ga" \
+      image_name="{{ default_image_name }}" \
+      image_tag="{{ default_image_tag }}"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Use USTC mirror for better CN network reliability.
+RUN sed -i "s@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s@//security.ubuntu.com@//mirrors.ustc.edu.cn@g" /etc/apt/sources.list.d/ubuntu.sources
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    libgfortran5 \
+    libnuma1 \
+    python3 \
+    zlib1g-dev \
+    libssl-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security (before COPY to use --chown)
+RUN useradd -m -s /bin/bash hpc
+
+WORKDIR /opt
+COPY --from=builder --chown=hpc:hpc /opt/runtime-export/cp2k-runtime /opt/cp2k-runtime
+COPY --from=builder --chown=hpc:hpc /opt/runtime-export/hpc/view /opt/hpc/view
+COPY --from=builder --chown=hpc:hpc /opt/runtime-export/cp2k-src /opt/cp2k-src
+COPY --from=builder --chown=hpc:hpc /opt/runtime-export/cp2k-tests /opt/cp2k-tests
+
+# Bring Stage3-selected ROCm compute libraries and kernel data.
+COPY --from=builder /opt/runtime-export/rocm/lib /opt/rocm/lib
+
+# OPAL_PREFIX: tells Open MPI where its prefix is (for finding help files, plugins, etc).
+# OMPI_PRTERUN: tells mpirun where to find prterun binary (rsync --copy-links
+#   flattens symlinks, so the hardcoded build-time __spack_path_placeholder__ path
+#   no longer exists; this override points directly at the dereferenced binary).
+ENV PATH="/opt/hpc/view/bin:/opt/cp2k-runtime/bin:${PATH}" \
+    CP2K_DATA_DIR="/opt/cp2k-runtime/share/cp2k/data" \
+    ROCM_PATH="/opt/rocm" \
+    HIP_PLATFORM="amd" \
+    LD_LIBRARY_PATH="/opt/cp2k-runtime/lib:/opt/cp2k-runtime/lib64:/opt/hpc/view/lib:/opt/hpc/view/lib64:/opt/rocm/lib" \
+    OPAL_PREFIX="/opt/hpc/view" \
+    OMPI_PRTERUN="/opt/hpc/view/bin/prterun"
+
+RUN ln -s /opt/cp2k-runtime /opt/cp2k && \
+    { \
+      echo "/opt/cp2k-runtime/lib"; \
+      echo "/opt/cp2k-runtime/lib64"; \
+      echo "/opt/hpc/view/lib"; \
+      echo "/opt/hpc/view/lib64"; \
+      echo "/opt/rocm/lib"; \
+    } >/etc/ld.so.conf.d/cp2k.conf && \
+    ldconfig && \
+    test -x /opt/cp2k-runtime/bin/cp2k.psmp
+
+# Remove static libraries to save space
+RUN find /opt -name "*.a" -delete 2>/dev/null || true && \
+    echo "Static libraries removed"
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown hpc:hpc /workspace
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to non-root user
+USER hpc
+
+# ============================================================================
+# STAGE 3: FINAL - Alias for runtime (for backward compatibility)
+# ============================================================================
+FROM runtime AS final
+
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+
+LABEL version="2026.1" \
+      description="CP2K 2026.1 with ROCm gfx942 support" \
+      maintainer="s8ga" \
+      image_name="{{ default_image_name }}" \
+      image_tag="{{ default_image_tag }}" \
+      timestamp="{{ timestamp }}"
+{% endif %}
+
+# ============================================================================
+# END OF DOCKERFILE
+# ============================================================================

@@ -1,0 +1,35 @@
+# HPC Container Build Configuration
+# Version tracking and build parameters
+
+# Base images
+images:
+  builder_base: debian:trixie
+  runtime_base: debian:trixie-slim
+
+# Spack configuration
+spack:
+  version: "1.1.0"
+  use_mirror: true
+  mirror_path: "/opt/spack-mirror"
+
+# Applications to build
+applications:
+  cp2k:
+    version: "2025.2"
+    enabled: true
+    spack_env: "spack-envs/cp2k-2025.2-opensource"
+  cp2k_rocm_infinityhub:
+    version: "2026.1"
+    enabled: true
+    spack_env: "spack-envs/cp2k-2026.1-rocm-infinityhub"
+    template: "templates/Dockerfile-cp2k-rocm-infinityhub-2026.1.j2"
+
+# Features
+features:
+  gpu_support: false
+
+# Build settings
+build:
+  jobs: 4
+  verbose: true
+  cache: true

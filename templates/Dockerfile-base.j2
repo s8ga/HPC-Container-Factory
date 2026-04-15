@@ -1,0 +1,115 @@
+# Base Dockerfile fragment for HPC applications with Spack
+# This fragment is included by specific application templates (CP2K, VASP, etc.)
+# It provides common build components and mirror configuration
+
+# ============================================================================
+# BUILDER BASE - Common initialization for all HPC applications
+# ============================================================================
+# This section is shared across all application-specific templates
+
+# Configure APT mirrors to use USTC (中科大) for faster downloads in China
+# This significantly speeds up apt-get operations in containers
+# Note: Debian Trixie uses .sources format in /etc/apt/sources.list.d/
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# System dependencies for Spack and compilation
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    curl \
+    environment-modules \
+    gfortran \
+    git \
+    openssh-client \
+    openssh-server \
+    pkg-config \
+    unzip \
+    vim \
+    wget \
+    rsync \
+    nano \
+    cmake \
+    file \
+    automake \
+    bzip2 \
+    xxd \
+    xz-utils \
+    zstd \
+    ninja-build \
+    patch \
+    pkgconf \
+    libncurses-dev \
+    libssh-dev \
+    libssl-dev \
+    libtool-bin \
+    lsb-release \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    zlib1g-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt
+
+# Copy pre-downloaded Spack from assets and extract in builder container
+# This avoids network issues and git clone limitations in containers
+COPY assets/spack-v1.1.0.tar.gz /tmp/spack.tar.gz
+
+ENV SPACK_ROOT=/opt/spack-exe 
+
+RUN cd /opt && \
+    mkdir ${SPACK_ROOT} && \
+    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
+    rm /tmp/spack.tar.gz && \
+    cd ${SPACK_ROOT} && \
+    ls -la bin/ lib/ var/
+    
+ENV PATH="${SPACK_ROOT}/bin:${PATH}"
+
+
+# Use a build-time bind mount for the bootstrap mirror to avoid copying
+# large bootstrap data into the image layers. This requires BuildKit
+# (podman build with BuildKit enabled). The directory layout expected is
+# the same as produced by `spack bootstrap mirror --binary-packages`.
+# During build this will be mounted read-only at /opt/bootstrap.
+
+# Configure Spack to use local bootstrap mirror. We mount the host
+# `assets/bootstrap` into the build container read-only so the files are
+# available for the bootstrap registration without being copied into an
+# image layer.
+COPY assets/bootstrap /opt/bootstrap
+
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
+    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
+    spack bootstrap disable github-actions-v2 && \
+    spack bootstrap disable github-actions-v0.6 && \
+    spack bootstrap disable spack-install && \
+    spack bootstrap now && \
+    spack bootstrap list && \
+    spack --version && \
+    echo "✅ Spack bootstrap configured from local mirror"
+
+{% if use_mirror %}
+# Use a build-time bind mount for the Spack source mirror to avoid copying
+# large mirror data into the image layers. This requires BuildKit
+# (podman build with BuildKit enabled). The directory layout expected is
+# the same as produced by `spack mirror create` (/_source-cache and package dirs).
+# During build this will be mounted read-only at /opt/spack-mirror.
+# If your builder doesn't support BuildKit, uncomment the following line to
+# fall back to copying the mirror into the image (larger image):
+# COPY assets/spack-mirror /opt/spack-mirror
+
+# Register local mirror as primary source (highest priority)
+RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
+    spack mirror list && \
+    echo "✅ Local source mirror configured at /opt/spack-mirror"
+{% endif %}
+
+# Configure build directory (actual install location set in spack.yaml)
+RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build

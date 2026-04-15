@@ -1,0 +1,13 @@
+legacy/**
+assets/**
+artifacts/**
+
+**__pycache__**
+
+**venv**
+
+Dockerfile
+
+.github/**
+
+.spack/**

@@ -1,0 +1,104 @@
+# Mirror Builder Image for HPC-Container-Factory
+# Purpose: Isolated environment for generating Spack bootstrap mirrors and source mirrors
+# without polluting the host system.
+#
+# Build:
+#   podman build -t hpc-mirror-builder -f containers/Dockerfile.mirror-builder .
+#
+# Usage (via scripts/build-mirror-in-container.sh):
+#   ./scripts/build-mirror-in-container.sh bootstrap
+#   ./scripts/build-mirror-in-container.sh mirror
+#   ./scripts/build-mirror-in-container.sh verify
+#   ./scripts/build-mirror-in-container.sh all
+#
+# Manual usage:
+#   podman run --rm --userns=keep-id \
+#     -v $(pwd):/work:Z \
+#     hpc-mirror-builder \
+#     bash -c ". /opt/spack/share/spack/setup-env.sh && spack bootstrap mirror --binary-packages /work/assets/bootstrap"
+
+FROM docker.io/library/debian:trixie
+
+LABEL maintainer="s8ga" \
+      description="Spack mirror builder — generates bootstrap and source mirrors in isolation"
+
+# Configure APT mirrors (USTC for faster downloads in China)
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# Install system dependencies required by Spack and package builds
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    curl \
+    environment-modules \
+    gfortran \
+    git \
+    openssh-client \
+    pkg-config \
+    unzip \
+    wget \
+    cmake \
+    file \
+    automake \
+    bzip2 \
+    xxd \
+    xz-utils \
+    zstd \
+    ninja-build \
+    patch \
+    patchelf \
+    pkgconf \
+    libncurses-dev \
+    libssh-dev \
+    libssl-dev \
+    libtool-bin \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    zlib1g-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Spack from pre-downloaded tarball
+COPY assets/spack-v1.1.0.tar.gz /tmp/spack.tar.gz
+
+ENV SPACK_ROOT=/opt/spack
+ENV PATH="${SPACK_ROOT}/bin:${PATH}"
+
+RUN mkdir -p ${SPACK_ROOT} && \
+    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
+    rm /tmp/spack.tar.gz && \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack --version && \
+    echo "✅ Spack installed: $(spack --version)" && \
+    chmod -R a+w ${SPACK_ROOT}/var/spack && \
+    chmod a+w ${SPACK_ROOT}/__spack_path_placeholder__ 2>/dev/null || true
+
+# Make spack root writable for non-root concretize (needs to create __spack_path_placeholder__)
+RUN chmod -R a+w ${SPACK_ROOT}
+
+# Pre-clone the spack-packages repo to avoid re-cloning on every container run.
+# Without this, every `podman run --rm` triggers a fresh ~100MB git clone from GitHub.
+# Running any spack command that touches the builtin repo triggers the clone into
+# /root/.spack/package_repos/ which persists in this image layer.
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack info zlib >/dev/null 2>&1 && \
+    echo "✅ spack-packages repo pre-cloned" && \
+    du -sh /root/.spack/package_repos/
+
+# Create working directory for mounted project
+RUN mkdir -p /work
+
+WORKDIR /work
+
+# Create entrypoint script that sources Spack, then runs user command.
+# Per-environment setup (e.g. registering custom repos) is handled by
+# the optional mirror-create.sh hook in each spack-envs/<project>/ directory.
+RUN printf '#!/bin/bash\n\
+. /opt/spack/share/spack/setup-env.sh\n\
+exec "$@"\n' > /opt/entrypoint.sh && chmod +x /opt/entrypoint.sh
+
+ENTRYPOINT ["/opt/entrypoint.sh"]

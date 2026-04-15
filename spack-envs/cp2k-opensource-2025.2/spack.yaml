@@ -1,0 +1,163 @@
+# Spack environment file for a MPI parallel CP2K binary with all available dependencies
+
+spack:
+  concretizer:
+    unify: true
+  config:
+    install_tree:
+      root: /opt/spack
+      padded_length: 0
+    build_stage:
+    - /tmp/spack-build
+  packages:
+    all:
+      buildable: true
+      prefer:
+        - ~cuda
+        - +mpi
+        - +openmp
+        - +pic
+        - ~rocm
+        - target="x86_64_v3"
+    mpi:
+      require:
+        - openmpi
+    mpich:
+      require:
+        - ~xpmem
+    openmpi:
+      require:
+        - +internal-hwloc
+    xpmem:
+      buildable: false
+      externals:
+        - spec: xpmem@master
+          prefix: /opt/spack
+    blas:
+      require:
+        - openblas
+    lapack:
+      require:
+        - openblas
+    openblas:
+      require:
+        - +dynamic_dispatch
+        - +fortran
+        - threads=openmp
+    scalapack:
+      require:
+        - netlib-scalapack
+    # Dependencies for CP2K
+    cosma:
+      require:
+        - +scalapack
+    dbcsr:
+      require:
+        - ~examples
+        - +openmp
+        - smm=blas
+    deepmdkit:
+      require:
+        - build_system=cmake
+        - +enable_pytorch
+    dftd4:
+      require:
+        - build_system=cmake
+    dla-future:
+      require:
+        - +scalapack
+    elpa:
+      require:
+        - +openmp
+    fftw:
+      require:
+        - +openmp
+    hdf5:
+      require:
+        - +fortran
+    libint:
+      require:
+        - +fortran
+        - tune=cp2k-lmax-6
+    libxc:
+      require:
+        - +kxc
+        - build_system=cmake
+    pexsi:
+      require:
+        - +fortran
+    py-torch:
+      require:
+        - ~cuda
+        - ~distributed
+        - ~kineto
+        - ~mkldnn
+        - ~rocm
+        - ~valgrind
+    sirius:
+      require:
+        - +fortran
+        - +pugixml
+        - ~apps
+        - +vdwxc
+    spla:
+      require:
+        - +fortran
+    trexio:
+      require:
+        - +hdf5
+        - build_system=cmake
+
+    libxsmm:
+      require:
+        - +shared
+        - +large_jit_buffer
+    mctc-lib:
+      require:
+        - ~openmp
+    
+    binutils:
+      externals:
+      - spec: binutils+ld+gas@2.44
+        prefix: /usr
+      buildable: false
+
+  specs:
+    # Minimal
+    - "dbcsr@2.8.0"
+    - "libfabric@1.22.0"
+    - "netlib-scalapack@2.2.2"
+    - "openblas@0.3.29"
+    - "openmpi@5.0.8"
+    # All
+    - "cosma@2.7.0"
+    - "deepmdkit@3.1.0"
+    - "dftd4@3.7.0"
+    - "dla-future@0.10.0"
+    - "dla-future-fortran@0.5.0"
+    - "elpa@2025.01.001"
+    - "fftw@3.3.10"
+    - "greenx@2.2"
+    - "hdf5@1.14.6"
+    - "lammps-user-pace@2023.11.25.fix2"
+    - "libint@2.9.0"
+    - "libsmeagol@1.2"
+    - "libvori@220621"
+    - "libxc@7.0.0"
+    - "libxsmm@1.17"
+    - "pexsi@2.0.0"
+    - "plumed@2.9.2"
+    - "py-torch@2.7"
+    - "sirius@7.7.0"
+    - "spglib@2.5.0"
+    - "spla@1.6.1"
+    - "trexio@2.5.0"
+    - "tblite@0.4.0"
+  view:
+    default:
+      root: ./view
+      exclude:
+        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
+        - gcc-runtime
+
+# EOF

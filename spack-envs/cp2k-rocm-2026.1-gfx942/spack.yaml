@@ -1,0 +1,131 @@
+# CP2K 2026.1 ROCm InfinityHub-derived environment.
+#
+# Source baseline:
+#   https://github.com/amd/InfinityHub-CI/tree/main/cp2k/docker/cp2k_environment
+#
+# Local policy overlays:
+# - Keep ROCm at 7.2.1 (base image + external discovery)
+# - Install OpenMPI/UCX/UCC through Spack (not apt/manual source build)
+# - Enable DLAF via Spack (dla-future-fortran + cp2k+dlaf)
+
+spack:
+  repos:
+    - repos
+  config:
+    install_tree:
+      root: /opt/spack
+      padded_length: 0
+    build_stage:
+      - /tmp/spack-build
+
+  concretizer:
+    unify: true
+
+  specs:
+    # InfinityHub CP2K stack (keep SIRIUS route) + DLAF extension
+    - sirius@develop+rocm+fortran+vdwxc+dftd4+dftd3+pugixml+openmp+scalapack+dlaf
+    - libxc@7+fortran build_system=cmake
+    - libint
+    - cosma+rocm
+    - netlib-scalapack+pic+shared
+    - spla+rocm+fortran
+    - spfft+rocm
+    - libxsmm@1.17
+    - binutils
+    - fftw+openmp
+    # Install communication stack via Spack (replaces Dockerfile source build)
+    - ucx@1.19.0+rocm
+    - ucc@1.5.1+rocm ^ucx@1.19.0+rocm
+    - openmpi@5.0.8 fabrics=ucx ^ucx@1.19.0+rocm ^ucc@1.5.1+rocm
+    - autoconf@2.72
+    - libvori
+    - spglib
+    - dftd4
+    - hdf5
+    - trexio
+    - dbcsr@2.9.1+mpi+rocm+openmp~tests~examples
+    - openblas
+    - libvdwxc@master
+    # DLAF explicit root spec (same style as local ROCm flow)
+    - dla-future-fortran@0.5.0
+    - cp2k@2026.1+cosma~cuda+dbm_gpu+dftd4+dlaf+grid_gpu+grpp+hdf5~ipo+libint+libxc+mpi+mpi_f08+openmp+pw_gpu+rocm+sirius+spglib+spla+tblite+trexio+vdwxc build_type=Release smm=libxsmm
+
+  packages:
+    all:
+      variants: +shared amdgpu_target=gfx942 amdgpu_target_sram_ecc=gfx942
+      target: [x86_64_v3]
+
+    mpi:
+      require:
+        - openmpi
+
+    libint:
+      require:
+        - +fortran
+        - tune=cp2k-lmax-6
+
+    # DLAF chain constraints for ROCm build stability.
+    dla-future:
+      require:
+        - +rocm
+        - +scalapack
+        - amdgpu_target=gfx942
+
+    umpire:
+      require:
+        - "@2024.07.0:"
+
+    # Keep ROCm 7.2.1 from base image via external discovery.
+    hip:
+      buildable: false
+      externals:
+        - spec: hip@7.2.1
+          prefix: /opt/rocm
+
+    hipblas:
+      buildable: false
+      externals:
+        - spec: hipblas@7.2.1
+          prefix: /opt/rocm
+
+    hipfft:
+      buildable: false
+      externals:
+        - spec: hipfft@7.2.1
+          prefix: /opt/rocm
+
+    rocfft:
+      buildable: false
+      externals:
+        - spec: rocfft@7.2.1 amdgpu_target=gfx942
+          prefix: /opt/rocm
+
+    rocblas:
+      buildable: false
+      externals:
+        - spec: rocblas@7.2.1 amdgpu_target=gfx942
+          prefix: /opt/rocm
+
+    rocsolver:
+      buildable: false
+      externals:
+        - spec: rocsolver@7.2.1 amdgpu_target=gfx942
+          prefix: /opt/rocm
+
+    hsa-rocr-dev:
+      buildable: false
+      externals:
+        - spec: hsa-rocr-dev@7.2.1
+          prefix: /opt/rocm
+
+    llvm-amdgpu:
+      buildable: false
+      externals:
+        - spec: llvm-amdgpu@7.2.1
+          prefix: /usr
+          extra_attributes:
+            compilers:
+              c: /usr/bin/amdclang
+              cxx: /usr/bin/amdclang++
+              fortran: /usr/bin/amdflang
+
