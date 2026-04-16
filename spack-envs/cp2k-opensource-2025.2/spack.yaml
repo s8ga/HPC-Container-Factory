@@ -55,7 +55,7 @@ spack:
       require:
         - ~examples
         - +openmp
-        - smm=blas
+        - smm=libxsmm
     deepmdkit:
       require:
         - build_system=cmake
@@ -148,11 +148,12 @@ spack:
     - "pexsi@2.0.0"
     - "plumed@2.9.2"
     - "py-torch@2.7"
-    - "sirius@7.7.0"
+    - "sirius@7.9.0"
     - "spglib@2.5.0"
     - "spla@1.6.1"
     - "trexio@2.5.0"
     - "tblite@0.4.0"
+    - "cp2k@2025.2+cosma+tblite+deepmd+dftd4+dlaf+elpa+greenx+grpp+hdf5+libint+libxc+pexsi+plumed+pytorch+sirius+smeagol+spglib+trexio+vcsqnm+vdwxc+libvori+mpi_f08+ace smm=libxsmm lmax=6"
   view:
     default:
       root: ./view

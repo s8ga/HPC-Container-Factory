@@ -122,18 +122,12 @@ step_clean_stale_repos() {
 #   "local|PATH|NAMESPACE"                  → direct register (path relative to env dir)
 # Repos registered in order; later repos have higher priority (override builtin).
 step_register_repos() {
-    _sc_info "Custom repos declared: ${#CUSTOM_REPOS[@]}"
-    _sc_info "Current spack repo list BEFORE registration:"
-    spack repo list 2>/dev/null || true
-    echo ""
-
     if [[ ${#CUSTOM_REPOS[@]} -eq 0 ]]; then
         _sc_info "No custom repos configured — skipping"
         return 0
     fi
 
     for repo_entry in "${CUSTOM_REPOS[@]}"; do
-        _sc_info "Processing repo entry: ${repo_entry}"
         IFS='|' read -r repo_type rest <<< "${repo_entry}"
 
         # Remove stale registration if present
@@ -186,19 +180,11 @@ step_register_repos() {
         esac
 
         # Register with Spack
-        _sc_info "Registering: spack repo add ${repo_dir}"
         spack repo add "${repo_dir}"
-        _sc_ok "Registered ${namespace}"
-        # Verify registration
-        if spack repo list 2>/dev/null | grep -q "${namespace}"; then
-            _sc_ok "  Confirmed in repo list"
-        else
-            _sc_error "  NOT found in repo list after registration!"
-        fi
+        _sc_ok "Registered ${namespace} with Spack (priority: $(spack repo list 2>/dev/null | grep -n "${namespace}" | head -1 | cut -d: -f1))"
     done
 
-    echo ""
-    _sc_info "Full repo list AFTER all registrations:"
+    _sc_info "Full repo list:"
     spack repo list
 }
 

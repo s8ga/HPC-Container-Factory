@@ -121,6 +121,17 @@ def infer_image_defaults(app_version: str, template_path: Path | None) -> tuple[
     return "hpc-cp2k", "latest"
 
 
+def load_env_yaml(template_path: Path | None) -> dict:
+    """Load env.yaml from the same directory as the template (if inside spack-envs/)."""
+    if not template_path:
+        return {}
+    env_yaml = template_path.parent / "env.yaml"
+    if not env_yaml.exists():
+        return {}
+    with env_yaml.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def build_context(
     config: dict,
     *,
@@ -129,9 +140,13 @@ def build_context(
     app_version: str,
     template_path: Path | None,
 ) -> dict:
-    images = config.get("images", {})
-    builder_base_image = images.get("builder_base", "debian:trixie")
-    runtime_base_image = images.get("runtime_base", "debian:trixie-slim")
+    env_config = load_env_yaml(template_path)
+
+    # env.yaml images 段优先，versions.yaml images 段 fallback
+    env_images = env_config.get("images", {})
+    cfg_images = config.get("images", {})
+    builder_base_image = env_images.get("builder", cfg_images.get("builder_base", "debian:trixie"))
+    runtime_base_image = env_images.get("runtime", cfg_images.get("runtime_base", "debian:trixie-slim"))
     default_image_name, default_image_tag = infer_image_defaults(app_version, template_path)
 
     context = {
@@ -143,6 +158,9 @@ def build_context(
         "build_only": build_only,
         "default_image_name": default_image_name,
         "default_image_tag": default_image_tag,
+        # 注入 env.yaml 中的 template_vars 作为顶层变量
+        **env_config.get("template_vars", {}),
+        # 注入全局 config
         **config,
     }
 
@@ -151,22 +169,29 @@ def build_context(
 
 
 def _extract_available_versions() -> list[str]:
-    """Scan templates dir for Dockerfile-<app>-<version>.j2 and return version strings."""
+    """Scan spack-envs/ and templates/ for available Dockerfile templates."""
     versions: list[str] = []
+    seen: set[str] = set()
+
+    # 优先扫描 spack-envs/*/Dockerfile.j2 (新布局)
+    spack_envs = PROJECT_ROOT / "spack-envs"
+    if spack_envs.exists():
+        for env_dir in sorted(spack_envs.iterdir()):
+            if env_dir.is_dir() and (env_dir / "Dockerfile.j2").exists():
+                name = env_dir.name  # e.g. "cp2k-opensource-2025.2"
+                if name not in seen:
+                    versions.append(name)
+                    seen.add(name)
+
+    # 回退扫描 templates/ (legacy 布局)
     for f in sorted(TEMPLATES_DIR.glob("Dockerfile-*.j2")):
-        # Skip base templates (no version part)
         if f.name == "Dockerfile-base.j2":
             continue
-        # Pattern: Dockerfile-<app>-<version>.j2  →  strip "Dockerfile-" prefix and ".j2" suffix
-        # Then strip the leading "<app>-" to get just the version part.
         stem = f.name[len("Dockerfile-"):-len(".j2")]  # e.g. "cp2k-opensource-2025.2"
-        # Try to strip known app prefixes
-        for app_prefix in ("cp2k-", "vasp-"):
-            if stem.startswith(app_prefix):
-                versions.append(stem[len(app_prefix):])
-                break
-        else:
+        if stem not in seen:
             versions.append(stem)
+            seen.add(stem)
+
     return versions
 
 
@@ -176,6 +201,18 @@ def select_template(app: str, app_version: str, explicit_template: Path | None) 
             raise FileNotFoundError(f"Specified template not found: {explicit_template}")
         return explicit_template
 
+    # 优先: spack-envs/<app-version>/Dockerfile.j2 (新布局，app_version 是完整目录名)
+    env_dir = PROJECT_ROOT / "spack-envs" / app_version
+    env_template = env_dir / "Dockerfile.j2"
+    if env_template.exists():
+        return env_template
+
+    # 回退: spack-envs/<app>-<app-version>/Dockerfile.j2
+    env_dir = PROJECT_ROOT / "spack-envs" / f"{app}-{app_version}"
+    env_template = env_dir / "Dockerfile.j2"
+    if env_template.exists():
+        return env_template
+
     # Support user passing the template filename directly as app-version
     # e.g. "Dockerfile-cp2k-rocm-2026.1-gfx942" or "Dockerfile-cp2k-rocm-2026.1-gfx942.j2"
     raw = app_version
@@ -184,6 +221,7 @@ def select_template(app: str, app_version: str, explicit_template: Path | None) 
         if candidate.exists():
             return candidate
 
+    # 回退: templates/Dockerfile-<app>-<app-version>.j2 (legacy)
     template_name = f"Dockerfile-{app}-{app_version}.j2"
     template_path = TEMPLATES_DIR / template_name
     if template_path.exists():
@@ -425,6 +463,17 @@ def run_assets(args: argparse.Namespace) -> None:
             non_host_mode,
         )
 
+    # --env without value → list available environments
+    if args.env == "__LIST__":
+        envs = _list_available_envs()
+        if envs:
+            print("Available environments (--env <name>):")
+            for e in envs:
+                print(f"  {e}")
+        else:
+            print("No environments found under spack-envs/.")
+        return
+
     image_ready = False
 
     def ensure_image() -> None:
@@ -549,11 +598,24 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _list_available_envs() -> list[str]:
+    """List environment directories under spack-envs/ that contain env.yaml."""
+    envs: list[str] = []
+    spack_envs = PROJECT_ROOT / "spack-envs"
+    if spack_envs.exists():
+        for d in sorted(spack_envs.iterdir()):
+            if d.is_dir() and (d / "env.yaml").exists():
+                envs.append(d.name)
+    return envs
+
+
 def add_assets_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--env",
         default=None,
-        help="Environment name under spack-envs/ (required for mirror/verify/status)",
+        nargs="?",
+        const="__LIST__",
+        help="Environment name under spack-envs/. Pass without value to list available envs.",
     )
     parser.add_argument(
         "--podman-cmd",
@@ -684,6 +746,12 @@ def build_parser() -> argparse.ArgumentParser:
     assets_parser = subparsers.add_parser(
         "assets",
         help="Prepare bootstrap/mirror assets and mirror worker container",
+    )
+    assets_parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIGS_DIR / "versions.yaml",
+        help="Path to versions.yaml config file",
     )
     add_assets_options(assets_parser)
 

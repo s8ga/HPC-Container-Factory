@@ -196,43 +196,69 @@ fi
 info "Generating bootstrap cache"
 info "Output: ${BOOTSTRAP_REAL}"
 
-generate_cmd='set -euo pipefail
+# ── Skip if bootstrap cache already exists and is complete ─────────────────
+_bootstrap_metadata="${BOOTSTRAP_REAL}/metadata/sources/metadata.yaml"
+_bootstrap_binaries=(
+    "${BOOTSTRAP_REAL}/metadata/binaries/clingo.json"
+    "${BOOTSTRAP_REAL}/metadata/binaries/gnupg.json"
+    "${BOOTSTRAP_REAL}/metadata/binaries/patchelf.json"
+)
+if [[ ${FORCE} -eq 0 && -f "${_bootstrap_metadata}" && -s "${_bootstrap_metadata}" ]]; then
+    _bootstrap_complete=true
+    for f in "${_bootstrap_binaries[@]}"; do
+        if [[ ! -s "${f}" ]]; then
+            _bootstrap_complete=false
+            break
+        fi
+    done
+    if [[ "${_bootstrap_complete}" == true ]]; then
+        ok "Bootstrap cache already exists and appears complete — skipping"
+        info "Use --force to regenerate"
+        # Skip to validation summary
+        files_count=$(find "${BOOTSTRAP_REAL}" -type f | wc -l)
+        size=$(du -sh "${BOOTSTRAP_REAL}" | cut -f1)
+        info "Files: ${files_count}  Size: ${size}"
+        exit 0
+    else
+        warn "Bootstrap cache incomplete — regenerating"
+    fi
+fi
+
+# Bootstrap generation ALWAYS uses an ephemeral container (podman run --rm).
+# This avoids pollution from site-level repo registrations left by previous
+# streamline.sh runs in the persistent container. Bootstrap does not need
+# custom repos — it only builds the Spack bootstrap mirror.
+info "Using ephemeral container for bootstrap (avoids stale repo registrations)"
+
+generate_cmd_nofallback='set -euo pipefail
 . /opt/spack/share/spack/setup-env.sh
+rm -rf /tmp/spack-repos /tmp/spack-env-*
 mkdir -p "'"${BOOTSTRAP_IN_CONTAINER}"'"
 spack bootstrap mirror --binary-packages "'"${BOOTSTRAP_IN_CONTAINER}"'"'
 
-if [[ ${USE_CONTAINER} -eq 1 ]]; then
-    if ! ${PODMAN_CMD} container exists "${MIRROR_CONTAINER_NAME}" 2>/dev/null; then
-        if [[ ${CREATE_CONTAINER} -eq 1 ]]; then
-            :
-        else
-            error "Container ${MIRROR_CONTAINER_NAME} does not exist. Use --create-container first."
-            exit 1
-        fi
-    fi
+generate_cmd_fallback='set -euo pipefail
+. /opt/spack/share/spack/setup-env.sh
+rm -rf /tmp/spack-repos /tmp/spack-env-*
+mkdir -p "'"${BOOTSTRAP_IN_CONTAINER}"'"
+spack bootstrap mirror "'"${BOOTSTRAP_IN_CONTAINER}"'"'
 
-    net_mode="$(${PODMAN_CMD} inspect -f '{{.HostConfig.NetworkMode}}' "${MIRROR_CONTAINER_NAME}" 2>/dev/null || echo unknown)"
-    if [[ "${net_mode}" != "host" ]]; then
-        error "Container ${MIRROR_CONTAINER_NAME} is using network '${net_mode}', expected 'host'."
-        error "Non-host mode cannot reliably use host proxy settings."
-        error "Recreate it with: ./scripts/prepare-bootstrap-cache.sh --create-container --use-container"
-        exit 1
-    fi
-
-    if [[ "$(${PODMAN_CMD} inspect -f '{{.State.Running}}' "${MIRROR_CONTAINER_NAME}" 2>/dev/null || echo false)" != "true" ]]; then
-        info "Starting container: ${MIRROR_CONTAINER_NAME}"
-        ${PODMAN_CMD} start "${MIRROR_CONTAINER_NAME}" >/dev/null
-    fi
-
-    ${PODMAN_CMD} exec "${MIRROR_CONTAINER_NAME}" bash -lc "${generate_cmd}"
-else
+_podman_run() {
     ${PODMAN_CMD} run --rm \
-    ${EXTRA_PODMAN_OPTS} \
-        --network=host \
-        --userns=keep-id \
-        -v "${PROJECT_ROOT}:/work:Z" \
-        "${MIRROR_BUILDER_IMAGE}" \
-        bash -lc "${generate_cmd}"
+        ${EXTRA_PODMAN_OPTS} \
+            --network=host \
+            --userns=keep-id \
+            -v "${PROJECT_ROOT}:/work:Z" \
+            "${MIRROR_BUILDER_IMAGE}" \
+            bash -lc "$1"
+}
+
+if ! _podman_run "${generate_cmd_nofallback}"; then
+    warn "Bootstrap with --binary-packages failed (network/SSL issue?)"
+    warn "Retrying without binary packages (sources only)..."
+    _podman_run "${generate_cmd_fallback}" || {
+        error "Bootstrap mirror generation failed"
+        exit 1
+    }
 fi
 
 metadata_file="${BOOTSTRAP_REAL}/metadata/sources/metadata.yaml"
