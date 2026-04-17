@@ -111,6 +111,15 @@ resolve_env_paths() {
         exit 1
     fi
     SPACK_ENV_DIR="${PROJECT_ROOT}/spack-envs/${ENV_NAME}"
+    # New layout: spack.yaml lives in spack-env-file/ subdirectory
+    if [[ -d "${SPACK_ENV_DIR}/spack-env-file" ]]; then
+        SPACK_ENV_DIR="${SPACK_ENV_DIR}/spack-env-file"
+    fi
+    # Container path mirrors host layout under /work bind-mount
+    CONTAINER_ENV_DIR="/work/spack-envs/${ENV_NAME}"
+    if [[ -d "${PROJECT_ROOT}/spack-envs/${ENV_NAME}/spack-env-file" ]]; then
+        CONTAINER_ENV_DIR="${CONTAINER_ENV_DIR}/spack-env-file"
+    fi
     if [[ -n "${MIRROR_DIR_OVERRIDE}" ]]; then
         MIRROR_DIR="${MIRROR_DIR_OVERRIDE}"
     else
@@ -128,9 +137,10 @@ run_in_container() {
         ${EXTRA_PODMAN_OPTS} \
         --network=host \
         --userns=keep-id \
+        -e HOME=/tmp/home \
         -v "${PROJECT_ROOT}:/work:Z" \
         "${MIRROR_BUILDER_IMAGE}" \
-        bash -c "${cmd}"
+        bash -c "mkdir -p /tmp/home && ${cmd}"
 }
 
 container_network_mode() {
@@ -246,9 +256,10 @@ cmd_create_container() {
         ${EXTRA_PODMAN_OPTS} \
         --network=host \
         --userns=keep-id \
+        -e HOME=/tmp/home \
         -v "${PROJECT_ROOT}:/work:Z" \
         "${MIRROR_BUILDER_IMAGE}" \
-        bash -lc 'tail -f /dev/null' >/dev/null
+        bash -lc 'mkdir -p /tmp/home && tail -f /dev/null' >/dev/null
 
     ${PODMAN_CMD} start "${MIRROR_CONTAINER_NAME}" >/dev/null
     ok "Container created and started"
@@ -331,7 +342,7 @@ cmd_mirror() {
         mode="all"
     fi
 
-    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash /work/spack-envs/${ENV_NAME}/streamline.sh ${mode}"
+    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash ${CONTAINER_ENV_DIR}/streamline.sh ${mode}"
 
     echo ""
     ok "Source mirror generated"
@@ -370,7 +381,7 @@ cmd_concretize() {
         return 1
     fi
 
-    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash /work/spack-envs/${ENV_NAME}/streamline.sh concretize"
+    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash ${CONTAINER_ENV_DIR}/streamline.sh concretize"
 
     echo ""
     ok "Concretize complete"
@@ -402,7 +413,7 @@ cmd_verify() {
         return 1
     fi
 
-    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash /work/spack-envs/${ENV_NAME}/streamline.sh verify"
+    run_in_container "ENV_NAME=${ENV_NAME} MIRROR_DIR=/work/assets/spack-mirror bash ${CONTAINER_ENV_DIR}/streamline.sh verify"
     echo ""
 
     # Layer 2: Structure verification on host

@@ -9,8 +9,6 @@
 # - Enable DLAF via Spack (dla-future-fortran + cp2k+dlaf)
 
 spack:
-  repos:
-    - repos
   config:
     install_tree:
       root: /opt/spack
@@ -20,6 +18,13 @@ spack:
 
   concretizer:
     unify: true
+
+  view:
+    default:
+      root: ./view
+      exclude:
+        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
+        - gcc-runtime
 
   specs:
     # InfinityHub CP2K stack (keep SIRIUS route) + DLAF extension
@@ -31,7 +36,7 @@ spack:
     - spla+rocm+fortran
     - spfft+rocm
     - libxsmm@1.17
-    - binutils
+    # - binutils
     - fftw+openmp
     # Install communication stack via Spack (replaces Dockerfile source build)
     - ucx@1.19.0+rocm

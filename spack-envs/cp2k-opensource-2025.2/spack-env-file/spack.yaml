@@ -63,9 +63,6 @@ spack:
     dftd4:
       require:
         - build_system=cmake
-    dla-future:
-      require:
-        - +scalapack
     elpa:
       require:
         - +openmp
@@ -115,12 +112,6 @@ spack:
     mctc-lib:
       require:
         - ~openmp
-    
-    binutils:
-      externals:
-      - spec: binutils+ld+gas@2.44
-        prefix: /usr
-      buildable: false
 
   specs:
     # Minimal
@@ -133,8 +124,6 @@ spack:
     - "cosma@2.7.0"
     - "deepmdkit@3.1.0"
     - "dftd4@3.7.0"
-    - "dla-future@0.10.0"
-    - "dla-future-fortran@0.5.0"
     - "elpa@2025.01.001"
     - "fftw@3.3.10"
     - "greenx@2.2"
@@ -153,7 +142,7 @@ spack:
     - "spla@1.6.1"
     - "trexio@2.5.0"
     - "tblite@0.4.0"
-    - "cp2k@2025.2+cosma+tblite+deepmd+dftd4+dlaf+elpa+greenx+grpp+hdf5+libint+libxc+pexsi+plumed+pytorch+sirius+smeagol+spglib+trexio+vcsqnm+vdwxc+libvori+mpi_f08+ace smm=libxsmm lmax=6"
+    - "cp2k@2025.2+cosma+tblite+deepmd+dftd4~dlaf+elpa+greenx+grpp+hdf5+libint+libxc+pexsi+plumed+pytorch+sirius+smeagol+spglib+trexio+vcsqnm+vdwxc+libvori+mpi_f08+ace smm=libxsmm lmax=6"
   view:
     default:
       root: ./view

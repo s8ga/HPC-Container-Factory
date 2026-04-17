@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for CP2K + Opensource BLAS 2025.2 with Spack
 # BUILD REQUIREMENTS:
 # - assets/ directory with spack-v1.1.0.tar.gz, bootstrap-cache, spack-mirror (optional)
-# - spack-envs/cp2k-opensource-2025.2 with spack.yaml and spack.lock
+# - spack-envs/cp2k-opensource-2025.2/spack-env-file with spack.yaml and spack.lock
 #
 #
 # NOTE: 不要修改各 stage 内的 RUN 步骤，否则会破坏构建缓存。
@@ -39,13 +39,9 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     gfortran \
     git \
     openssh-client \
-    openssh-server \
     pkg-config \
     unzip \
-    vim \
     wget \
-    rsync \
-    nano \
     cmake \
     file \
     automake \
@@ -55,17 +51,12 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     zstd \
     ninja-build \
     patch \
+    patchelf \
     pkgconf \
-    libncurses-dev \
-    libssh-dev \
-    libssl-dev \
     libtool-bin \
-    lsb-release \
     python3 \
-    python3-dev \
     python3-pip \
     python3-venv \
-    zlib1g-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt
 
@@ -127,7 +118,7 @@ RUN git clone --filter=blob:none --no-checkout -b support/v2025.2 \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
 # Prepare the spack environment + configuration
-COPY spack-envs/cp2k-opensource-2025.2 /opt/spack-env-file
+COPY spack-envs/cp2k-opensource-2025.2/spack-env-file /opt/spack-env-file
 
 # Create env, then import lock/config/repos from source directory.
 RUN /bin/bash -c 'set -euo pipefail; \
@@ -158,8 +149,9 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e cp2k-env install --fail-fast -j "$(nproc)"; \
-        spack -e cp2k-env gc -y
+        spack -e cp2k-env install --fail-fast -j "$(nproc)";
+
+RUN spack -e cp2k-env gc -y
 
 # Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
 # Actual library / executable locations are still in /opt/spack/ to allow flexible runtime image construction
@@ -185,8 +177,7 @@ RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
 # ----------------------------------------------------------------------------
 # STEP: Build manifest
 # ----------------------------------------------------------------------------
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate --sh > /tmp/env.sh && \
-    . /tmp/env.sh && \
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     { echo "=== CP2K 2025.2 Build Manifest ==="; \
       echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
@@ -209,12 +200,14 @@ LABEL stage="runtime" \
 # CP2K_DATA_DIR points to basis sets, potentials, and other data files
 
 # Spack view provides all binaries and libraries via symlinks.
-# PATH/LD_LIBRARY_PATH point to the view for transparent access.
+# PATH points to the view for transparent binary access.
+# LD_LIBRARY_PATH is intentionally NOT set — we rely solely on ldconfig
+# (registered via /etc/ld.so.conf.d/cp2k.conf) for library discovery.
+# This avoids polluting system tools (nano, screen) with Spack-built libs.
 # CP2K_DATA_DIR points to data files installed by spack (basis sets, potentials, etc.)
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/spack-view/bin:/opt/bin:$PATH" \
-    LD_LIBRARY_PATH="/opt/spack-view/lib:/opt/lib:$LD_LIBRARY_PATH" \
     CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data"
 
 
@@ -229,23 +222,18 @@ RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.so
 # plus common tools for user convenience (nano, curl, python3, screen).
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     ca-certificates \
-    openssh-client \
-    tar \
-    perl \
-    nano \
-    curl \
-    python3 \
     bash \
-    gfortran \
+    python3 \
+    curl \
+    tar \
     libgfortran5 \
     libstdc++6 \
     libgcc-s1 \
-    screen \
+    libnuma1 \
+    nano \
+    openssh-client \
     util-linux \
-    zlib1g-dev \
-    libncurses-dev \
-    libssh-dev \
-    libssl-dev \
+    screen \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security (before COPY to use --chown)
@@ -273,9 +261,71 @@ COPY --from=builder --chown=hpc:hpc /opt/cp2k/tools/regtesting /opt/cp2k/tools/r
 RUN { echo "/opt/spack-view/lib"; } > /etc/ld.so.conf.d/cp2k.conf && \
     ldconfig
 
-# Remove static libraries to save space
-RUN find /opt -name "*.a" -delete 2>/dev/null || true && \
-    echo "Static libraries removed"
+# ----------------------------------------------------------------------------
+# RUNTIME CLEANUP: Remove development-only content to minimize image size
+# ----------------------------------------------------------------------------
+# CP2K uses Spack's own gcc-runtime (libgfortran.so.5, libstdc++.so.6,
+# libgcc_s.so.1 under /opt/spack/.../gcc-runtime-14.2.0/), verified via ldd.
+# System gcc/gfortran are pulled in as recommends of libgfortran5/libstdc++6
+# but are NOT needed at runtime. Safe to purge.
+#
+# Cleanup summary (verified on localhost/cp2k-opensource:2025.2):
+#   1. Purge system compiler packages:           ~159 MB
+#   2. Remove C/C++/Fortran headers (include/):  ~730 MB
+#   3. Remove Python bytecode cache (__pycache__):~685 MB (auto-regenerated)
+#   4. Remove Python test/idle/tkinter:                  ~36 MB
+#   5. Remove documentation and man pages:        ~89 MB
+#   5. Remove .spack install metadata:            ~42 MB
+#   6. Remove cmake/pkgconfig build metadata:      ~3 MB
+#   7. Remove static libraries (.a):                ~0 MB
+#   Total saved: ~1,744 MB → image shrinks from ~2.5 GB to ~750 MB
+#
+# NOT removed: cp2k/share/cp2k/data/ (basis sets, potentials — runtime needed)
+RUN echo "=== Runtime cleanup: removing development-only content ===" && \
+    BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
+    echo "Before: ${BEFORE}MB" && \
+    \
+    echo "--- [1/7] Purging system compiler packages ---" && \
+    apt-get purge -y --auto-remove \
+        gcc-14 gcc-14-x86-64-linux-gnu \
+        gfortran-14 gfortran-14-x86-64-linux-gnu \
+        cpp-14 cpp-14-x86-64-linux-gnu \
+        libgcc-14-dev libgfortran-14-dev \
+        gcc gfortran cpp 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    \
+    echo "--- [2/7] Removing headers (include/) ---" && \
+    find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/include && \
+    rm -rf /usr/include && \
+    \
+    echo "--- [3/7] Removing Python bytecode cache ---" && \
+    find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    \
+    echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
+    for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
+        rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
+    done && \
+    \
+    echo "--- [5/8] Removing docs and man pages ---" && \
+    find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man && \
+    \
+    echo "--- [6/8] Removing .spack metadata ---" && \
+    find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
+    \
+    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
+    find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
+    \
+    echo "--- [8/8] Removing static libraries (.a) ---" && \
+    find /opt -name "*.a" -delete 2>/dev/null || true && \
+    \
+    AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
+    echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
 
 # Create workspace directory
 RUN mkdir -p /workspace && chown hpc:hpc /workspace

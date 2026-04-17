@@ -122,10 +122,14 @@ def infer_image_defaults(app_version: str, template_path: Path | None) -> tuple[
 
 
 def load_env_yaml(template_path: Path | None) -> dict:
-    """Load env.yaml from the same directory as the template (if inside spack-envs/)."""
+    """Load env.yaml from the spack-env-file/ subdirectory or template directory."""
     if not template_path:
         return {}
-    env_yaml = template_path.parent / "env.yaml"
+    # New layout: spack-envs/<env>/Dockerfile.j2 + spack-envs/<env>/spack-env-file/env.yaml
+    env_yaml = template_path.parent / "spack-env-file" / "env.yaml"
+    if not env_yaml.exists():
+        # Fallback: env.yaml alongside template (old layout)
+        env_yaml = template_path.parent / "env.yaml"
     if not env_yaml.exists():
         return {}
     with env_yaml.open("r", encoding="utf-8") as f:
@@ -604,7 +608,10 @@ def _list_available_envs() -> list[str]:
     spack_envs = PROJECT_ROOT / "spack-envs"
     if spack_envs.exists():
         for d in sorted(spack_envs.iterdir()):
-            if d.is_dir() and (d / "env.yaml").exists():
+            if d.is_dir() and (
+                (d / "spack-env-file" / "env.yaml").exists()
+                or (d / "env.yaml").exists()
+            ):
                 envs.append(d.name)
     return envs
 
