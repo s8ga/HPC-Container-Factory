@@ -211,28 +211,29 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate -
 #   librocblas, libhipblas, libhipblaslt, libhipfft, librocfft,
 #   librocsolver, librocroller + kernel data dirs.
 # This reduces the ROCm COPY layer from ~13.3GB to ~5.8GB.
-RUN echo "=== Selective ROCm library export ===" && \
-    ROCM_ARCH="${AMDGPU_TARGETS%%,*}" && \
-    rm -rf /opt/rocm-export && mkdir -p /opt/rocm-export/lib && \
+RUN bash -c 'set -euo pipefail; \
+    echo "=== Selective ROCm library export ==="; \
+    ROCM_ARCH="${AMDGPU_TARGETS%%,*}"; \
+    rm -rf /opt/rocm-export; mkdir -p /opt/rocm-export/lib; \
     for lib in librocblas libhipblas libhipblaslt libhipfft librocfft librocsolver librocroller; do \
         for f in /opt/rocm/lib/${lib}*; do \
             if [[ -e "${f}" ]]; then cp -a "${f}" /opt/rocm-export/lib/; fi; \
         done; \
-    done && \
+    done; \
     if [[ -d /opt/rocm/lib/rocblas/library ]]; then \
-        mkdir -p /opt/rocm-export/lib/rocblas/library && \
-        cp -a /opt/rocm/lib/rocblas/library/*${ROCM_ARCH}* /opt/rocm-export/lib/rocblas/library/ 2>/dev/null || true && \
+        mkdir -p /opt/rocm-export/lib/rocblas/library; \
+        cp -a /opt/rocm/lib/rocblas/library/*${ROCM_ARCH}* /opt/rocm-export/lib/rocblas/library/ 2>/dev/null || true; \
         cp -a /opt/rocm/lib/rocblas/library/TensileLibrary.dat /opt/rocm-export/lib/rocblas/library/ 2>/dev/null || true; \
-    fi && \
+    fi; \
     if [[ -d /opt/rocm/lib/hipblaslt/library ]]; then \
-        mkdir -p /opt/rocm-export/lib/hipblaslt/library && \
+        mkdir -p /opt/rocm-export/lib/hipblaslt/library; \
         cp -a /opt/rocm/lib/hipblaslt/library/*${ROCM_ARCH}* /opt/rocm-export/lib/hipblaslt/library/ 2>/dev/null || true; \
-    fi && \
+    fi; \
     if [[ -d /opt/rocm/lib/rocfft ]]; then \
         cp -a /opt/rocm/lib/rocfft /opt/rocm-export/lib/; \
-    fi && \
-    echo "Exported ROCm libs: $(du -sm /opt/rocm-export/lib/ | cut -f1)MB" && \
-    echo "Files: $(find /opt/rocm-export/lib -type f | wc -l)"
+    fi; \
+    echo "Exported ROCm libs: $(du -sm /opt/rocm-export/lib/ | cut -f1)MB"; \
+    echo "Files: $(find /opt/rocm-export/lib -type f | wc -l)"'
 
 {% if not build_only %}
 # ============================================================================
@@ -277,10 +278,8 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     libstdc++6 \
     libgcc-s1 \
     libnuma1 \
-    nano \
     openssh-client \
     util-linux \
-    screen \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security (before COPY to use --chown)
@@ -322,39 +321,29 @@ RUN { echo "/opt/spack-view/lib"; echo "/opt/rocm/lib"; } > /etc/ld.so.conf.d/cp
 # System gcc/gfortran may be pulled in as recommends of libgfortran5/libstdc++6
 # but are NOT needed at runtime. Safe to purge.
 #
-# Cleanup summary (verified on localhost/cp2k-rocm:2026.1-gfx942):
-#   1. Purge system compiler packages:           ~0 MB  (Ubuntu 24.04 minimal)
-#   2. Remove C/C++/Fortran headers (include/):  ~97 MB
-#   3. Remove Python bytecode cache (__pycache__):  ~273 MB
-#   4. Remove Python test/idle/tkinter:             ~163 MB
-#   5. Remove documentation and man pages:          ~136 MB
-#   5. Remove .spack install metadata:            ~1 MB
-#   6. Remove cmake/pkgconfig build metadata:      ~2 MB
-#   7. Remove static libraries (.a):               ~0 MB
-#   Total saved: ~1,104 MB (from 16,530 MB to 15,426 MB)
+# NOTE: The ROCm runtime base image (rocm/dev-ubuntu-24.04:7.2.1, non-complete)
+# ships gcc-13 (not gcc-14 like stock Ubuntu 24.04). We must purge gcc-13
+# and its dev packages. hipcc/rocm-llvm are build-time tools, not needed at
+# runtime for CP2K (cp2k.psmp does not link them).
 #
 # NOT removed: cp2k/share/cp2k/data/ (basis sets, potentials — runtime needed)
-# NOT removed: /opt/rocm-7.2.1/ (ROCm runtime — 13.8 GB, essential)
+# NOT removed: /opt/rocm-7.2.1/lib/lib*.so (ROCm runtime libs — essential)
 RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
     echo "Before: ${BEFORE}MB" && \
     \
-    echo "--- [1/7] Purging system compiler packages ---" && \
-    apt-get purge -y --auto-remove \
-        gcc-14 gcc-14-x86-64-linux-gnu \
-        gfortran-14 gfortran-14-x86-64-linux-gnu \
-        cpp-14 cpp-14-x86-64-linux-gnu \
-        libgcc-14-dev libgfortran-14-dev \
-        gcc gfortran cpp 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    echo "--- [1/8] Removing system compiler binaries (gcc-13 from ROCm base) ---" && \
+    rm -rf /usr/bin/gcc* /usr/bin/g++* /usr/bin/cpp* /usr/bin/gfortran* 2>/dev/null || true && \
+    rm -rf /usr/lib/gcc 2>/dev/null || true && \
+    rm -rf /usr/libexec/gcc 2>/dev/null || true && \
+    rm -rf /usr/include/c++ 2>/dev/null || true && \
     \
-    echo "--- [2/7] Removing headers (include/) ---" && \
+    echo "--- [2/8] Removing headers (include/) ---" && \
     find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/include && \
     rm -rf /usr/include && \
     \
-    echo "--- [3/7] Removing Python bytecode cache ---" && \
+    echo "--- [3/8] Removing Python bytecode cache ---" && \
     find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     \
     echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
@@ -370,13 +359,23 @@ RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     echo "--- [6/8] Removing .spack metadata ---" && \
     find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
     \
-    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
+    echo "--- [7/8] Removing cmake/pkgconfig and static libs ---" && \
     find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
-    \
-    echo "--- [8/8] Removing static libraries (.a) ---" && \
     find /opt -name "*.a" -delete 2>/dev/null || true && \
+    \
+    echo "--- [8/8] Removing ROCm dev tools and LLVM build artifacts ---" && \
+    rm -rf /opt/rocm-7.2.1/lib/llvm/bin 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/lib/llvm/lib-debug 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/lib/llvm/include 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/lib/llvm/share 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/bin/hipcc 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/bin/hipify* 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/bin/*.sh 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/include 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/lib/cmake 2>/dev/null || true && \
+    rm -rf /opt/rocm-7.2.1/lib/pkgconfig 2>/dev/null || true && \
     \
     AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
     echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
