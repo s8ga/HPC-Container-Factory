@@ -20,6 +20,17 @@
 | `cp2k-opensource-2025.2-force-avx512` | 同上 + 强制 AVX512 kernel | `cp2k-opensource:2025.2-force-avx512` |
 | `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
 
+## ROCm 镜像构建参考
+
+`cp2k-rocm-2026.1-gfx942` 使用 AMD InfinityHub CI 的 ROCm 构建流。构建器镜像为 `rocm/dev-ubuntu-24.04:7.2.1-complete`，运行时镜像为 `rocm/dev-ubuntu-24.04:7.2.1`。
+
+上游参考和本地适配记录见 `spack-envs/cp2k-rocm-2026.1-gfx942/README_SOURCE.md`，主要包括：
+
+- 上游来源：`https://github.com/amd/InfinityHub-CI`，路径 `cp2k/docker/cp2k_environment`
+- 保持 ROCm 7.2.1 兼容性
+- 通过 Spack externals 发现 ROCm / HIP 组件，而不是强制下载 HIP 软件包
+- 使用本地 `cp2k` package.py 扩展 ROCm/DLA-Future 支持
+
 ## 工具要求
 
 ### 必需
