@@ -1,0 +1,57 @@
+From: ELPA force_all_x86_kernel Makefile.in patch
+Subject: [PATCH] Add per-object AVX512 CFLAGS to pre-generated Makefile.in
+
+When autoreconf does not regenerate Makefile.in from Makefile.am, the
+per-object CFLAGS for AVX512 kernel .lo files are missing. This patch
+adds them directly to Makefile.in, inserting AM_CFLAGS += $(AVX512_CFLAGS)
+rules after each AVX512 kernel object declaration.
+
+Used alongside force_all_x86_kernel.patch and force_avx512_configure.patch.
+
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -20474,6 +20474,8 @@
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX2_BLOCK2_KERNEL_TRUE@am__objects_36 = src/elpa2/kernels/real_avx2_2hv_single_precision.lo
+ @WITH_REAL_AVX512_BLOCK2_KERNEL_TRUE@am__objects_37 = src/elpa2/kernels/real_avx512_2hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK2_KERNEL_TRUE@am__objects_38 = src/elpa2/kernels/real_avx512_2hv_single_precision.lo
++@WITH_REAL_AVX512_BLOCK2_KERNEL_TRUE@src/elpa2/kernels/real_avx512_2hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++@WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK2_KERNEL_TRUE@src/elpa2/kernels/real_avx512_2hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
+ @WITH_REAL_SVE128_BLOCK2_KERNEL_TRUE@am__objects_39 = src/elpa2/kernels/real_sve128_2hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_SVE128_BLOCK2_KERNEL_TRUE@am__objects_40 = src/elpa2/kernels/real_sve128_2hv_single_precision.lo
+ @WITH_REAL_SVE256_BLOCK2_KERNEL_TRUE@am__objects_41 = src/elpa2/kernels/real_sve256_2hv_double_precision.lo
+@@ -20493,6 +20495,8 @@
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX2_BLOCK4_KERNEL_TRUE@am__objects_55 = src/elpa2/kernels/real_avx2_4hv_single_precision.lo
+ @WITH_REAL_AVX512_BLOCK4_KERNEL_TRUE@am__objects_56 = src/elpa2/kernels/real_avx512_4hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK4_KERNEL_TRUE@am__objects_57 = src/elpa2/kernels/real_avx512_4hv_single_precision.lo
++@WITH_REAL_AVX512_BLOCK4_KERNEL_TRUE@src/elpa2/kernels/real_avx512_4hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++@WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK4_KERNEL_TRUE@src/elpa2/kernels/real_avx512_4hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
+ @WITH_REAL_SVE128_BLOCK4_KERNEL_TRUE@am__objects_58 = src/elpa2/kernels/real_sve128_4hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_SVE128_BLOCK4_KERNEL_TRUE@am__objects_59 = src/elpa2/kernels/real_sve128_4hv_single_precision.lo
+ @WITH_REAL_SVE256_BLOCK4_KERNEL_TRUE@am__objects_60 = src/elpa2/kernels/real_sve256_4hv_double_precision.lo
+@@ -20512,6 +20516,8 @@
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX2_BLOCK6_KERNEL_TRUE@am__objects_74 = src/elpa2/kernels/real_avx2_6hv_single_precision.lo
+ @WITH_REAL_AVX512_BLOCK6_KERNEL_TRUE@am__objects_75 = src/elpa2/kernels/real_avx512_6hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK6_KERNEL_TRUE@am__objects_76 = src/elpa2/kernels/real_avx512_6hv_single_precision.lo
++@WITH_REAL_AVX512_BLOCK6_KERNEL_TRUE@src/elpa2/kernels/real_avx512_6hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++@WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_AVX512_BLOCK6_KERNEL_TRUE@src/elpa2/kernels/real_avx512_6hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
+ @WITH_REAL_SVE128_BLOCK6_KERNEL_TRUE@am__objects_77 = src/elpa2/kernels/real_sve128_6hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_REAL_TRUE@@WITH_REAL_SVE128_BLOCK6_KERNEL_TRUE@am__objects_78 = src/elpa2/kernels/real_sve128_6hv_single_precision.lo
+ @WITH_REAL_SVE256_BLOCK6_KERNEL_TRUE@am__objects_79 = src/elpa2/kernels/real_sve256_6hv_double_precision.lo
+@@ -20528,6 +20534,8 @@
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX2_BLOCK1_KERNEL_TRUE@am__objects_90 = src/elpa2/kernels/complex_avx2_1hv_single_precision.lo
+ @WITH_COMPLEX_AVX512_BLOCK1_KERNEL_TRUE@am__objects_91 = src/elpa2/kernels/complex_avx512_1hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX512_BLOCK1_KERNEL_TRUE@am__objects_92 = src/elpa2/kernels/complex_avx512_1hv_single_precision.lo
++@WITH_COMPLEX_AVX512_BLOCK1_KERNEL_TRUE@src/elpa2/kernels/complex_avx512_1hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++@WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX512_BLOCK1_KERNEL_TRUE@src/elpa2/kernels/complex_avx512_1hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
+ @WITH_COMPLEX_SVE128_BLOCK1_KERNEL_TRUE@am__objects_93 = src/elpa2/kernels/complex_sve128_1hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_SVE128_BLOCK1_KERNEL_TRUE@am__objects_94 = src/elpa2/kernels/complex_sve128_1hv_single_precision.lo
+ @WITH_COMPLEX_SVE256_BLOCK1_KERNEL_TRUE@am__objects_95 = src/elpa2/kernels/complex_sve256_1hv_double_precision.lo
+@@ -20544,6 +20552,8 @@
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX2_BLOCK2_KERNEL_TRUE@am__objects_106 = src/elpa2/kernels/complex_avx2_2hv_single_precision.lo
+ @WITH_COMPLEX_AVX512_BLOCK2_KERNEL_TRUE@am__objects_107 = src/elpa2/kernels/complex_avx512_2hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX512_BLOCK2_KERNEL_TRUE@am__objects_108 = src/elpa2/kernels/complex_avx512_2hv_single_precision.lo
++@WITH_COMPLEX_AVX512_BLOCK2_KERNEL_TRUE@src/elpa2/kernels/complex_avx512_2hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++@WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_AVX512_BLOCK2_KERNEL_TRUE@src/elpa2/kernels/complex_avx512_2hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
+ @WITH_COMPLEX_SVE128_BLOCK2_KERNEL_TRUE@am__objects_109 = src/elpa2/kernels/complex_sve128_2hv_double_precision.lo
+ @WANT_SINGLE_PRECISION_COMPLEX_TRUE@@WITH_COMPLEX_SVE128_BLOCK2_KERNEL_TRUE@am__objects_110 = src/elpa2/kernels/complex_sve128_2hv_single_precision.lo
+ @WITH_COMPLEX_SVE256_BLOCK2_KERNEL_TRUE@am__objects_111 = src/elpa2/kernels/complex_sve256_2hv_double_precision.lo

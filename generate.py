@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Unified CLI for Dockerfile generation and offline asset preparation.
 
-Main commands:
-  - dockerfile: render Dockerfile from Jinja2 template
-  - build: render + build image
-  - assets: prepare bootstrap/mirror assets and mirror worker container
-
-Legacy compatibility:
-  Existing flag-only usage is still supported, e.g.:
-    python generate.py --output Dockerfile --dry-run
+Commands:
+  dockerfile       render Dockerfile from Jinja2 template
+  build            render + build image
+  build-sif        convert OCI image to Apptainer SIF
+  pack-apptainer   pack apptainer into portable self-extracting archive
+  assets           prepare bootstrap/mirror assets
 """
 
 from __future__ import annotations
@@ -40,14 +38,101 @@ PROJECT_ROOT = Path(__file__).parent.absolute()
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+TOOLS_DIR = PROJECT_ROOT / "tools"
 MIRROR_SCRIPT = SCRIPTS_DIR / "build-mirror-in-container.sh"
 PREPARE_BOOTSTRAP_SCRIPT = SCRIPTS_DIR / "prepare-bootstrap-cache.sh"
+APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"
+APPTAINER_LOCAL_PREFIX = TOOLS_DIR / "apptainer"
 
-SUBCOMMANDS = {"dockerfile", "build", "assets"}
 
 
 def check_command_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
+
+
+def find_apptainer() -> str:
+    """Return the apptainer (or singularity) binary path.
+
+    Search order:
+      1. Locally installed under tools/apptainer/bin/
+      2. System PATH (apptainer, then singularity)
+    """
+    # 1. Local install
+    local_bin = APPTAINER_LOCAL_PREFIX / "bin" / "apptainer"
+    if local_bin.exists() and os.access(local_bin, os.X_OK):
+        return str(local_bin)
+    # 2. System
+    for cmd in ("apptainer", "singularity"):
+        path = shutil.which(cmd)
+        if path:
+            return path
+    return ""
+
+
+def ensure_apptainer() -> str:
+    """Ensure apptainer is available; install if missing.
+
+    Always downloads install-unprivileged.sh from the upstream URL to ensure
+    the latest version is used.  Checks for required host commands (curl,
+    rpm2cpio, cpio) and prompts the user before proceeding with the
+    installation.
+
+    Uses tools/install-unprivileged.sh to install into tools/apptainer/.
+    """
+    apptainer = find_apptainer()
+    if apptainer:
+        logger.info("Found apptainer: %s", apptainer)
+        return apptainer
+
+    # Check required host commands first
+    required_cmds = ["curl", "rpm2cpio", "cpio"]
+    missing = [cmd for cmd in required_cmds if not check_command_exists(cmd)]
+    if missing:
+        hint = "apt-get install -y " + " ".join(missing)
+        raise RuntimeError(
+            f"Missing required command(s): {', '.join(missing)}\n"
+            f"Install them first, e.g.:\n"
+            f"  sudo {hint}"
+        )
+
+    # Always download the latest install script from upstream
+    install_url = (
+        "https://raw.githubusercontent.com/apptainer/apptainer"
+        "/main/tools/install-unprivileged.sh"
+    )
+    logger.info("Downloading install-unprivileged.sh from upstream ...")
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["curl", "-fsSL", "-o", str(APPTAINER_INSTALL_SCRIPT), install_url],
+        check=True,
+    )
+    APPTAINER_INSTALL_SCRIPT.chmod(0o755)
+
+    # Prompt user before installing
+    logger.info(
+        "apptainer not found. Will install (unprivileged) to: %s",
+        APPTAINER_LOCAL_PREFIX,
+    )
+    try:
+        answer = input("Proceed with installation? [y/N] ").strip().lower()
+    except EOFError:
+        answer = "n"
+    if answer not in ("y", "yes"):
+        raise RuntimeError("apptainer installation cancelled by user")
+
+    APPTAINER_LOCAL_PREFIX.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["bash", str(APPTAINER_INSTALL_SCRIPT), str(APPTAINER_LOCAL_PREFIX)],
+        check=True,
+    )
+
+    apptainer = find_apptainer()
+    if not apptainer:
+        raise RuntimeError(
+            f"apptainer installation failed — binary not found in {APPTAINER_LOCAL_PREFIX}/bin/"
+        )
+    logger.info("✅ apptainer installed: %s", apptainer)
+    return apptainer
 
 
 def run_cmd(
@@ -106,17 +191,33 @@ def infer_image_defaults(app_version: str, template_path: Path | None) -> tuple[
     template_name = template_path.name.lower() if template_path else ""
     variant_hint = f"{appv} {template_name}"
 
-    # Prefer version from template file name when available, fallback to app-version token.
-    version = extract_version_token(template_name) or extract_version_token(appv) or "latest"
+    # For spack-envs layout (spack-envs/<env-dir>/Dockerfile.j2), derive tag
+    # from the directory name by stripping the known app prefix.
+    # This preserves variant suffixes like "-force-avx512".
+    # Example: cp2k-opensource-2025.2-force-avx512 → tag = 2025.2-force-avx512
+    #          cp2k-rocm-2026.1-gfx942         → tag = 2026.1-<gpu_arch>
+    env_dir_name = template_path.parent.name.lower() if template_path else ""
 
     if "rocm" in variant_hint:
         arch = detect_gpu_arch_from_template(template_path) or "gfx942"
-        if version == "latest":
-            return "cp2k-rocm", arch
-        return "cp2k-rocm", f"{version}-{arch}"
+        # Prefer full tag from directory name (e.g. "2026.1-gfx942")
+        rocm_prefix = "cp2k-rocm-"
+        if env_dir_name.startswith(rocm_prefix):
+            tag = env_dir_name[len(rocm_prefix):]
+            # Replace gpu arch placeholder with detected arch if needed
+            tag = re.sub(r"gfx\w+$", arch, tag)
+        else:
+            version = extract_version_token(template_name) or extract_version_token(appv) or "latest"
+            tag = f"{version}-{arch}" if version != "latest" else arch
+        return "cp2k-rocm", tag
 
     if "opensource" in variant_hint:
-        return "cp2k-opensource", version
+        oss_prefix = "cp2k-opensource-"
+        if env_dir_name.startswith(oss_prefix):
+            tag = env_dir_name[len(oss_prefix):]
+        else:
+            tag = extract_version_token(template_name) or extract_version_token(appv) or "latest"
+        return "cp2k-opensource", tag
 
     return "hpc-cp2k", "latest"
 
@@ -356,6 +457,268 @@ def build_apptainer(*, definition_file: Path, image: str, tag: str) -> None:
     output_image = f"{image}_{tag}.sif"
     cmd = [tool, "build", "--force", "--fakeroot", output_image, str(definition_file)]
     run_cmd(cmd)
+
+
+def _human_size(n_bytes: int) -> str:
+    """Return a human-readable file size string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n_bytes) < 1024:
+            return f"{n_bytes:.0f} {unit}"
+        n_bytes /= 1024
+    return f"{n_bytes:.0f} TB"
+
+
+def _find_def_template(app_version: str) -> Path | None:
+    """Look for a cp2k.def.j2 in the spack-envs/<app_version>/ directory."""
+    env_dir = PROJECT_ROOT / "spack-envs" / app_version
+    candidate = env_dir / "cp2k.def.j2"
+    return candidate if candidate.exists() else None
+
+
+def _get_apptainer_version() -> str:
+    """Extract version string from the locally installed apptainer."""
+    apptainer = find_apptainer()
+    if not apptainer:
+        return "unknown"
+    try:
+        result = subprocess.run(
+            [apptainer, "--version"],
+            capture_output=True, text=True, check=True,
+        )
+        # Output is like "apptainer 1.4.5-3.el8" or just "1.4.5"
+        ver = result.stdout.strip()
+        # Take last space-separated field if there are multiple
+        return ver.rsplit(" ", 1)[-1] if " " in ver else ver
+    except Exception:
+        return "unknown"
+
+
+def pack_apptainer(
+    *,
+    output: Path | None = None,
+    no_sha256: bool = False,
+) -> None:
+    """Pack local apptainer installation into a makeself self-extracting archive.
+
+    Creates a portable ``.run`` file that bundles:
+      - ``apptainer/`` directory (from ``tools/apptainer/``)
+      - ``activate-apptainer.sh`` (from ``scripts/activate-apptainer.sh``)
+
+    Uses gzip compression for maximum portability (gzip is available on every
+    Linux system, unlike zstd which may not be installed on target HPC clusters).
+
+    After extracting on a target machine, users just need to::
+
+        source ./activate-apptainer.sh
+        apptainer shell /path/to/image.sif
+
+    Args:
+        output: Output ``.run`` file path. Defaults to
+            ``artifacts/apptainer-<version>-<arch>.run``.
+        no_sha256: Skip SHA256 checksum if True.
+    """
+    # ── Pre-flight checks ────────────────────────────────────────────────
+    if not APPTAINER_LOCAL_PREFIX.exists():
+        raise RuntimeError(
+            f"Local apptainer not found at {APPTAINER_LOCAL_PREFIX}. "
+            "Run 'python generate.py build-sif --install-apptainer-only' first."
+        )
+
+    if not check_command_exists("makeself"):
+        raise RuntimeError(
+            "makeself not found. Install it first:\n"
+            "  sudo apt install makeself    # Debian/Ubuntu\n"
+            "  sudo dnf install makeself    # RHEL/Fedora"
+        )
+
+    activate_script = SCRIPTS_DIR / "activate-apptainer.sh"
+    if not activate_script.exists():
+        raise FileNotFoundError(f"activate-apptainer.sh not found at {activate_script}")
+
+    # ── Determine output path ────────────────────────────────────────────
+    artifacts_dir = PROJECT_ROOT / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    apptainer_ver = _get_apptainer_version()
+    arch = os.uname().machine  # e.g. x86_64, aarch64
+    default_name = f"apptainer-{apptainer_ver}-{arch}.run"
+    output_path = output or artifacts_dir / default_name
+
+    # ── Prepare staging directory in artifacts/ ──────────────────────────
+    # makeself uses the staging directory name as the extraction subdirectory.
+    # Use a clean name so the user gets: <target>/apptainer-bundle/
+    staging_dir = artifacts_dir / f"apptainer-bundle"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+
+    try:
+        staging_dir.mkdir(parents=True)
+
+        # Use a clean directory name that will appear in the extracted archive
+        staging_apptainer = staging_dir / "apptainer"
+        logger.info("Copying %s → %s ...", APPTAINER_LOCAL_PREFIX, staging_apptainer)
+        shutil.copytree(APPTAINER_LOCAL_PREFIX, staging_apptainer, symlinks=True)
+
+        # Copy activate script into staging root
+        shutil.copy2(activate_script, staging_dir / "activate-apptainer.sh")
+        os.chmod(staging_dir / "activate-apptainer.sh", 0o755)
+
+        # Compute uncompressed size
+        total_size = sum(f.stat().st_size for f in staging_dir.rglob("*") if f.is_file())
+        logger.info("Staging directory: %s (%s)", staging_dir, _human_size(total_size))
+
+        # ── Build makeself command ───────────────────────────────────────
+        # Use gzip (not zstd) for maximum portability — gzip is available on
+        # every Linux system, while zstd may not be installed on target HPC
+        # clusters.  The size difference (~35 MB vs ~58 MB) is acceptable.
+        cmd = [
+            "makeself",
+            "--notemp",
+            "--gzip",
+            "--complevel", "9",
+            "--tar-quietly",
+            "--noprogress",
+        ]
+        if not no_sha256:
+            cmd.append("--sha256")
+        cmd += [
+            str(staging_dir),
+            str(output_path),
+            f"Apptainer {apptainer_ver} ({arch})",
+            "./activate-apptainer.sh",
+        ]
+
+        logger.info("Running makeself (gzip -9) ...")
+        run_cmd(cmd)
+
+        result_size = _human_size(output_path.stat().st_size)
+        logger.info("✅ Packed: %s (%s, %.1fx compression)",
+                     output_path, result_size, total_size / output_path.stat().st_size)
+
+    finally:
+        # Always clean up staging directory
+        if staging_dir.exists():
+            logger.info("Cleaning up staging directory: %s", staging_dir)
+            shutil.rmtree(staging_dir)
+
+
+def build_sif(
+    *,
+    docker_image: str,
+    docker_tag: str,
+    output: Path | None = None,
+    app_version: str | None = None,
+) -> None:
+    """Build a SIF image from an existing Docker/Podman OCI image.
+
+    Workflow:
+      1. Ensure apptainer is available (install if needed).
+      2. Export the OCI image as a tar to ``artifacts/``.
+      3. Render ``cp2k.def.j2`` template (if available) or generate a minimal
+         def file that uses ``Bootstrap: docker-archive``.
+      4. Run ``apptainer build`` to produce the SIF in ``artifacts/``.
+
+    Args:
+        docker_image: OCI image name (e.g. 'cp2k-opensource').
+        docker_tag: OCI image tag (e.g. '2025.2-force-avx512').
+        output: Output SIF path. Defaults to ``artifacts/<image>_<tag>.sif``.
+        app_version: Environment name (e.g. 'cp2k-opensource-2025.2-force-avx512')
+                     used to locate a ``cp2k.def.j2`` template.
+    """
+    apptainer = ensure_apptainer()
+    artifacts_dir = PROJECT_ROOT / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Step 1: Export OCI image to tar ──────────────────────────────────
+    oci_ref = f"{docker_image}:{docker_tag}"
+    tar_name = f"{docker_image}_{docker_tag}.tar"
+    tar_path = artifacts_dir / tar_name
+
+    # Detect available container engine for export
+    engine = None
+    for cmd in ("podman", "docker"):
+        if check_command_exists(cmd):
+            engine = cmd
+            break
+    if not engine:
+        raise RuntimeError(
+            "Neither podman nor docker found. "
+            "Install one to export OCI images for SIF conversion."
+        )
+
+    if tar_path.exists():
+        logger.info("Reusing existing OCI tar: %s", tar_path)
+    else:
+        logger.info("Exporting %s via %s ...", oci_ref, engine)
+        run_cmd([engine, "save", "-o", str(tar_path), oci_ref])
+
+    tar_size = _human_size(tar_path.stat().st_size)
+    logger.info("OCI tar: %s (%s)", tar_path, tar_size)
+
+    # ── Step 2: Render definition file ───────────────────────────────────
+    def_template = _find_def_template(app_version) if app_version else None
+
+    # Build context for Jinja2 rendering
+    timestamp = datetime.now().isoformat()
+    resolved_template = None
+    if app_version:
+        try:
+            resolved_template = select_template("cp2k", app_version, None)
+        except FileNotFoundError:
+            pass
+    default_image_name, default_image_tag = infer_image_defaults(
+        app_version or docker_tag, resolved_template
+    )
+
+    def_context = {
+        "docker_tar_filename": tar_name,
+        "default_image_name": default_image_name,
+        "default_image_tag": default_image_tag,
+        "timestamp": timestamp,
+    }
+
+    if def_template:
+        logger.info("Rendering def template: %s", def_template)
+        def_content = render_template(def_template, def_context)
+    else:
+        # Fallback: minimal def file with MOTD via SINGULARITY_SHELL wrapper.
+        # apptainer shell uses "bash --norc" which skips BASH_ENV, /etc/bash.bashrc,
+        # and ~/.bashrc. The only hook is SINGULARITY_SHELL: if set and executable,
+        # the shell action exec's it instead of "bash --norc".
+        def_content = (
+            f"Bootstrap: docker-archive\n"
+            f"From: {tar_name}\n"
+            f"\n"
+            f"%environment\n"
+            f"    export SINGULARITY_SHELL=/usr/local/bin/hpc-shell-wrapper.sh\n"
+            f"\n"
+            f"%post\n"
+            f"    cat > /usr/local/bin/hpc-shell-wrapper.sh <<'WRAPPER_EOF'\n"
+            f"#!/bin/bash\n"
+            f'    if [ "${{APPTAINER_COMMAND:-}}" = "shell" ]; then\n'
+            f"        /usr/local/bin/hpc-motd.sh 2>/dev/null || true\n"
+            f"    fi\n"
+            f'    exec /bin/bash --norc "$@"\n'
+            f"WRAPPER_EOF\n"
+            f"    chmod 755 /usr/local/bin/hpc-shell-wrapper.sh\n"
+        )
+        logger.info("Using auto-generated minimal def file")
+
+    def_file = artifacts_dir / f"{docker_image}_{docker_tag}.def"
+    def_file.write_text(def_content, encoding="utf-8")
+    logger.info("Definition file written: %s", def_file)
+
+    # ── Step 3: Build SIF ────────────────────────────────────────────────
+    sif_name = output or artifacts_dir / f"{docker_image}_{docker_tag}.sif"
+
+    try:
+        cmd = [apptainer, "build", "--force", str(sif_name), str(def_file)]
+        run_cmd(cmd, cwd=artifacts_dir)
+        sif_size = _human_size(Path(sif_name).stat().st_size)
+        logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
+    finally:
+        # Keep def file for reference (user can inspect / debug)
+        pass
 
 
 def mirror_env(base_env: dict[str, str], args: argparse.Namespace) -> dict[str, str]:
@@ -705,6 +1068,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  python generate.py assets --env cp2k-rocm-2026.1-gfx942\n"
             "  python generate.py assets --create-container\n"
             "  python generate.py assets --env cp2k-rocm-2026.1-gfx942 --download-mirror\n"
+            "  python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512\n"
+            "  python generate.py build-sif --install-apptainer-only\n"
+            "  python generate.py pack-apptainer\n"
         ),
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logs")
@@ -762,6 +1128,64 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_assets_options(assets_parser)
 
+    pack_apptainer_parser = subparsers.add_parser(
+        "pack-apptainer",
+        help="Pack local apptainer into a makeself self-extracting archive",
+    )
+    pack_apptainer_parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        help=(
+            "Output .run file path "
+            "(default: artifacts/apptainer-<version>-<arch>.run)"
+        ),
+    )
+    pack_apptainer_parser.add_argument(
+        "--no-sha256",
+        action="store_true",
+        help="Skip SHA256 checksum (faster)",
+    )
+
+    build_sif_parser = subparsers.add_parser(
+        "build-sif",
+        help="Convert Docker/Podman OCI image to Apptainer SIF",
+    )
+    build_sif_parser.add_argument(
+        "--docker-image",
+        default=None,
+        help="OCI image name (default: auto-detect from --app-version)",
+    )
+    build_sif_parser.add_argument(
+        "--docker-tag",
+        default=None,
+        help="OCI image tag (default: auto-detect from --app-version)",
+    )
+    build_sif_parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        help="Output SIF file path (default: <image>_<tag>.sif)",
+    )
+    build_sif_parser.add_argument(
+        "--app",
+        choices=["cp2k"],
+        default="cp2k",
+        help="Application type (for auto image/tag detection)",
+    )
+    build_sif_parser.add_argument(
+        "--app-version",
+        default=None,
+        nargs="?",
+        const="__LIST__",
+        help="Application version for auto image/tag detection",
+    )
+    build_sif_parser.add_argument(
+        "--install-apptainer-only",
+        action="store_true",
+        help="Only install apptainer, do not build SIF",
+    )
+
     return parser
 
 
@@ -772,7 +1196,60 @@ def run_new_cli(argv: list[str]) -> int:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
-    # Handle --app-version without value → list available versions
+    # ── pack-apptainer: does not need config/template/mirror ──
+    if args.command == "pack-apptainer":
+        pack_apptainer(
+            output=getattr(args, "output", None),
+            no_sha256=getattr(args, "no_sha256", False),
+        )
+        return 0
+
+    # ── build-sif: does not need config/template/mirror ──
+    if args.command == "build-sif":
+        # --app-version without value → list available versions
+        if getattr(args, "app_version", None) == "__LIST__":
+            available_versions = _extract_available_versions()
+            print("Available --app-version values:")
+            for v in available_versions:
+                print(f"  {v}")
+            return 0
+
+        # Install-only mode
+        if getattr(args, "install_apptainer_only", False):
+            apptainer_path = ensure_apptainer()
+            print(f"apptainer installed: {apptainer_path}")
+            return 0
+
+        # Resolve OCI image name and tag
+        docker_image = args.docker_image
+        docker_tag = args.docker_tag
+
+        if not docker_image or not docker_tag:
+            if not getattr(args, "app_version", None):
+                logger.error(
+                    "Specify --docker-image and --docker-tag, "
+                    "or --app-version for auto-detection."
+                )
+                return 1
+            # Resolve template just for image/tag inference
+            try:
+                resolved_template = select_template(args.app, args.app_version, None)
+            except FileNotFoundError:
+                resolved_template = None
+            auto_image, auto_tag = infer_image_defaults(args.app_version, resolved_template)
+            docker_image = docker_image or auto_image
+            docker_tag = docker_tag or auto_tag
+
+        build_sif(
+            docker_image=docker_image,
+            docker_tag=docker_tag,
+            output=args.output,
+            app_version=getattr(args, "app_version", None),
+        )
+        logger.info("Done")
+        return 0
+
+    # ── Handle --app-version without value → list available versions ──
     if getattr(args, "app_version", None) == "__LIST__":
         available_versions = _extract_available_versions()
         print("Available --app-version values:")
@@ -852,81 +1329,6 @@ def run_new_cli(argv: list[str]) -> int:
     return 1
 
 
-def build_legacy_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Legacy generate.py compatibility mode",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    add_template_options(parser)
-
-    parser.add_argument("--build", action="store_true", help="Build image after generating Dockerfile")
-    parser.add_argument(
-        "--builder",
-        choices=["docker", "apptainer"],
-        default="docker",
-        help="Legacy build engine option",
-    )
-    parser.add_argument(
-        "--image",
-        default=None,
-        help="Image name (default auto by variant)",
-    )
-    parser.add_argument(
-        "--tag",
-        default=None,
-        help="Image tag (default auto by variant)",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Generate only, skip build")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logs")
-    return parser
-
-
-def run_legacy_cli(argv: list[str]) -> int:
-    parser = build_legacy_parser()
-    args = parser.parse_args(argv)
-
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-
-    resolved_image, resolved_tag = resolve_image_and_tag(
-        app_version=args.app_version,
-        template=args.template,
-        app=args.app,
-        image_arg=args.image,
-        tag_arg=args.tag,
-    )
-
-    dockerfile = generate_dockerfile(
-        config_path=args.config,
-        template=args.template,
-        app=args.app,
-        app_version=args.app_version,
-        output=args.output,
-        use_mirror=args.mirror,
-        build_only=args.build_only,
-    )
-
-    if args.build and not args.dry_run:
-        if args.builder == "apptainer":
-            logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
-            build_apptainer(definition_file=dockerfile, image=resolved_image, tag=resolved_tag)
-        else:
-            logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
-            build_docker_like(
-                dockerfile=dockerfile,
-                image=resolved_image,
-                tag=resolved_tag,
-                engine="docker",
-                network_host=False,
-            )
-    else:
-        logger.info("Next: podman build -f %s -t %s:%s .", args.output, resolved_image, resolved_tag)
-
-    logger.info("Done")
-    return 0
-
-
 def main() -> None:
     argv = sys.argv[1:]
     if not argv:
@@ -936,15 +1338,12 @@ def main() -> None:
         print("  python generate.py dockerfile --app-version rocm-2026.1-gfx942")
         print("  python generate.py build --app-version rocm-2026.1-gfx942")
         print("  python generate.py assets --env cp2k-rocm-2026.1-gfx942")
-        print("\nLegacy mode is still supported:")
-        print("  python generate.py --output Dockerfile --dry-run")
+        print("  python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512")
+        print("  python generate.py pack-apptainer")
         sys.exit(0)
 
     try:
-        if argv and argv[0] in SUBCOMMANDS:
-            code = run_new_cli(argv)
-        else:
-            code = run_legacy_cli(argv)
+        code = run_new_cli(argv)
     except (FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         logger.error(str(exc))
         sys.exit(1)

@@ -1,49 +1,92 @@
-# HPC-Container-Factory 文档总览
+# 文档总览
 
-本目录文档已按当前仓库代码状态重建，目标是：
-- 只保留可验证的信息
-- 明确哪些路径可直接使用
-- 显式记录当前已知不一致点
+HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../README.md)、[../QUICKSTART.md](../QUICKSTART.md)。
 
-## 项目定位
+## 核心文档
 
-HPC-Container-Factory 是一个面向 HPC 软件栈的容器构建工厂，核心能力是：
-- 用 Jinja2 模板生成多阶段 Dockerfile
-- 用 Spack 环境定义依赖
-- 用本地 assets 提供离线构建支持（bootstrap、mirror、源码与工具链）
-- 通用化的容器化 mirror 构建系统，支持任意 `spack-envs/` 下的环境
-- 当前活跃路线为 CP2K opensource
+| 文档 | 说明 |
+|------|------|
+| [快速开始](QUICK_START.md) | 5 步完成构建（Dockerfile → 镜像 → SIF） |
+| [CLI 用法](GENERATE_CLI.md) | `generate.py` 全部子命令与参数 |
+| [离线资源](ASSETS_GUIDE.md) | bootstrap + mirror 容器化构建流程 |
+| [SIF 构建](BUILD_SIF.md) | Apptainer SIF 转换、MOTD 技术方案 |
+| [模板矩阵](TEMPLATE_MATRIX.md) | 环境 ↔ 模板映射表 |
+| [新建环境](ADD_NEW_ENV.md) | 8 步添加新 Spack 环境 |
+| [已知问题](KNOWN_ISSUES.md) | 当前 issue 跟踪 |
 
-历史路线（VASP、CP2K MKL）已迁移至 legacy 目录归档。
+## 架构
 
-关键入口：
-- 生成与构建入口: ../generate.py
-- 资产初始化入口: ../scripts/init_assets_v2.py
-- 容器化 mirror 构建: ../scripts/build-mirror-in-container.sh
+### 项目结构
 
-构建系统三层架构：
-- 调度器: `scripts/build-mirror-in-container.sh` — 宿主机上运行，管理容器生命周期
-- 通用函数库: `scripts/spack-common.sh` — spack bootstrap / mirror create / mirror verify
-- Per-env 流水线: `spack-envs/<env>/streamline.sh` — 配置驱动，声明包管理器、系统包、自定义仓库
+```
+.
+├── generate.py              # 统一 CLI 入口
+├── activate.sh              # 激活开发环境
+├── requirements.txt         # Python 依赖 (jinja2, pyyaml)
+├── configs/versions.yaml    # 全局配置
+├── spack-envs/              # 每个环境自包含
+│   └── <env>/
+│       ├── Dockerfile.j2    # 镜像模板
+│       ├── cp2k.def.j2      # (可选) SIF 定义模板
+│       └── spack-env-file/
+│           ├── env.yaml     # Single source of truth
+│           ├── spack.yaml
+│           └── streamline.sh
+├── scripts/                 # 构建、mirror、激活脚本
+├── templates/               # Legacy 模板回退
+├── assets/                  # 离线资源
+├── artifacts/               # 构建产物
+├── tools/                   # 本地工具 (apptainer)
+└── legacy/                  # 归档
+```
 
-## 文档导航
+### 每个环境自包含
 
-- 快速开始: ./QUICK_START.md
-- generate.py 参数与用法: ./GENERATE_CLI.md
-- assets 与离线资源说明: ./ASSETS_GUIDE.md
-- 模板与环境映射矩阵: ./TEMPLATE_MATRIX.md
-- 当前已知问题与规避方式: ./KNOWN_ISSUES.md
+`spack-envs/<env>/` 包含构建所需的一切：
 
-## 当前推荐路径
+```
+spack-envs/<env>/
+  ├── Dockerfile.j2       ← 最终镜像模板
+  ├── cp2k.def.j2         ← (可选) SIF 定义模板
+  └── spack-env-file/
+      ├── env.yaml        ← Single source of truth
+      ├── spack.yaml      ← Spack 包定义
+      ├── spack.lock      ← concretize 产出
+      ├── streamline.sh   ← mirror pipeline 入口（~15 行，逻辑在 spack-common.sh）
+      └── repos/          ← (可选) 自定义 Spack repo
+```
 
-当前最稳定、可直接走通的是 CP2K opensource 模板的显式生成流程：
+### Mirror 构建三层架构
 
-1. 激活虚拟环境
-2. 显式指定模板生成 Dockerfile
-3. 用 docker 或 podman 构建
+```
+scripts/build-mirror-in-container.sh    调度器（宿主机）
+    ↓ podman run ... bash streamline.sh
+spack-envs/<env>/spack-env-file/streamline.sh   Per-env 入口（~15 行）
+    ↓ source spack-common.sh
+scripts/spack-common.sh    通用函数库（所有环境共享）
+```
 
-示例见 ./QUICK_START.md。
+**设计原则**：
+- `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像，不含系统包或 pipeline 逻辑
+- 系统包在运行时由 `streamline.sh` 从 `env.yaml` 读取后安装
+- 每个 env 的差异完全由 `env.yaml` 驱动
 
-## 说明
+## 当前环境
 
-本次文档清理后，历史阶段性报告、重复说明和与当前代码不一致的文档均已移除。
+| `--app-version` | 说明 | 自动镜像名 |
+|------|------|-----------|
+| `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k-opensource:2025.2` |
+| `cp2k-opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel | `cp2k-opensource:2025.2-force-avx512` |
+| `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
+
+## Build Notes 与专题文档（开发参考）
+
+以下文档为构建过程记录，不做常规更新：
+
+- [`BUILD_NOTE/`](BUILD_NOTE/) — CP2K 各版本构建日志
+- [`cp2k/`](cp2k/) — CP2K 特定文档与 InfinityHub 方案
+- [`force_all_x86_kernel/`](force_all_x86_kernel/) — AVX512 强制编译 patch
+
+## 归档
+
+历史路线（VASP、CP2K MKL）已迁移至 `legacy/` 目录。

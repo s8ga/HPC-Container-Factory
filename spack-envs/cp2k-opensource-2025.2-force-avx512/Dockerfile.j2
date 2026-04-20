@@ -1,11 +1,8 @@
-# Multi-stage Dockerfile for CP2K 2026.1 with ROCm gfx942 + Spack
+# Multi-stage Dockerfile for CP2K + Opensource BLAS 2025.2 with Spack
 # BUILD REQUIREMENTS:
 # - assets/ directory with spack-v1.1.0.tar.gz, bootstrap-cache, spack-mirror (optional)
-# - spack-envs/cp2k-rocm-2026.1-gfx942 with spack.yaml and spack.lock
+# - spack-envs/cp2k-opensource-2025.2-force-avx512/spack-env-file with spack.yaml and spack.lock
 #
-# Self-contained template: base images come from env.yaml via generate.py.
-# {{ builder_base_image }} and {{ runtime_base_image }} are injected from
-# spack-envs/cp2k-rocm-2026.1-gfx942/env.yaml → images.builder / images.runtime.
 #
 # NOTE: 不要修改各 stage 内的 RUN 步骤，否则会破坏构建缓存。
 
@@ -13,30 +10,24 @@ ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
 # ============================================================================
-# STAGE 1: BUILDER - CP2K + ROCm compilation environment
+# STAGE 1: BUILDER - CP2K compilation environment
 # ============================================================================
 FROM {{ builder_base_image }} AS builder
 
 LABEL stage="builder" \
-      description="Builder stage: Compiles CP2K 2026.1 with ROCm gfx942 via Spack" \
-      maintainer="s8ga" \
-      upstream_repo="https://github.com/amd/InfinityHub-CI" \
-      upstream_component="cp2k/docker/cp2k_environment"
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Build arguments for GPU target and parallelism (kept for flexibility).
-ARG AMDGPU_TARGETS="gfx942"
-ARG SPACK_MAKE_JOBS=0
+      description="Builder stage: Compiles CP2K 2025.2 with Spack" \
+      maintainer="s8ga"
 
 # ============================================================================
-# BUILDER BASE - Common initialization
+# BUILDER BASE - Common initialization (inlined from former Dockerfile-base.j2)
 # ============================================================================
 
 # Configure APT mirrors to use USTC (中科大) for faster downloads in China
-# Note: Ubuntu uses .sources format in /etc/apt/sources.list.d/
-RUN sed -i 's|//.*archive.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|//security.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+# This significantly speeds up apt-get operations in containers
+# Note: Debian Trixie uses .sources format in /etc/apt/sources.list.d/
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
 
 # System dependencies for Spack and compilation
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
@@ -48,12 +39,9 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     gfortran \
     git \
     openssh-client \
-    openssh-server \
     pkg-config \
     unzip \
     wget \
-    rsync \
-    nano \
     cmake \
     file \
     automake \
@@ -63,13 +51,12 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     zstd \
     ninja-build \
     patch \
+    patchelf \
     pkgconf \
     libtool-bin \
-    lsb-release \
     python3 \
     python3-pip \
     python3-venv \
-    binutils \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt
 
@@ -115,13 +102,14 @@ RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readon
 RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
 
 # ============================================================================
-# CP2K-SPECIFIC BUILD (ROCm)
+# CP2K-SPECIFIC BUILD
 # ============================================================================
 
 # Fetch CP2K source — only the directories needed for regtesting.
 # Uses sparse checkout to avoid downloading the full ~1GB+ repo.
 # The actual build comes from spack (source mirror), not this clone.
-RUN git clone --filter=blob:none --no-checkout -b v2026.1 \
+
+RUN git clone --filter=blob:none --no-checkout -b support/v2025.2 \
         https://github.com/cp2k/cp2k.git /opt/cp2k && \
     cd /opt/cp2k && \
     git sparse-checkout init --cone && \
@@ -130,7 +118,7 @@ RUN git clone --filter=blob:none --no-checkout -b v2026.1 \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
 # Prepare the spack environment + configuration
-COPY spack-envs/cp2k-rocm-2026.1-gfx942/spack-env-file /opt/spack-env-file
+COPY spack-envs/cp2k-opensource-2025.2-force-avx512/spack-env-file /opt/spack-env-file
 
 # Create env, then import lock/config/repos from source directory.
 RUN /bin/bash -c 'set -euo pipefail; \
@@ -142,7 +130,7 @@ RUN /bin/bash -c 'set -euo pipefail; \
         echo "No spack.lock provided; install step will concretize"; \
     fi'
 
-# Find all compilers + all external packages (discovers ROCm 7.2.1 from base image)
+# Find all compilers + all external packages
 RUN spack compiler find && \
     spack external find --all --not-buildable
 
@@ -153,11 +141,9 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     spack repo add --scope site /opt/spack-env-file/repos/ && \
     spack -e cp2k-env repo ls
 
-# ROCm 7.x compatibility for BLT FindHIP.cmake.
-RUN ln -sf /opt/rocm /opt/rocm/hip
-
-# Special Fix for compile OpenMPI@5.0.8
+# Special Fix for compile Openmp@5.0.8
 # checking for zlib library (z) in /usr... not found
+
 RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
 
 RUN {% if use_mirror %}
@@ -191,9 +177,8 @@ RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
 # ----------------------------------------------------------------------------
 # STEP: Build manifest
 # ----------------------------------------------------------------------------
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate --sh > /tmp/env.sh && \
-    . /tmp/env.sh && \
-    { echo "=== CP2K 2026.1 ROCm Build Manifest ==="; \
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    { echo "=== CP2K 2025.2 Build Manifest ==="; \
       echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
       echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
@@ -201,73 +186,40 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate -
     spack -e cp2k-env graph --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
 
-# ----------------------------------------------------------------------------
-# STEP: Selective ROCm compute library export
-# ----------------------------------------------------------------------------
-# The runtime base image (rocm/dev-ubuntu-24.04:7.2.1, non-complete) already
-# includes core ROCm runtime libs: libamdhip64, libamd_comgr, libhiprtc,
-# libhsa-runtime64, librocprofiler-register, libroctx64.
-# We only need to copy the compute libraries that are absent in non-complete:
-#   librocblas, libhipblas, libhipblaslt, libhipfft, librocfft,
-#   librocsolver, librocroller + kernel data dirs.
-# This reduces the ROCm COPY layer from ~13.3GB to ~5.8GB.
-RUN bash -c 'set -euo pipefail; \
-    echo "=== Selective ROCm library export ==="; \
-    ROCM_ARCH="${AMDGPU_TARGETS%%,*}"; \
-    rm -rf /opt/rocm-export; mkdir -p /opt/rocm-export/lib; \
-    for lib in librocblas libhipblas libhipblaslt libhipfft librocfft librocsolver librocroller; do \
-        for f in /opt/rocm/lib/${lib}*; do \
-            if [[ -e "${f}" ]]; then cp -a "${f}" /opt/rocm-export/lib/; fi; \
-        done; \
-    done; \
-    if [[ -d /opt/rocm/lib/rocblas/library ]]; then \
-        mkdir -p /opt/rocm-export/lib/rocblas/library; \
-        cp -a /opt/rocm/lib/rocblas/library/*${ROCM_ARCH}* /opt/rocm-export/lib/rocblas/library/ 2>/dev/null || true; \
-        cp -a /opt/rocm/lib/rocblas/library/TensileLibrary.dat /opt/rocm-export/lib/rocblas/library/ 2>/dev/null || true; \
-    fi; \
-    if [[ -d /opt/rocm/lib/hipblaslt/library ]]; then \
-        mkdir -p /opt/rocm-export/lib/hipblaslt/library; \
-        cp -a /opt/rocm/lib/hipblaslt/library/*${ROCM_ARCH}* /opt/rocm-export/lib/hipblaslt/library/ 2>/dev/null || true; \
-    fi; \
-    if [[ -d /opt/rocm/lib/rocfft ]]; then \
-        cp -a /opt/rocm/lib/rocfft /opt/rocm-export/lib/; \
-    fi; \
-    echo "Exported ROCm libs: $(du -sm /opt/rocm-export/lib/ | cut -f1)MB"; \
-    echo "Files: $(find /opt/rocm-export/lib -type f | wc -l)"'
-
 {% if not build_only %}
 # ============================================================================
-# STAGE 2: RUNTIME - Minimal container with CP2K + ROCm runtime libraries
+# STAGE 2: RUNTIME - Minimal container with only CP2K and runtime libraries
 # ============================================================================
 FROM {{ runtime_base_image }} AS runtime
 
 LABEL stage="runtime" \
-      description="Runtime stage: Minimal container with CP2K 2026.1 + ROCm gfx942" \
+      description="Runtime stage: Minimal container with CP2K 2025.2 only" \
       maintainer="s8ga"
 
 # Minimal runtime: only cp2k.psmp + mpirun + required .so files
-# Spack view provides all spack-built binaries and libraries via symlinks.
-# ROCm compute libs (buildable:false externals) are copied separately from /opt/rocm.
+# CP2K_DATA_DIR points to basis sets, potentials, and other data files
+
+# Spack view provides all binaries and libraries via symlinks.
 # PATH points to the view for transparent binary access.
-# LD_LIBRARY_PATH is set only for ROCm (/opt/rocm/lib) — spack-view libs are
-# resolved via ldconfig (registered in /etc/ld.so.conf.d/cp2k.conf).
+# LD_LIBRARY_PATH is intentionally NOT set — we rely solely on ldconfig
+# (registered via /etc/ld.so.conf.d/cp2k.conf) for library discovery.
 # This avoids polluting system tools (nano, screen) with Spack-built libs.
 # CP2K_DATA_DIR points to data files installed by spack (basis sets, potentials, etc.)
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/spack-view/bin:/opt/bin:$PATH" \
-    LD_LIBRARY_PATH="/opt/rocm/lib:${LD_LIBRARY_PATH}" \
-    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data" \
-    ROCM_PATH="/opt/rocm" \
-    HIP_PLATFORM="amd"
+    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data"
+
 
 # Configure APT mirrors to use USTC (中科大) for faster downloads in China
-RUN sed -i 's|//.*archive.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|//security.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
 
 # Install minimal runtime dependencies (system libraries not included in spack view)
 # Note: Spack links against runtime libs (libgfortran5, libstdc++6, libgcc-s1).
-# We install them explicitly plus common tools for user convenience.
+# We install the compiler packages to ensure all runtime libs are available,
+# plus common tools for user convenience (nano, curl, python3, screen).
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     ca-certificates \
     bash \
@@ -289,8 +241,6 @@ RUN useradd -m -s /bin/bash hpc
 # Copy spack install tree and view from builder.
 # NOTE: Docker COPY preserves symlinks — the view's symlinks will point correctly
 # because we copy the install tree first, then the view on top.
-# ROCm compute libs are buildable:false externals — not in spack install tree,
-# so they must be copied separately from the builder's /opt/rocm/.
 WORKDIR /opt
 
 # 1. Spack install tree (real files: binaries, libraries, data)
@@ -304,46 +254,51 @@ COPY --from=builder --chown=hpc:hpc /opt/cp2k/tests /opt/cp2k/tests
 COPY --from=builder --chown=hpc:hpc /opt/cp2k/src/grid/sample_tasks /opt/cp2k/src/grid/sample_tasks
 COPY --from=builder --chown=hpc:hpc /opt/cp2k/tools/regtesting /opt/cp2k/tools/regtesting
 
-# 4. ROCm compute libraries (buildable:false externals, not in spack install tree)
-#    Selective copy: only the compute libs missing from non-complete runtime image.
-#    Core runtime libs (libamdhip64, libamd_comgr, libhiprtc, etc.) come from
-#    the runtime base image (rocm/dev-ubuntu-24.04:7.2.1) and are NOT overwritten.
-COPY --from=builder /opt/rocm-export/lib /opt/rocm/lib
-
-# Register spack + ROCm library paths with ldconfig for system-wide discovery.
-RUN { echo "/opt/spack-view/lib"; echo "/opt/rocm/lib"; } > /etc/ld.so.conf.d/cp2k.conf && \
+# Register spack library paths with ldconfig for system-wide discovery.
+# All dependencies (including libtorch) are managed by spack under /opt/spack.
+RUN { echo "/opt/spack-view/lib"; } > /etc/ld.so.conf.d/cp2k.conf && \
     ldconfig
 
 # ----------------------------------------------------------------------------
 # RUNTIME CLEANUP: Remove development-only content to minimize image size
 # ----------------------------------------------------------------------------
-# CP2K uses Spack's own gcc-runtime for libgfortran/libstdc++/libgcc_s.
-# System gcc/gfortran may be pulled in as recommends of libgfortran5/libstdc++6
+# CP2K uses Spack's own gcc-runtime (libgfortran.so.5, libstdc++.so.6,
+# libgcc_s.so.1 under /opt/spack/.../gcc-runtime-14.2.0/), verified via ldd.
+# System gcc/gfortran are pulled in as recommends of libgfortran5/libstdc++6
 # but are NOT needed at runtime. Safe to purge.
 #
-# NOTE: The ROCm runtime base image (rocm/dev-ubuntu-24.04:7.2.1, non-complete)
-# ships gcc-13 (not gcc-14 like stock Ubuntu 24.04). We must purge gcc-13
-# and its dev packages. hipcc/rocm-llvm are build-time tools, not needed at
-# runtime for CP2K (cp2k.psmp does not link them).
+# Cleanup summary (verified on localhost/cp2k-opensource:2025.2):
+#   1. Purge system compiler packages:           ~159 MB
+#   2. Remove C/C++/Fortran headers (include/):  ~730 MB
+#   3. Remove Python bytecode cache (__pycache__):~685 MB (auto-regenerated)
+#   4. Remove Python test/idle/tkinter:                  ~36 MB
+#   5. Remove documentation and man pages:        ~89 MB
+#   5. Remove .spack install metadata:            ~42 MB
+#   6. Remove cmake/pkgconfig build metadata:      ~3 MB
+#   7. Remove static libraries (.a):                ~0 MB
+#   Total saved: ~1,744 MB → image shrinks from ~2.5 GB to ~750 MB
 #
 # NOT removed: cp2k/share/cp2k/data/ (basis sets, potentials — runtime needed)
-# NOT removed: /opt/rocm-7.2.1/lib/lib*.so (ROCm runtime libs — essential)
 RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
     echo "Before: ${BEFORE}MB" && \
     \
-    echo "--- [1/8] Removing system compiler binaries (gcc-13 from ROCm base) ---" && \
-    rm -rf /usr/bin/gcc* /usr/bin/g++* /usr/bin/cpp* /usr/bin/gfortran* 2>/dev/null || true && \
-    rm -rf /usr/lib/gcc 2>/dev/null || true && \
-    rm -rf /usr/libexec/gcc 2>/dev/null || true && \
-    rm -rf /usr/include/c++ 2>/dev/null || true && \
+    echo "--- [1/7] Purging system compiler packages ---" && \
+    apt-get purge -y --auto-remove \
+        gcc-14 gcc-14-x86-64-linux-gnu \
+        gfortran-14 gfortran-14-x86-64-linux-gnu \
+        cpp-14 cpp-14-x86-64-linux-gnu \
+        libgcc-14-dev libgfortran-14-dev \
+        gcc gfortran cpp 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
     \
-    echo "--- [2/8] Removing headers (include/) ---" && \
+    echo "--- [2/7] Removing headers (include/) ---" && \
     find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/include && \
     rm -rf /usr/include && \
     \
-    echo "--- [3/8] Removing Python bytecode cache ---" && \
+    echo "--- [3/7] Removing Python bytecode cache ---" && \
     find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     \
     echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
@@ -359,23 +314,13 @@ RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     echo "--- [6/8] Removing .spack metadata ---" && \
     find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
     \
-    echo "--- [7/8] Removing cmake/pkgconfig and static libs ---" && \
+    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
     find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
-    find /opt -name "*.a" -delete 2>/dev/null || true && \
     \
-    echo "--- [8/8] Removing ROCm dev tools and LLVM build artifacts ---" && \
-    rm -rf /opt/rocm-7.2.1/lib/llvm/bin 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/lib/llvm/lib-debug 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/lib/llvm/include 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/lib/llvm/share 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/bin/hipcc 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/bin/hipify* 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/bin/*.sh 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/include 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/lib/cmake 2>/dev/null || true && \
-    rm -rf /opt/rocm-7.2.1/lib/pkgconfig 2>/dev/null || true && \
+    echo "--- [8/8] Removing static libraries (.a) ---" && \
+    find /opt -name "*.a" -delete 2>/dev/null || true && \
     \
     AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
     echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
@@ -397,8 +342,8 @@ FROM runtime AS final
 ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
-LABEL version="2026.1" \
-      description="CP2K 2026.1 with ROCm gfx942 support" \
+LABEL version="2025.2" \
+      description="Optimized CP2K 2025.2 container" \
       maintainer="s8ga" \
       image_name="{{ default_image_name }}" \
       image_tag="{{ default_image_tag }}" \
@@ -409,7 +354,26 @@ ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
     HPC_CONTAINER_TAG="{{ default_image_tag }}" \
     HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
 
-COPY --chmod=755 --chown=hpc:hpc scripts/cp2k-motd.sh /usr/local/bin/hpc-motd.sh
+# MOTD system: shown only for interactive shell sessions.
+#
+# 1. Docker/Podman: ENTRYPOINT + CMD
+#    - `podman run -it img`       → entrypoint detects "bash" → shows MOTD
+#    - `podman run img cp2k.psmp` → entrypoint skips MOTD
+#
+# 2. Apptainer: SINGULARITY_SHELL wrapper in cp2k.def.j2
+#    - `apptainer shell img.sif`  → wrapper detects APPTAINER_COMMAND=shell → shows MOTD
+#    - `apptainer exec/run`       → wrapper skipped, no MOTD
+#    - Dockerfile ENV vars are automatically preserved by Apptainer.
+#    - See spack-envs/<env>/cp2k.def.j2 for the SIF-specific MOTD mechanism.
+
+# Shared: the MOTD renderer (required by both Docker/Podman and Apptainer)
+COPY --chmod=755 scripts/cp2k-motd.sh /usr/local/bin/hpc-motd.sh
+
+# Docker/Podman: entrypoint that conditionally shows MOTD
+COPY --chmod=755 scripts/cp2k-entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]
+
 {% endif %}
 
 # ============================================================================

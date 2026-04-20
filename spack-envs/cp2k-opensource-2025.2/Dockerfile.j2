@@ -348,6 +348,32 @@ LABEL version="2025.2" \
       image_name="{{ default_image_name }}" \
       image_tag="{{ default_image_tag }}" \
       timestamp="{{ timestamp }}"
+
+# Container identity for MOTD and runtime inspection.
+ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
+    HPC_CONTAINER_TAG="{{ default_image_tag }}" \
+    HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
+
+# MOTD system: shown only for interactive shell sessions.
+#
+# 1. Docker/Podman: ENTRYPOINT + CMD
+#    - `podman run -it img`       → entrypoint detects "bash" → shows MOTD
+#    - `podman run img cp2k.psmp` → entrypoint skips MOTD
+#
+# 2. Apptainer: SINGULARITY_SHELL wrapper in cp2k.def.j2
+#    - `apptainer shell img.sif`  → wrapper detects APPTAINER_COMMAND=shell → shows MOTD
+#    - `apptainer exec/run`       → wrapper skipped, no MOTD
+#    - Dockerfile ENV vars are automatically preserved by Apptainer.
+#    - See spack-envs/<env>/cp2k.def.j2 for the SIF-specific MOTD mechanism.
+
+# Shared: the MOTD renderer (required by both Docker/Podman and Apptainer)
+COPY --chmod=755 scripts/cp2k-motd.sh /usr/local/bin/hpc-motd.sh
+
+# Docker/Podman: entrypoint that conditionally shows MOTD
+COPY --chmod=755 scripts/cp2k-entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]
+
 {% endif %}
 
 # ============================================================================

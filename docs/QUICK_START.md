@@ -1,100 +1,90 @@
 # 快速开始
 
-本页给出当前仓库下可以直接执行的最短路径。
+5 步完成从 Dockerfile 到可运行的 SIF 容器。更精简的版本见顶层 [../QUICKSTART.md](../QUICKSTART.md)。
 
 ## 1. 环境准备
 
-在仓库根目录执行：
-
 ```bash
-cd /home/shaojiehe/HPC-Container-Factory
+# 安装 Python 依赖
+pip install -r requirements.txt
+
+# 激活开发环境（自动加入本地 apptainer 到 PATH）
 source ./activate.sh
 ```
 
-若虚拟环境不存在，可先安装依赖：
+## 2. 准备离线资源（首次）
 
 ```bash
-pip install pyyaml jinja2
-```
-
-## 2. 生成 Dockerfile（推荐）
-
-当前默认参数已经对齐活跃模板，可直接生成：
-
-```bash
-python generate.py --output Dockerfile --dry-run
-```
-
-如果你希望显式指定模板，也可以：
-
-```bash
-python generate.py --template templates/Dockerfile-cp2k-opensource-2025.2.j2 --output Dockerfile --dry-run
-```
-
-## 3. 构建镜像
-
-Docker：
-
-```bash
-docker build -f Dockerfile -t hpc-cp2k:latest .
-```
-
-Podman：
-
-```bash
-podman build -f Dockerfile -t hpc-cp2k:latest .
-```
-
-## 4. 准备离线缓存（容器化，推荐）
-
-推荐统一入口（最简）：
-
-```bash
+# 一键完整流程：构建 builder → 下载 bootstrap → 下载 mirror → 校验
 python generate.py assets --env cp2k-opensource-2025.2
 ```
 
-该命令会自动执行：
+> 此步需要网络。完成后 `assets/` 目录包含所有构建所需资源，后续构建可完全离线。
+> 详见 [ASSETS_GUIDE.md](ASSETS_GUIDE.md)。
 
-1. 构建 mirror builder 镜像
-2. 创建/启动 mirror worker container
-3. 准备 bootstrap cache
-4. 重新 concretize（生成 spack.lock）
-5. 下载 source mirror
-6. 校验 mirror 完整性
-
-如需分步执行：
+## 3. 构建容器镜像
 
 ```bash
-python generate.py assets --create-container
-python generate.py assets --prepare-bootstrap
-python generate.py assets --env cp2k-opensource-2025.2 --concretize
-python generate.py assets --env cp2k-opensource-2025.2 --download-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --verify-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --status
+# 默认环境（cp2k-opensource-2025.2）
+python generate.py build --app-version cp2k-opensource-2025.2 --network-host
+
+# ROCm GPU 版
+python generate.py build --app-version cp2k-rocm-2026.1-gfx942 --network-host
+
+# force-avx512 变体
+python generate.py build --app-version cp2k-opensource-2025.2-force-avx512 --network-host
 ```
 
-也可以直接调用底层脚本：
+自动镜像命名：
+- opensource → `cp2k-opensource:<version>`
+- rocm → `cp2k-rocm:<version>-<gpu>`
+
+## 4. 构建 SIF（Apptainer）
 
 ```bash
-./scripts/build-mirror-in-container.sh image
-./scripts/build-mirror-in-container.sh create-container
-./scripts/prepare-bootstrap-cache.sh --create-container --use-container
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 concretize
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 mirror
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 verify
+# 从本地 OCI 镜像构建 SIF
+python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512
+
+# 仅安装 apptainer（不构建 SIF）
+python generate.py build-sif --install-apptainer-only
 ```
 
-> 每个 spack 环境通过 `spack-envs/<env>/streamline.sh` 的 CONFIG SECTION 声明自己的需求
-> （包管理器、系统包列表、自定义 Spack 仓库等）。
-> 详见 [assets 与离线资源指南](./ASSETS_GUIDE.md)。
+详细说明见 [BUILD_SIF.md](BUILD_SIF.md)。
 
-## 5. 可选：离线镜像模式
+## 5. 打包 Apptainer（可选）
 
-如果本地已准备 assets/spack-mirror，可在生成时打开镜像选项：
+将本地 apptainer 打包为自解压包，分发到目标机器：
 
 ```bash
-python generate.py \
-  --mirror \
-  --output Dockerfile \
-  --dry-run
+python generate.py pack-apptainer
+# 产出: artifacts/apptainer-<version>-x86_64.run
+```
+
+目标机器上：
+
+```bash
+mkdir ~/apptainer && cd ~/apptainer
+bash apptainer-*.run                    # 解压到当前目录
+source activate-apptainer.sh            # 激活
+apptainer shell /path/to/image.sif      # 使用
+```
+
+## 只生成 Dockerfile（不构建）
+
+```bash
+# 指定环境 + 输出路径
+python generate.py dockerfile --app-version cp2k-opensource-2025.2 --output Dockerfile
+
+# 列出所有可用环境
+python generate.py dockerfile --app-version
+```
+
+## 查看可用环境
+
+任何需要 `--app-version` 的命令，不传值即可列出：
+
+```bash
+python generate.py build --app-version
+python generate.py build-sif --app-version
+python generate.py assets --env
 ```
