@@ -327,8 +327,8 @@ mirror_create() {
 
     mkdir -p "${mirror_dir}"
 
-    _sc_info "Running: spack mirror create -d ${mirror_dir} --all -D"
-    spack -e . mirror create -d "${mirror_dir}" --all -D 2>&1 | tee /tmp/mirror-output.log
+    _sc_info "Running: spack mirror create -d ${mirror_dir} --all -D --private"
+    spack -e . mirror create -d "${mirror_dir}" --all -D --private 2>&1 | tee /tmp/mirror-output.log
 
     echo ""
     echo "=== Mirror creation complete ==="
@@ -375,8 +375,8 @@ mirror_verify() {
     cd "${work_env}"
     spack env activate . 2>/dev/null || true
 
-    _sc_info "Re-running: spack mirror create -d ${mirror_dir} --all -D"
-    spack -e . mirror create -d "${mirror_dir}" --all -D 2>&1 | tee /tmp/verify-output.log
+    _sc_info "Re-running: spack mirror create -d ${mirror_dir} --all -D --private"
+    spack -e . mirror create -d "${mirror_dir}" --all -D --private 2>&1 | tee /tmp/verify-output.log
 
     _mirror_parse_stats /tmp/verify-output.log
 
