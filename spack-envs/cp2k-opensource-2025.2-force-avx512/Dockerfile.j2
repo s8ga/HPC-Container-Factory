@@ -354,6 +354,8 @@ ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
     HPC_CONTAINER_TAG="{{ default_image_tag }}" \
     HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
 
+ENV MPI_RUNVAR=" --bind-to none " 
+
 # MOTD system: shown only for interactive shell sessions.
 #
 # 1. Docker/Podman: ENTRYPOINT + CMD
