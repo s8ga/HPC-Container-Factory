@@ -35,7 +35,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.absolute()
-CONFIGS_DIR = PROJECT_ROOT / "configs"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 TOOLS_DIR = PROJECT_ROOT / "tools"
@@ -146,80 +145,55 @@ def run_cmd(
     subprocess.run(cmd, cwd=run_cwd, env=env, check=True)
 
 
-def load_config(config_path: Path) -> dict:
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
+def _parse_dir_to_image_tag(env_dir_name: str) -> tuple[str, str]:
+    """Derive (image_name, tag) from a spack-envs directory name.
 
-    logger.info("Loading config: %s", config_path)
-    with config_path.open("r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    Convention: ``<app>-<variant>-<version>[-<suffix>]`` where the first
+    hyphen-delimited segment starting with a digit marks the version boundary.
 
-    if not config:
-        raise ValueError(f"Config file is empty: {config_path}")
+    Examples::
 
-    return config
+        cp2k-opensource-2025.2                → ("cp2k-opensource", "2025.2")
+        cp2k-opensource-2025.2-force-avx512   → ("cp2k-opensource", "2025.2-force-avx512")
+        cp2k-mkl-2025.2-experimental          → ("cp2k-mkl", "2025.2-experimental")
+        cp2k-rocm-2026.1-gfx942               → ("cp2k-rocm", "2026.1-gfx942")
+    """
+    name = env_dir_name.lower()
 
+    # Strip known app prefix (e.g. "cp2k-")
+    # Find the first '-' to determine app name
+    first_dash = name.find("-")
+    if first_dash == -1:
+        return name, "latest"
+    app_prefix = name[: first_dash + 1]  # e.g. "cp2k-"
+    remainder = name[first_dash + 1:]    # e.g. "opensource-2025.2"
 
-def extract_version_token(text: str) -> str | None:
-    match = re.search(r"\b(\d+\.\d+(?:\.\d+)?)\b", text)
-    if match:
-        return match.group(1)
-    return None
+    # Split and find the version boundary (first digit-starting segment)
+    parts = remainder.split("-")
+    boundary = -1
+    for i, part in enumerate(parts):
+        if part and part[0].isdigit():
+            boundary = i
+            break
 
+    if boundary < 0:
+        # No version found — use entire remainder as variant, tag = "latest"
+        return f"{app_prefix}{remainder}", "latest"
 
-def detect_gpu_arch_from_template(template_path: Path | None) -> str | None:
-    if not template_path or not template_path.exists():
-        return None
-
-    try:
-        content = template_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-    match = re.search(r'ARG\s+AMDGPU_TARGETS\s*=\s*"([^"]+)"', content)
-    if not match:
-        return None
-
-    targets = match.group(1).strip()
-    if not targets:
-        return None
-    return targets.split(",")[0].strip()
+    variant = "-".join(parts[:boundary])
+    tag = "-".join(parts[boundary:])
+    return f"{app_prefix}{variant}", tag
 
 
 def infer_image_defaults(app_version: str, template_path: Path | None) -> tuple[str, str]:
-    appv = (app_version or "").lower()
-    template_name = template_path.name.lower() if template_path else ""
-    variant_hint = f"{appv} {template_name}"
+    """Infer default (image_name, tag) from the spack-envs directory name.
 
-    # For spack-envs layout (spack-envs/<env-dir>/Dockerfile.j2), derive tag
-    # from the directory name by stripping the known app prefix.
-    # This preserves variant suffixes like "-force-avx512".
-    # Example: cp2k-opensource-2025.2-force-avx512 → tag = 2025.2-force-avx512
-    #          cp2k-rocm-2026.1-gfx942         → tag = 2026.1-<gpu_arch>
-    env_dir_name = template_path.parent.name.lower() if template_path else ""
-
-    if "rocm" in variant_hint:
-        arch = detect_gpu_arch_from_template(template_path) or "gfx942"
-        # Prefer full tag from directory name (e.g. "2026.1-gfx942")
-        rocm_prefix = "cp2k-rocm-"
-        if env_dir_name.startswith(rocm_prefix):
-            tag = env_dir_name[len(rocm_prefix):]
-            # Replace gpu arch placeholder with detected arch if needed
-            tag = re.sub(r"gfx\w+$", arch, tag)
-        else:
-            version = extract_version_token(template_name) or extract_version_token(appv) or "latest"
-            tag = f"{version}-{arch}" if version != "latest" else arch
-        return "cp2k-rocm", tag
-
-    if "opensource" in variant_hint:
-        oss_prefix = "cp2k-opensource-"
-        if env_dir_name.startswith(oss_prefix):
-            tag = env_dir_name[len(oss_prefix):]
-        else:
-            tag = extract_version_token(template_name) or extract_version_token(appv) or "latest"
-        return "cp2k-opensource", tag
-
-    return "hpc-cp2k", "latest"
+    Falls back to ("hpc-cp2k", "latest") when no template path is available.
+    """
+    env_dir_name = template_path.parent.name if template_path else ""
+    if not env_dir_name:
+        return "hpc-cp2k", "latest"
+    return _parse_dir_to_image_tag(env_dir_name)
 
 
 def load_env_yaml(template_path: Path | None) -> dict:
@@ -237,8 +211,24 @@ def load_env_yaml(template_path: Path | None) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def resolve_output_image_tag(template_path: Path | None) -> tuple[str, str]:
+    """Resolve (image_name, tag) with env.yaml override taking priority.
+
+    Checks ``images.output_name`` / ``images.output_tag`` in env.yaml first;
+    falls back to directory-name convention via :func:`infer_image_defaults`.
+    """
+    env_config = load_env_yaml(template_path)
+    env_images = env_config.get("images", {})
+
+    override_name = env_images.get("output_name")
+    override_tag = env_images.get("output_tag")
+    if override_name:
+        return override_name, override_tag or "latest"
+
+    return infer_image_defaults("", template_path)
+
+
 def build_context(
-    config: dict,
     *,
     use_mirror: bool,
     build_only: bool,
@@ -247,12 +237,11 @@ def build_context(
 ) -> dict:
     env_config = load_env_yaml(template_path)
 
-    # env.yaml images 段优先，versions.yaml images 段 fallback
+    # env.yaml images 段
     env_images = env_config.get("images", {})
-    cfg_images = config.get("images", {})
-    builder_base_image = env_images.get("builder", cfg_images.get("builder_base", "debian:trixie"))
-    runtime_base_image = env_images.get("runtime", cfg_images.get("runtime_base", "debian:trixie-slim"))
-    default_image_name, default_image_tag = infer_image_defaults(app_version, template_path)
+    builder_base_image = env_images.get("builder", "debian:trixie")
+    runtime_base_image = env_images.get("runtime", "debian:trixie-slim")
+    default_image_name, default_image_tag = resolve_output_image_tag(template_path)
 
     context = {
         "timestamp": datetime.now().isoformat(),
@@ -265,8 +254,6 @@ def build_context(
         "default_image_tag": default_image_tag,
         # 注入 env.yaml 中的 template_vars 作为顶层变量
         **env_config.get("template_vars", {}),
-        # 注入全局 config
-        **config,
     }
 
     logger.debug("Build context keys: %s", list(context.keys()))
@@ -371,7 +358,6 @@ def write_output(content: str, output_path: Path) -> None:
 
 def generate_dockerfile(
     *,
-    config_path: Path,
     template: Path | None,
     app: str,
     app_version: str,
@@ -379,10 +365,8 @@ def generate_dockerfile(
     use_mirror: bool,
     build_only: bool,
 ) -> Path:
-    config = load_config(config_path)
     template_path = select_template(app, app_version, template)
     context = build_context(
-        config,
         use_mirror=use_mirror,
         build_only=build_only,
         app_version=app_version,
@@ -402,7 +386,7 @@ def resolve_image_and_tag(
     tag_arg: str | None,
 ) -> tuple[str, str]:
     resolved_template = select_template(app, app_version, template)
-    default_image, default_tag = infer_image_defaults(app_version, resolved_template)
+    default_image, default_tag = resolve_output_image_tag(resolved_template)
     image = image_arg if image_arg else default_image
     tag = tag_arg if tag_arg else default_tag
     return image, tag
@@ -666,8 +650,8 @@ def build_sif(
             resolved_template = select_template("cp2k", app_version, None)
         except FileNotFoundError:
             pass
-    default_image_name, default_image_tag = infer_image_defaults(
-        app_version or docker_tag, resolved_template
+    default_image_name, default_image_tag = resolve_output_image_tag(
+        resolved_template
     )
 
     def_context = {
@@ -916,12 +900,6 @@ def run_assets(args: argparse.Namespace) -> None:
 
 def add_template_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--config",
-        type=Path,
-        default=CONFIGS_DIR / "versions.yaml",
-        help="Path to versions.yaml config file",
-    )
-    parser.add_argument(
         "--template",
         type=Path,
         default=None,
@@ -1120,12 +1098,6 @@ def build_parser() -> argparse.ArgumentParser:
         "assets",
         help="Prepare bootstrap/mirror assets and mirror worker container",
     )
-    assets_parser.add_argument(
-        "--config",
-        type=Path,
-        default=CONFIGS_DIR / "versions.yaml",
-        help="Path to versions.yaml config file",
-    )
     add_assets_options(assets_parser)
 
     pack_apptainer_parser = subparsers.add_parser(
@@ -1236,7 +1208,7 @@ def run_new_cli(argv: list[str]) -> int:
                 resolved_template = select_template(args.app, args.app_version, None)
             except FileNotFoundError:
                 resolved_template = None
-            auto_image, auto_tag = infer_image_defaults(args.app_version, resolved_template)
+            auto_image, auto_tag = resolve_output_image_tag(resolved_template)
             docker_image = docker_image or auto_image
             docker_tag = docker_tag or auto_tag
 
@@ -1261,19 +1233,16 @@ def run_new_cli(argv: list[str]) -> int:
     if not getattr(args, "app_version", None):
         args.app_version = "opensource-2025.2"
 
-    # 优先级：--no-mirror > --mirror > config（默认 true）
+    # 优先级：--no-mirror > --mirror > 默认 true
     if getattr(args, "no_mirror", False):
         use_mirror = False
     elif getattr(args, "mirror", False):
         use_mirror = True
     else:
-        # 配置文件优先，默认 true
-        config = load_config(args.config)
-        use_mirror = config.get("spack", {}).get("use_mirror", True)
+        use_mirror = True
 
     if args.command == "dockerfile":
         generate_dockerfile(
-            config_path=args.config,
             template=args.template,
             app=args.app,
             app_version=args.app_version,
@@ -1294,7 +1263,6 @@ def run_new_cli(argv: list[str]) -> int:
         )
 
         dockerfile = generate_dockerfile(
-            config_path=args.config,
             template=args.template,
             app=args.app,
             app_version=args.app_version,

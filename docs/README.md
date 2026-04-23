@@ -23,7 +23,6 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 ├── generate.py              # 统一 CLI 入口
 ├── activate.sh              # 激活开发环境
 ├── requirements.txt         # Python 依赖 (jinja2, pyyaml)
-├── configs/versions.yaml    # 全局配置
 ├── spack-envs/              # 每个环境自包含
 │   └── <env>/
 │       ├── Dockerfile.j2    # 镜像模板

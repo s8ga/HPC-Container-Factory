@@ -137,17 +137,28 @@ python generate.py dockerfile --app-version <new-env-name> --output /tmp/test.Do
 
 ### 镜像名 / Tag 推断
 
-`infer_image_defaults(app_version, template_path)`:
+`resolve_output_image_tag(template_path)` — 自动从目录名推导，可选 env.yaml 覆盖：
 
-从目录名解析（去掉 `cp2k-opensource-` 或 `cp2k-rocm-` 前缀）：
+**默认行为（约定推导）**：从目录名按 `-` 拆分，第一个以数字开头的段作为版本边界。
 
 | 目录名 | 镜像名 | tag |
 |--------|--------|-----|
 | `cp2k-opensource-2025.2` | `cp2k-opensource` | `2025.2` |
 | `cp2k-opensource-2025.2-force-avx512` | `cp2k-opensource` | `2025.2-force-avx512` |
+| `cp2k-mkl-2025.2-experimental` | `cp2k-mkl` | `2025.2-experimental` |
 | `cp2k-rocm-2026.1-gfx942` | `cp2k-rocm` | `2026.1-gfx942` |
 
-对于 ROCm 环境，如果模板中包含 GPU arch 信息，会自动检测并用于 tag。
+新增变体时无需修改任何代码，只要目录名遵循 `<app>-<variant>-<version>[-<suffix>]` 约定即可自动工作。
+
+**env.yaml 覆盖**（可选）：如果需要自定义镜像名或 tag，在 `env.yaml` 中添加：
+
+```yaml
+images:
+  builder: debian:trixie
+  runtime: debian:trixie-slim
+  output_name: my-custom-image    # 可选，覆盖自动推导
+  output_tag: custom-tag          # 可选，覆盖自动推导
+```
 
 ### env.yaml 加载
 

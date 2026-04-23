@@ -12,7 +12,24 @@ pip install -r requirements.txt
 podman info >/dev/null 2>&1 || docker info >/dev/null 2>&1
 ```
 
-## 五步流程
+## 六步流程
+
+### Step 0 — 准备 Spack 源码（首次 clone 后必须）
+
+```bash
+# 下载 Spack v1.1.0 release tarball
+mkdir -p assets
+curl -fSL -o assets/spack-v1.1.0.tar.gz \
+  https://github.com/spack/spack/releases/download/v1.1.0/spack-1.1.0.tar.gz
+
+# 解压出 spack-src/（bootstrap 阶段需要）
+tar -xzf assets/spack-v1.1.0.tar.gz -C assets/
+mv assets/spack-1.1.0 assets/spack-src
+```
+
+> `assets/` 被 `.gitignore` 排除，每次从 GitHub 新 clone 后都需要执行此步骤。
+> `spack-v1.1.0.tar.gz` 用于容器镜像构建（`Dockerfile.mirror-builder` COPY），
+> `spack-src/` 用于宿主机上的 bootstrap 缓存生成。
 
 ### Step 1 — 激活环境
 
@@ -23,6 +40,8 @@ source ./activate.sh
 > 自动激活 Python venv（如存在）并将本地 apptainer 加入 PATH。
 
 ### Step 2 — 准备离线资源（首次或更新依赖时）
+
+**前置：确保 Step 0 已完成（`assets/spack-v1.1.0.tar.gz` 和 `assets/spack-src/` 存在）。**
 
 ```bash
 python generate.py assets --env cp2k-opensource-2025.2

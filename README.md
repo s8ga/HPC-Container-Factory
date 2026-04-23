@@ -92,8 +92,6 @@ uv pip install -r requirements.txt
 ├── generate.py              # 统一 CLI 入口
 ├── activate.sh              # 激活开发环境 (venv + apptainer)
 ├── requirements.txt         # Python 依赖
-├── configs/
-│   └── versions.yaml        # 全局配置 (Spack 版本、mirror 开关)
 ├── spack-envs/              # 每个环境自包含
 │   ├── cp2k-opensource-2025.2/
 │   │   ├── Dockerfile.j2    # 镜像模板
@@ -114,4 +112,4 @@ uv pip install -r requirements.txt
 
 ## License
 
-Internal use.
+MIT
