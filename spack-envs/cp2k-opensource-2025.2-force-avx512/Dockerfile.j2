@@ -149,7 +149,22 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e cp2k-env install --fail-fast -j "$(nproc)";
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
+
+        echo; \
+        echo "Installing libint..."; \
+        echo "Note: libint is a critical dependency that often takes the longest to build."; \
+        echo; \
+
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 libint & \
+
+        sleep 5 && \
+
+        echo; \
+        echo "Concurrently Install cp2k and it's dependencies..."; \
+        echo; \
+
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20;
 
 RUN spack -e cp2k-env gc -y
 
@@ -183,7 +198,7 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
       echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
     echo "=== Generating Dependency Graph ===" && \
-    spack -e cp2k-env graph --dot > /opt/spack-view/DependencyGraph.dot && \
+    spack -e cp2k-env graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
 
 {% if not build_only %}
