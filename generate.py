@@ -592,6 +592,7 @@ def build_sif(
     docker_tag: str,
     output: Path | None = None,
     app_version: str | None = None,
+    mksquashfs_args: str = "-comp zstd -Xcompression-level 22 -b 1M",
 ) -> None:
     """Build a SIF image from an existing Docker/Podman OCI image.
 
@@ -696,7 +697,9 @@ def build_sif(
     sif_name = output or artifacts_dir / f"{docker_image}_{docker_tag}.sif"
 
     try:
-        cmd = [apptainer, "build", "--force", str(sif_name), str(def_file)]
+        cmd = [apptainer, "build", "--force",
+               "--mksquashfs-args", mksquashfs_args,
+               str(sif_name), str(def_file)]
         run_cmd(cmd, cwd=artifacts_dir)
         sif_size = _human_size(Path(sif_name).stat().st_size)
         logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
@@ -1153,6 +1156,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Application version for auto image/tag detection",
     )
     build_sif_parser.add_argument(
+        "--mksquashfs-args",
+        default="-comp zstd -Xcompression-level 22 -b 1M",
+        help="mksquashfs compression arguments (default: '-comp zstd -Xcompression-level 22 -b 1M')",
+    )
+    build_sif_parser.add_argument(
         "--install-apptainer-only",
         action="store_true",
         help="Only install apptainer, do not build SIF",
@@ -1217,6 +1225,7 @@ def run_new_cli(argv: list[str]) -> int:
             docker_tag=docker_tag,
             output=args.output,
             app_version=getattr(args, "app_version", None),
+            mksquashfs_args=args.mksquashfs_args,
         )
         logger.info("Done")
         return 0
