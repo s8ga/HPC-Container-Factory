@@ -26,10 +26,12 @@ _should_show_motd() {
     if [[ "${APPTAINER_COMMAND:-}" == "shell" ]]; then
         return 0
     fi
-    # OCI (Docker/Podman): if ENTRYPOINT is used without args,
-    # the default CMD is "bash" — this is an interactive shell.
-    # exec/run modes override ENTRYPOINT args, so we won't reach here.
-    if [[ -z "${APPTAINER_COMMAND:-}" && "${1:-}" == "bash" ]]; then
+    # OCI (Docker/Podman): only show MOTD for interactive shell sessions.
+    #   $1 == "bash"   → the default CMD
+    #   $# == 1         → no extra args (e.g. -c 'command')
+    #   -t 0            → stdin is a TTY (i.e. -it was used)
+    #   -t 1            → stdout is a TTY (i.e. -it was used)
+    if [[ -z "${APPTAINER_COMMAND:-}" && "${1:-}" == "bash" && $# -eq 1 && -t 0 && -t 1 ]]; then
         return 0
     fi
     return 1
