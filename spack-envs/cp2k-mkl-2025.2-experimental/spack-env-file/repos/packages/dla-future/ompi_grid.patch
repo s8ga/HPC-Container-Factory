@@ -1,0 +1,22 @@
+--- a/src/c_api/grid.cpp	
++++ a/src/c_api/grid.cpp
+@@ -17,6 +17,7 @@
+ #include <dlaf/communication/communicator.h>
+ #include <dlaf/communication/communicator_grid.h>
+ #include <dlaf_c/grid.h>
++#include <cstdint>
+ 
+ #include "blacs.h"
+ #include "dlaf/communication/error.h"
+@@ -79,7 +80,9 @@
+   int get_blacs_contxt = 10;  // SGET_BLACSCONTXT == 10
+   Cblacs_get(blacs_ctxt, get_blacs_contxt, &system_ctxt);
+ 
+-  MPI_Comm communicator = Cblacs2sys_handle(system_ctxt);
++  MPI_Comm mkl_fake_comm = Cblacs2sys_handle(system_ctxt);
++  MPI_Fint fortran_handle = (MPI_Fint)(std::intptr_t)mkl_fake_comm;
++  MPI_Comm communicator = MPI_Comm_f2c(fortran_handle);
+ 
+   dlaf::comm::Communicator world(communicator);
+   DLAF_MPI_CHECK_ERROR(MPI_Barrier(world));
+

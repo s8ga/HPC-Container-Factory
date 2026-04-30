@@ -1,0 +1,282 @@
+# MKL BLACS + OpenMPI 5 Compatibility Patches
+
+## Background
+
+Intel oneAPI MKL 2025.x ships `libmkl_blacs_openmpi_lp64.so` with a built-in
+MPI wrapper layer (the **MKLMPI** shim). This shim was written assuming that
+MPI handles (`MPI_Comm`, `MPI_Group`, `MPI_Request`) are plain integers — which
+is true for MPICH-family MPIs (Intel MPI, MVAPICH2, MPICH), but **not** for
+OpenMPI ≥ 4.x, where all handles are opaque pointers (`ompi_communicator_t *`,
+etc.).
+
+When MKL ScaLAPACK/BLACS is used together with **OpenMPI 5.x**, the mismatch
+causes a `SIGSEGV` during `BLACS_grid` initialization in SIRIUS/CP2K.
+
+---
+
+## Root Cause Analysis
+
+### Crash backtrace (observed with MKL 2025.3 + OpenMPI 5.0.8 + SIRIUS 7.9.0)
+
+```
+#0  PMPI_Group_c2f ()          libmpi.so.40
+#1  MKLMPI_Comm_group ()       libmkl_blacs_openmpi_lp64.so.2
+#2  Cblacs_gridmap ()          libmkl_blacs_openmpi_lp64.so.2
+#3  BLACS_grid::BLACS_grid()   libsirius_cxx.so
+```
+
+### Mechanism
+
+`SIRIUS::BLACS_grid` calls `linalg_base::gridmap()`, which internally calls
+`Cblacs_gridmap()` — the **C interface** to BLACS. The C interface stores the
+`MPI_Comm` argument as a raw C pointer directly into the BLACS internal context
+table, bypassing any Fortran-integer conversion.
+
+Later, `Cblacs_gridmap` calls `MKLMPI_Comm_group(stored_value)`. The original
+MKLMPI shim casts the stored value to `MPI_Fint` (32-bit integer), truncating
+the 64-bit pointer (e.g. `0x591fbf7c4450 → 0xbf7c4450`). This truncated value
+is passed to `MPI_Comm_group`, which returns `MPI_ERR_COMM` (error code 5).
+With an invalid communicator, the resulting `MPI_Group` output is a garbage
+value (`0x1`). When this is subsequently passed to `PMPI_Group_c2f`, OpenMPI
+dereferences it as a pointer and segfaults.
+
+```
+Cblacs_gridmap(MPI_Comm ptr = 0x591fbf7c4450)
+  stores raw C pointer into BLACS context table
+    → MKLMPI_Comm_group(0x591fbf7c4450)
+      → X2COMM: (MPI_Fint)0x591fbf7c4450 = 0xbf7c4450  ← truncation
+        → MPI_Comm_group(invalid) = MPI_ERR_COMM (0x5)
+          → MPI_Group output = 0x1 (garbage)
+            → PMPI_Group_c2f(0x1)  ← dereferences garbage pointer
+              → SIGSEGV
+```
+
+---
+
+## Patch 1 — `mklmpi-impl-ompi5.c` (MKLMPI wrapper rewrite)
+
+### What it fixes
+
+Rebuilds the MKLMPI wrapper library from the Intel-provided source
+(`$MKLROOT/interfaces/mklmpi/`) with four cumulative fixes:
+
+| Version | Fix |
+|---------|-----|
+| v1 | `X2COMM`/`X4COMM`: use `MPI_Comm_f2c`/`c2f` instead of direct cast |
+| v2 | `X2GROUP`/`X4GROUP`: use `MPI_Group_f2c`/`c2f`; enable `GROUP_NULL`/`GROUP_EMPTY` sentinels |
+| v3 | `X2REQUEST`/`X4REQUEST` and batch variants: use `MPI_Request_f2c`/`c2f` |
+| v4 | `X2COMM` dual-filter heuristic: threshold + alignment to distinguish Fortran handles from raw C pointers |
+
+### v4 dual-filter heuristic — design rationale
+
+v1–v3 fix the wrapper **boundary** (handles that have been properly converted
+via `X4COMM` before storage). v4 addresses the case where `Cblacs_gridmap`
+stores a raw C pointer that **never passed through `X4COMM`**.
+
+The filter in `X2COMM`:
+
+```c
+#define X2COMM_ADDR_THRESHOLD ((uintptr_t)0x10000)  /* 64 KB */
+
+static MPI_Comm X2COMM(MKLMPI_Comm xcomm)
+{
+    if (xcomm == MKLMPI_COMM_WORLD) return MPI_COMM_WORLD;
+    if (xcomm == MKLMPI_COMM_NULL)  return MPI_COMM_NULL;
+
+    uintptr_t val = (uintptr_t)xcomm;
+
+    if (val < X2COMM_ADDR_THRESHOLD)
+        return MPI_Comm_f2c((MPI_Fint)xcomm);   /* Fortran handle */
+
+    if ((val & 0xF) == 0)
+        return (MPI_Comm)val;                    /* raw C pointer  */
+
+    return MPI_Comm_f2c((MPI_Fint)xcomm);        /* fallback       */
+}
+```
+
+**Decision table:**
+
+| Value | `< 64KB`? | `16B aligned`? | Decision | Reason |
+|-------|-----------|----------------|----------|--------|
+| Fortran handle (e.g. `3`) | YES | NO | `f2c(3)` ✓ | threshold catches all small handles |
+| Fortran handle `16` | YES | YES | `f2c(16)` ✓ | threshold takes priority |
+| C ptr `0x591fbf7c4450` | NO | YES | direct cast ✓ | heap pointer, 16B aligned |
+| Misaligned garbage | NO | NO | `f2c()` → fail fast | safe |
+
+**Why the threshold `0x10000` is reliable:**
+
+The Linux kernel enforces `vm.mmap_min_addr = 65536` (`0x10000`) by default,
+meaning no legitimate userspace memory mapping can start below this address.
+OpenMPI allocates `ompi_communicator_t` objects on the heap; their addresses
+are always well above `0x10000`.
+
+**Why the 16-byte alignment check is reliable:**
+
+The C11 standard requires `malloc` to return memory aligned to
+`_Alignof(max_align_t)`, which on x86-64 glibc is 16 bytes. `ompi_communicator_t`
+contains `pthread_mutex_t` and atomic fields; its `sizeof` is far larger than 16,
+so every `MPI_Comm` pointer from OpenMPI satisfies `(ptr & 0xF) == 0`.
+
+**Known limitations and assumptions:**
+
+This heuristic is correct under the following explicitly stated assumptions:
+
+1. **Linux kernel** with `vm.mmap_min_addr ≥ 65536` (default on all modern
+   distros; verify with `sysctl vm.mmap_min_addr`).
+2. **glibc** (or any allocator guaranteeing 16-byte minimum alignment for heap
+   allocations on x86-64).
+3. **BLACS context handles** remain small non-negative integers well below
+   65536 (true in practice: a single process rarely has more than a few dozen
+   BLACS grids).
+4. **64-bit system only.** MKL does not ship a 32-bit library, so this is
+   always satisfied.
+
+This patch is a **symptom-level fix**. It works because the three guarantees
+above happen to be universally true in the target deployment environment. It is
+not derived from the MPI standard and should not be treated as a general
+solution.
+
+### Build and deployment
+
+```bash
+mkl-compactable-layer-builder.sh
+```
+
+### Compatibility note
+
+All `f2c`/`c2f` calls are no-ops (identity functions) on MPICH-family MPIs
+because those represent handles as plain integers. This patch is therefore
+**zero-cost and transparent** on Intel MPI / MVAPICH2 / MPICH, and **correct**
+on OpenMPI ≥ 4.x.
+
+---
+
+## Patch 2 — `blacs_grid.hpp` (SIRIUS source — root-cause fix) ( NOT IMPLEMENTED )
+
+> **Status:** Recommended companion fix. Eliminates the condition that makes
+> the v4 heuristic necessary. ( NOT IMPLEMENTED )
+
+### What it WILL fixes
+
+`SIRIUS::BLACS_grid` currently calls `linalg_base::gridmap()` which maps to
+`Cblacs_gridmap()` (C interface). The C interface accepts a raw `MPI_Comm`
+pointer and stores it verbatim — this is the origin of the raw C pointer that
+v4 has to detect.
+
+The fix replaces the call sequence with the **Fortran interface**
+(`blacs_gridmap_`), which accepts a `MPI_Fint` (Fortran integer handle).
+Converting `MPI_Comm → MPI_Fint` via `MPI_Comm_c2f()` **before** handing it to
+BLACS ensures that only proper Fortran integer handles ever enter the BLACS
+context table.
+
+### Patch
+
+In `src/la/blacs_grid.hpp`, constructor body under `#ifdef SIRIUS_SCALAPACK`:
+
+```cpp
+// ── BEFORE ────────────────────────────────────────────────────────────────
+/* create handler first */
+blacs_handler_ = linalg_base::create_blacs_handler(
+                     mpi_grid_->communicator().native());
+
+/* create context */
+blacs_context_ = blacs_handler_;
+linalg_base::gridmap(&blacs_context_, &rank_map_[0],
+                     num_ranks_row__, num_ranks_row__, num_ranks_col__);
+
+// ── AFTER  ────────────────────────────────────────────────────────────────
+/* Convert MPI_Comm C pointer to Fortran integer handle *before* entering
+ * BLACS, so that the BLACS internal context table never stores raw C
+ * pointers.  This eliminates the OpenMPI 5.x / MKL BLACS ABI mismatch
+ * (see mklmpi-impl-ompi5.c patch history, v4).
+ *
+ * MPI_Comm_c2f() is a no-op on MPICH-family MPIs (handles are already
+ * integers), so this change is safe and zero-cost on all MPI variants.
+ */
+MPI_Fint fcomm = MPI_Comm_c2f(mpi_grid_->communicator().native());
+
+int ictxt;
+int negone = -1, zero = 0;
+blacs_get_(&negone, &zero, &ictxt);      /* get a fresh system context     */
+
+int what = 10;                           /* BLACS internal: set MPI comm   */
+blacs_set_(&ictxt, &what, &fcomm);       /* bind Fortran handle to context */
+
+blacs_handler_ = ictxt;
+blacs_context_ = ictxt;
+linalg_base::gridmap(&blacs_context_, &rank_map_[0],
+                     num_ranks_row__, num_ranks_row__, num_ranks_col__);
+```
+
+Also add the Fortran interface declarations near the top of the file (or in
+`linalg_base.hpp`):
+
+```cpp
+extern "C" {
+    void blacs_get_(int* icontxt, int* what, int* val);
+    void blacs_set_(int* icontxt, int* what, int* val);
+}
+```
+
+### Why this is the root-cause fix
+
+After this change, the data flow becomes:
+
+```
+BLACS_grid constructor
+  → MPI_Comm_c2f(comm)           C pointer → Fortran integer (correct)
+  → blacs_set_(ictxt, 10, fcomm) integer stored in BLACS table
+  → blacs_gridmap_(ictxt, ...)
+    → MKLMPI_Comm_group(fcomm as integer)
+      → X2COMM: val < 0x10000 → MPI_Comm_f2c(fcomm)  (Fortran path)
+        → MPI_Comm_group(valid_comm)                  ← success
+```
+
+The v4 heuristic in Patch 1 is still exercised but via the clean Fortran path —
+it is no longer needed to distinguish pointer from integer.
+
+### Relationship between the two patches
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Patch 2 (blacs_grid.hpp)   ←  root cause (NOT IMPLEMENTED) │
+│  Prevents raw C pointers from ever entering BLACS           │
+│                                                             │
+│  Patch 1 (mklmpi-impl-ompi5.c)  ←  safety net               │
+│  Correctly handles any value that does reach X2COMM,        │
+│  whether from BLACS internals or other call sites           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Applying both patches is recommended. 
+Patch 1 alone (via `LD_PRELOAD`) is sufficient to stop the crash without
+recompilation.
+
+---
+
+## Environment Tested
+
+| Component | Version |
+|-----------|---------|
+| Intel oneAPI MKL | 2025.3.0 |
+| OpenMPI | 5.0.8 |
+| SIRIUS | 7.9.0 |
+| CP2K | 2025.2 |
+| OS | Linux x86-64 |
+| glibc | 2.35+ |
+| `vm.mmap_min_addr` | 65536 (default) |
+
+---
+
+## References
+
+- Intel MKL custom MPI wrapper documentation:
+  `$MKLROOT/interfaces/mklmpi/README`
+- MPI standard, §8.6: Fortran/C handle interoperability (`MPI_Comm_f2c`,
+  `MPI_Comm_c2f`)
+- BLACS working note 94: `blacs_set_` parameter `WHAT=10` (system context
+  communicator override)
+- Linux kernel: `Documentation/admin-guide/sysctl/vm.rst`, `mmap_min_addr`
