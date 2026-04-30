@@ -163,8 +163,22 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e cp2k-env install --fail-fast -j "$(nproc)";
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
 
+        echo; \
+        echo "Installing libint..."; \
+        echo "Note: libint is a critical dependency that often takes the longest to build."; \
+        echo; \
+
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 libint & \
+
+        sleep 5 && \
+
+        echo; \
+        echo "Concurrently Install cp2k and it's dependencies..."; \
+        echo; \
+
+        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20;
 RUN spack -e cp2k-env gc -y
 
 # Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
@@ -198,7 +212,7 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate -
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
       echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
     echo "=== Generating Dependency Graph ===" && \
-    spack -e cp2k-env graph --dot > /opt/spack-view/DependencyGraph.dot && \
+    spack -e cp2k-env graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
 
 # ----------------------------------------------------------------------------
@@ -280,6 +294,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     libnuma1 \
     openssh-client \
     util-linux \
+    libdw-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security (before COPY to use --chown)
@@ -409,7 +424,15 @@ ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
     HPC_CONTAINER_TAG="{{ default_image_tag }}" \
     HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
 
-COPY --chmod=755 --chown=hpc:hpc scripts/cp2k-motd.sh /usr/local/bin/hpc-motd.sh
+ENV MPI_RUNVAR=" -x OMPI_MCA_pml=ucx -x OMPI_MCA_osc=ucx -x UCX_TLS=all -x UCX_MEMTYPE_CACHE=n -x OMPI_MCA_coll_ucc_enable=1 -x OMPI_MCA_coll_ucc_priority=100 -x HSA_ENABLE_MWAITX=1 GPU_MAX_HW_QUEUES=12 -x OMP_WAIT_POLICY=PASSIVE -x OMP_PROC_BIND=close "
+
+COPY --chmod=755 spack-envs/cp2k-rocm-2026.1-gfx942/cp2k-gpu-motd.sh /usr/local/bin/hpc-motd.sh
+
+# Docker/Podman: entrypoint that conditionally shows MOTD
+COPY --chmod=755 scripts/cp2k-entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]
+
 {% endif %}
 
 # ============================================================================

@@ -28,37 +28,41 @@ spack:
 
   specs:
     # InfinityHub CP2K stack (keep SIRIUS route) + DLAF extension
-    - sirius@develop+rocm+fortran+vdwxc+dftd4+dftd3+pugixml+openmp+scalapack+dlaf
-    - libxc@7+fortran build_system=cmake
-    - libint
-    - cosma+rocm
-    - netlib-scalapack+pic+shared
-    - spla+rocm+fortran
-    - spfft+rocm
-    - libxsmm@1.17
-    # - binutils
-    - fftw+openmp
+    - "sirius@7.9.0+rocm+fortran+vdwxc+dftd4+dftd3+pugixml+openmp+scalapack+dlaf"
+    - "libxc@7+fortran build_system=cmake"
+    - "libint@2.11.1"
+    - "cosma@2.7.0+rocm"
+    - "netlib-scalapack@2.2.2+pic+shared"
+    - "spla@1.6.1+rocm+fortran"
+    - "spfft@1.1.1+rocm"
+    - "libxsmm@1.17"
+    - "fftw@3.3.10+openmp"
     # Install communication stack via Spack (replaces Dockerfile source build)
-    - ucx@1.19.0+rocm
-    - ucc@1.5.1+rocm ^ucx@1.19.0+rocm
-    - openmpi@5.0.8 fabrics=ucx ^ucx@1.19.0+rocm ^ucc@1.5.1+rocm
-    - autoconf@2.72
-    - libvori
-    - spglib
-    - dftd4
-    - hdf5
-    - trexio
-    - dbcsr@2.9.1+mpi+rocm+openmp~tests~examples
-    - openblas
-    - libvdwxc@master
-    # DLAF explicit root spec (same style as local ROCm flow)
-    - dla-future-fortran@0.5.0
-    - cp2k@2026.1+cosma~cuda+dbm_gpu+dftd4+dlaf+grid_gpu+grpp+hdf5~ipo+libint+libxc+mpi+mpi_f08+openmp+pw_gpu+rocm+sirius+spglib+spla+tblite+trexio+vdwxc build_type=Release smm=libxsmm
+    - "ucx@1.19.0+rocm"
+    - "ucc@1.5.1+rocm ^ucx@1.19.0+rocm"
+    - "openmpi@5.0.8 fabrics=ucx ^ucx@1.19.0+rocm ^ucc@1.5.1+rocm"
+    - "autoconf@2.72"
+    - "libvori@220621"
+    - "spglib@2.5.0"
+    - "dftd4@3.7.0"
+    - "hdf5@1.14.6"
+    - "trexio@2.5.0"
+    - "dbcsr@2.9.1+mpi+rocm+openmp~tests~examples"
+    - "openblas@0.3.30"
+    - "libvdwxc@0.5.0"
+    - "plumed@2.9.2"
+    - "greenx@2.2"
+    - "dla-future-fortran@0.5.0"
+    - "cp2k@2026.1+libvori+cosma~cuda+dbm_gpu+dftd4+dlaf+grid_gpu+grpp+hdf5~ipo+libint+libxc+mpi+mpi_f08+openmp+pw_gpu+rocm+sirius+spglib+spla+tblite+trexio+vdwxc+plumed+greenx build_type=Release smm=libxsmm"
 
   packages:
     all:
       variants: +shared amdgpu_target=gfx942 amdgpu_target_sram_ecc=gfx942
       target: [x86_64_v3]
+
+    openmpi:
+      require:
+        - +rocm
 
     mpi:
       require:
@@ -75,10 +79,21 @@ spack:
         - +rocm
         - +scalapack
         - amdgpu_target=gfx942
+        - +mpi_gpu_aware
 
     umpire:
       require:
         - "@2024.07.0:"
+
+    blaspp:
+      require:
+      - +rocm
+      - amdgpu_target=gfx942
+
+    lapackpp:
+      require:
+      - +rocm
+      - amdgpu_target=gfx942
 
     # Keep ROCm 7.2.1 from base image via external discovery.
     hip:

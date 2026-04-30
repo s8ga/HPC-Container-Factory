@@ -555,6 +555,12 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
                     filter_file(
                         "USE iso_fortran_env", "USE,INTRINSIC :: iso_fortran_env", file_path
                     )
+            # Patch for missing assert.h include in HIP backend
+            filter_file(
+                r'#include <hip/hip_runtime\.h>',
+                '#include <assert.h>\n#include <hip/hip_runtime.h>',
+                'src/offload/offload_runtime.h'
+            )
 
     def url_for_version(self, version):
         url = "https://github.com/cp2k/cp2k/releases/download/v{0}/cp2k-{0}.tar.bz2"
