@@ -1,3 +1,6 @@
+podman run --rm [Insert Image Name] bash -c 'python /opt/cp2k/tests/do_regtest.py  --mpiranks 2 --ompthreads 2 --maxtasks $(nproc) --keepalive --workbased
+ir /tmp --mpiexec "mpirun $MPI_RUNVAR -np {N}" $(dirname $(which cp2k.psmp)) psmp' | tee artifacts/cp2k-mkl-regtest.log
+
 *************************** Testing started ****************************
 
 ----------------------------- Settings ---------------------------------
