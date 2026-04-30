@@ -665,47 +665,31 @@ def build_sif(
     if def_template:
         logger.info("Rendering def template: %s", def_template)
         def_content = render_template(def_template, def_context)
-    else:
-        # Fallback: minimal def file with MOTD via SINGULARITY_SHELL wrapper.
-        # apptainer shell uses "bash --norc" which skips BASH_ENV, /etc/bash.bashrc,
-        # and ~/.bashrc. The only hook is SINGULARITY_SHELL: if set and executable,
-        # the shell action exec's it instead of "bash --norc".
-        def_content = (
-            f"Bootstrap: docker-archive\n"
-            f"From: {tar_name}\n"
-            f"\n"
-            f"%environment\n"
-            f"    export SINGULARITY_SHELL=/usr/local/bin/hpc-shell-wrapper.sh\n"
-            f"\n"
-            f"%post\n"
-            f"    cat > /usr/local/bin/hpc-shell-wrapper.sh <<'WRAPPER_EOF'\n"
-            f"#!/bin/bash\n"
-            f'    if [ "${{APPTAINER_COMMAND:-}}" = "shell" ]; then\n'
-            f"        /usr/local/bin/hpc-motd.sh 2>/dev/null || true\n"
-            f"    fi\n"
-            f'    exec /bin/bash --norc "$@"\n'
-            f"WRAPPER_EOF\n"
-            f"    chmod 755 /usr/local/bin/hpc-shell-wrapper.sh\n"
-        )
-        logger.info("Using auto-generated minimal def file")
 
-    def_file = artifacts_dir / f"{docker_image}_{docker_tag}.def"
-    def_file.write_text(def_content, encoding="utf-8")
-    logger.info("Definition file written: %s", def_file)
+        def_file = artifacts_dir / f"{docker_image}_{docker_tag}.def"
+        def_file.write_text(def_content, encoding="utf-8")
+        logger.info("Definition file written: %s", def_file)
 
-    # ── Step 3: Build SIF ────────────────────────────────────────────────
-    sif_name = output or artifacts_dir / f"{docker_image}_{docker_tag}.sif"
-
-    try:
+        # Build SIF from rendered def file
+        sif_name = output or artifacts_dir / f"{docker_image}_{docker_tag}.sif"
         cmd = [apptainer, "build", "--force",
                "--mksquashfs-args", mksquashfs_args,
                str(sif_name), str(def_file)]
         run_cmd(cmd, cwd=artifacts_dir)
-        sif_size = _human_size(Path(sif_name).stat().st_size)
-        logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
-    finally:
-        # Keep def file for reference (user can inspect / debug)
-        pass
+    else:
+        # Fallback: no def.j2 template found — build SIF directly from the
+        # docker-archive tar without any definition file.  This produces a
+        # bare SIF that mirrors the OCI image as-is (no MOTD, no %post, no
+        # %environment customisations).
+        logger.info("No def template found; building SIF directly from docker-archive")
+        sif_name = output or artifacts_dir / f"{docker_image}_{docker_tag}.sif"
+        cmd = [apptainer, "build", "--force",
+               "--mksquashfs-args", mksquashfs_args,
+               str(sif_name), f"docker-archive://{tar_name}"]
+        run_cmd(cmd, cwd=artifacts_dir)
+
+    sif_size = _human_size(Path(sif_name).stat().st_size)
+    logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
 
 
 def mirror_env(base_env: dict[str, str], args: argparse.Namespace) -> dict[str, str]:
