@@ -76,6 +76,7 @@ scripts/spack-common.sh    通用函数库（所有环境共享）
 |------|------|-----------|
 | `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k-opensource:2025.2` |
 | `cp2k-opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel | `cp2k-opensource:2025.2-force-avx512` |
+| `cp2k-mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k-mkl:2025.2-experimental` |
 | `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
 
 ## Build Notes 与专题文档（开发参考）
@@ -88,4 +89,4 @@ scripts/spack-common.sh    通用函数库（所有环境共享）
 
 ## 归档
 
-历史路线（VASP、CP2K MKL）已迁移至 `legacy/` 目录。
+历史路线（VASP、旧版 CP2K MKL）已迁移至 `legacy/` 目录。当前 MKL 实验版本见 `spack-envs/cp2k-mkl-2025.2-experimental/`。

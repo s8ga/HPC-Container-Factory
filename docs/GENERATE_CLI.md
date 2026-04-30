@@ -56,6 +56,7 @@ python generate.py build \
 | 环境类型 | 镜像名 | tag 示例 |
 |----------|--------|---------|
 | `cp2k-opensource-*` | `cp2k-opensource` | `2025.2`、`2025.2-force-avx512` |
+| `cp2k-mkl-*` | `cp2k-mkl` | `2025.2-experimental` |
 | `cp2k-rocm-*` | `cp2k-rocm` | `2026.1-gfx942` |
 
 ## build-sif

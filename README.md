@@ -18,6 +18,7 @@
 |------|------|-----------|
 | `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k-opensource:2025.2` |
 | `cp2k-opensource-2025.2-force-avx512` | 同上 + 强制 AVX512 kernel | `cp2k-opensource:2025.2-force-avx512` |
+| `cp2k-mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k-mkl:2025.2-experimental` |
 | `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
 
 ## ROCm 镜像构建参考
@@ -106,7 +107,7 @@ uv pip install -r requirements.txt
 ├── assets/                  # 离线资源 (bootstrap + mirror)
 ├── artifacts/               # 构建产物 (SIF, .run, Dockerfile)
 ├── tools/                   # 本地工具 (apptainer)
-├── legacy/                  # 归档 (VASP, MKL)
+├── legacy/                  # 归档 (VASP, 旧版 MKL)
 └── docs/                    # 文档
 ```
 
