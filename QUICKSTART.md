@@ -6,10 +6,11 @@
 
 ```bash
 # 1. Python 依赖
-pip install -r requirements.txt
+uv venv venv
+uv pip install -r requirements.txt --python ./venv/bin/python
 
-# 2. 需要 Podman 或 Docker
-podman info >/dev/null 2>&1 || docker info >/dev/null 2>&1
+# 2. 需要 Podman
+podman info
 ```
 
 ## 六步流程
@@ -48,7 +49,7 @@ python generate.py assets --env cp2k-opensource-2025.2
 ```
 
 > 一键完成：构建 mirror builder 容器 → 下载 Spack bootstrap → 下载源码 mirror → 校验。
-> 产出在 `assets/` 目录，支持完全离线构建。
+> 产出在 `assets/` 目录，支持半离线构建（源码包不用下载，但是spack build过程中存在patch文件）。
 > 详见 [离线资源指南](docs/ASSETS_GUIDE.md)。
 
 ### Step 3 — 构建容器镜像
@@ -98,12 +99,6 @@ apptainer shell /path/to/image.sif      # 使用
 ```bash
 python generate.py build --app-version    # 列出可用环境
 ```
-
-| `--app-version` | 说明 |
-|---|---|
-| `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS |
-| `cp2k-opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel |
-| `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU (gfx942) |
 
 ## 更多文档
 
