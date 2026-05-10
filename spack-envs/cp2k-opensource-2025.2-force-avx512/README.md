@@ -22,6 +22,7 @@
 |----|--------|-----------------|
 | `elpa` | `+openmp` | `+openmp +force_all_x86_kernel` |
 | `fftw` | `+openmp` | `+openmp +force_avx512` |
+| `openBLAS` | `target=[x86_64_v3]` |  `target=[x86_64_v4]` |
 
 CP2K 自身及所有其他依赖的版本、variant 完全一致（均不含 DLA-Future，因为纯 CPU 版本中 ELPA 已足够且 DLA-Future 会导致 regtest 出错）。
 

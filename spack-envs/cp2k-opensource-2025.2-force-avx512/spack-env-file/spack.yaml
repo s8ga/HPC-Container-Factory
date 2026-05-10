@@ -44,6 +44,8 @@ spack:
         - +dynamic_dispatch
         - +fortran
         - threads=openmp
+        - build_system=makefile
+        - +force_avx512
     scalapack:
       require:
         - netlib-scalapack
