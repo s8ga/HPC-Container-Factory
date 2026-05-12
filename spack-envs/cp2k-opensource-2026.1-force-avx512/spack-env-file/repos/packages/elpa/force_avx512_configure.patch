@@ -1,0 +1,48 @@
+From: ELPA force_all_x86_kernel configure script patch
+Subject: [PATCH] Force build AVX512 kernels in pre-generated configure script
+
+When autoreconf is unavailable or skipped, the pre-generated configure
+script must also be patched. This patch modifies configure directly to:
+  1. Replace AVX512 compile test AC_MSG_ERROR with WARNING + force yes
+  2. Export AVX512_CFLAGS for per-object compilation
+  3. Replace Xeon/Xeon Phi AC_MSG_ERROR with WARNING + default to Xeon
+
+Used alongside force_all_x86_kernel.patch (which patches configure.ac
+and Makefile.am). Both patches are needed for full coverage.
+
+--- a/configure
++++ b/configure
+@@ -21026,12 +21026,23 @@
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: ${can_compile_avx512}" >&5
+ printf "%s\n" "${can_compile_avx512}" >&6; }
+   if test x"$can_compile_avx512" != x"yes"; then
+-    as_fn_error $? "Could not compile a test program with AVX512, adjust the C compiler or CFLAGS. Possibly (some of) the flags \" $SIMD_FLAGS \" solve this issue" "$LINENO" 5
++    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: Could not compile a test program with AVX512, but forcing AVX512 support enabled as requested" >&2; }; can_compile_avx512=yes
+   fi
+ 
+ printf "%s\n" "#define HAVE_AVX512 1" >>confdefs.h
+ 
+ 
++  # Per-object CFLAGS for AVX512 kernel files (force_all_x86_kernel patch)
++  if test x"$GCC" = x"yes"; then
++    AVX512_CFLAGS="-mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq"
++  else
++    case "$CC" in
++      *icc*|*icx*|*ifort*|*ifx*) AVX512_CFLAGS="-xCORE-AVX512" ;;
++      *) AVX512_CFLAGS="-mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq" ;;
++    esac
++  fi
++  export AVX512_CFLAGS
++
+   if test x"$can_compile_avx512" = x"yes"; then
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether we compile for Xeon" >&5
+ printf %s "checking whether we compile for Xeon... " >&6; }
+@@ -21110,7 +21121,7 @@
+ printf "%s\n" "#define HAVE_AVX512_XEON_PHI 1" >>confdefs.h
+ 
+       else
+-        as_fn_error $? "Oho! We can neither compile AVX512 intrinsics for Xeon nor Xeon Phi. This should not happen!" "$LINENO" 5
++        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: Cannot compile AVX512 intrinsics for Xeon nor Xeon Phi. Defaulting to Xeon." >&2; }; can_compile_avx512_xeon=yes
+       fi
+     fi
+   fi

@@ -1,0 +1,136 @@
+From: ELPA force_all_x86_kernel patch
+Subject: [PATCH] Force build AVX512 kernels with per-object CFLAGS on non-AVX512 hosts
+
+This patch enables building AVX512 kernels on AVX2 (or lower) hosts by:
+  1. Relaxing configure AVX512 compile tests from hard errors to warnings
+  2. Defining AVX512_CFLAGS with compiler-specific flags (GCC/Clang/Intel)
+  3. Applying per-object CFLAGS to AVX512 kernel .lo targets only
+
+Main library code remains compiled with host-default flags (e.g. AVX2),
+while AVX512 kernels get extra -mavx512f flags. ELPA's runtime autotune
+will automatically select the optimal kernel for the deployment host.
+
+Intended to be used with Spack variant +force_all_x86_kernel.
+
+NOTE: Generated from ELPA 2021.05.002 source. GNU patch will auto-locate
+      the correct positions by context matching across ELPA versions
+      (2021.05 ~ 2026.02+) with its default fuzz factor of 2.
+--- a/configure.ac
++++ b/configure.ac
+@@ -1527,10 +1527,28 @@
+   )
+   AC_MSG_RESULT([${can_compile_avx512}])
+   if test x"$can_compile_avx512" != x"yes"; then
+-    AC_MSG_ERROR([Could not compile a test program with AVX512, adjust the C compiler or CFLAGS. Possibly (some of) the flags " $SIMD_FLAGS " solve this issue])
++    AC_MSG_WARN([Could not compile a test program with AVX512, but forcing AVX512 support enabled as requested])
++    can_compile_avx512=yes
+   fi
+   AC_DEFINE([HAVE_AVX512],[1],[AVX512 is supported on this CPU])
+ 
++  # Per-object CFLAGS for AVX512 kernel files only
++  # Compiler-specific flags: GCC/Clang use -mavx512f syntax, Intel uses -xCORE-AVX512
++  if test x"$GCC" = x"yes" || test x"$ac_cv_c_compiler_gnu" = x"yes"; then
++    AVX512_CFLAGS="-mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq"
++  else
++    case "$CC" in
++      *icc*|*icx*|*ifort*|*ifx*)
++        AVX512_CFLAGS="-xCORE-AVX512"
++        ;;
++      *)
++        # Fallback: try GCC-style flags
++        AVX512_CFLAGS="-mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq"
++        ;;
++    esac
++  fi
++  AC_SUBST([AVX512_CFLAGS])
++
+   if test x"$can_compile_avx512" = x"yes"; then
+     AC_MSG_CHECKING([whether we compile for Xeon])
+     AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+@@ -1583,7 +1601,8 @@
+       if test x"$can_compile_avx512_xeon_phi" = x"yes"; then
+         AC_DEFINE([HAVE_AVX512_XEON_PHI],[1],[AVX512 for Xeon-PHI is supported on this CPU])
+       else
+-        AC_MSG_ERROR([Oho! We can neither compile AVX512 intrinsics for Xeon nor Xeon Phi. This should not happen!])
++        AC_MSG_WARN([Cannot compile AVX512 intrinsics for Xeon nor Xeon Phi. Defaulting to Xeon.])
++        can_compile_avx512_xeon=yes
+       fi
+     fi
+   fi
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -262,6 +262,14 @@
+ endif
+ endif
+ 
++
++if WITH_REAL_AVX512_BLOCK2_KERNEL
++src/elpa2/kernels/real_avx512_2hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++if WANT_SINGLE_PRECISION_REAL
++src/elpa2/kernels/real_avx512_2hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++endif
++endif
++
+ if WITH_REAL_SVE128_BLOCK2_KERNEL
+   libelpa@SUFFIX@_private_la_SOURCES += src/elpa2/kernels/real_sve128_2hv_double_precision.c
+ if WANT_SINGLE_PRECISION_REAL
+@@ -332,6 +340,14 @@
+ endif
+ endif
+ 
++
++if WITH_REAL_AVX512_BLOCK4_KERNEL
++src/elpa2/kernels/real_avx512_4hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++if WANT_SINGLE_PRECISION_REAL
++src/elpa2/kernels/real_avx512_4hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++endif
++endif
++
+ if WITH_REAL_SVE128_BLOCK4_KERNEL
+   libelpa@SUFFIX@_private_la_SOURCES += src/elpa2/kernels/real_sve128_4hv_double_precision.c
+ if WANT_SINGLE_PRECISION_REAL
+@@ -402,6 +418,14 @@
+ endif
+ endif
+ 
++
++if WITH_REAL_AVX512_BLOCK6_KERNEL
++src/elpa2/kernels/real_avx512_6hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++if WANT_SINGLE_PRECISION_REAL
++src/elpa2/kernels/real_avx512_6hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++endif
++endif
++
+ if WITH_REAL_SVE128_BLOCK6_KERNEL
+   libelpa@SUFFIX@_private_la_SOURCES += src/elpa2/kernels/real_sve128_6hv_double_precision.c
+ if WANT_SINGLE_PRECISION_REAL
+@@ -472,6 +496,14 @@
+ endif
+ endif
+ 
++
++if WITH_COMPLEX_AVX512_BLOCK1_KERNEL
++src/elpa2/kernels/complex_avx512_1hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++if WANT_SINGLE_PRECISION_COMPLEX
++src/elpa2/kernels/complex_avx512_1hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++endif
++endif
++
+ if WITH_COMPLEX_SVE128_BLOCK1_KERNEL
+   libelpa@SUFFIX@_private_la_SOURCES += src/elpa2/kernels/complex_sve128_1hv_double_precision.c
+ if WANT_SINGLE_PRECISION_COMPLEX
+@@ -542,6 +574,14 @@
+ endif
+ endif
+ 
++
++if WITH_COMPLEX_AVX512_BLOCK2_KERNEL
++src/elpa2/kernels/complex_avx512_2hv_double_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++if WANT_SINGLE_PRECISION_COMPLEX
++src/elpa2/kernels/complex_avx512_2hv_single_precision.lo: AM_CFLAGS += $(AVX512_CFLAGS)
++endif
++endif
++
+ if WITH_COMPLEX_SVE128_BLOCK2_KERNEL
+   libelpa@SUFFIX@_private_la_SOURCES += src/elpa2/kernels/complex_sve128_2hv_double_precision.c
+ if WANT_SINGLE_PRECISION_COMPLEX
