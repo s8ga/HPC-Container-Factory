@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for CP2K + Opensource BLAS 2025.2 with Spack
 # BUILD REQUIREMENTS:
-# - assets/ directory with spack-v1.1.0.tar.gz, bootstrap-cache, spack-mirror (optional)
+# - assets/ directory with spack-v{{ spack_version }}.tar.gz, bootstrap-{{ spack_version }}, spack-mirror (optional)
 # - spack-envs/cp2k-opensource-2025.2/spack-env-file with spack.yaml and spack.lock
 #
 #
@@ -62,7 +62,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 
 # Copy pre-downloaded Spack from assets and extract in builder container
 # This avoids network issues and git clone limitations in containers
-COPY assets/spack-v1.1.0.tar.gz /tmp/spack.tar.gz
+COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
 
 ENV SPACK_ROOT=/opt/spack-exe
 
@@ -76,7 +76,7 @@ RUN cd /opt && \
 ENV PATH="${SPACK_ROOT}/bin:${PATH}"
 
 # Configure Spack to use local bootstrap mirror.
-COPY assets/bootstrap /opt/bootstrap
+COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
 
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \

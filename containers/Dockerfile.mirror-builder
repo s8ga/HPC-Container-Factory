@@ -21,6 +21,8 @@ RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.so
 # ── Minimal system deps for Spack (it needs python3 + yaml to run) ─────────
 # Full system packages (compilers, libs, etc.) are installed at runtime
 # by streamline.sh reading env.yaml — NOT baked into this image.
+# However, build-essential is needed because spack bootstrap mirror
+# requires concretize (which needs a system compiler for target detection).
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
         python3 \
@@ -28,50 +30,31 @@ RUN apt-get update -qq && \
         ca-certificates \
         git \
         sudo \
+        build-essential \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Allow keep-id user to sudo without password
-RUN echo "shaojiehe ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers 2>/dev/null || true && \
-    echo "ALL ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Allow any user to sudo without password (needed for runtime system pkg install)
+RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# ── Spack installation (rarely changes → maximum cache hit) ───────────────
+# ── Spack is NOT pre-installed ──────────────────────────────────────────
+# It is extracted at runtime by spack_bootstrap() in spack-common.sh,
+# using the version declared in each env's env.yaml → spack.version.
+# assets/ is bind-mounted from host, so all spack-v*.tar.gz files are available.
+#
+# Pre-create /opt with write permissions for non-root spack extraction.
+RUN mkdir -p /opt && chmod a+w /opt
 
-COPY assets/spack-v1.1.0.tar.gz /tmp/spack.tar.gz
-
-ENV SPACK_ROOT=/opt/spack
-ENV PATH="${SPACK_ROOT}/bin:${PATH}"
-
-RUN mkdir -p ${SPACK_ROOT} && \
-    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
-    rm /tmp/spack.tar.gz && \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack --version && \
-    echo "✅ Spack installed: $(spack --version)" && \
-    chmod -R a+w ${SPACK_ROOT}/var/spack && \
-    chmod a+w ${SPACK_ROOT}/__spack_path_placeholder__ 2>/dev/null || true
-
-# Make spack root writable for non-root concretize (needs to create __spack_path_placeholder__)
-RUN chmod -R a+w ${SPACK_ROOT}
-
-# Pre-clone the spack-packages repo to avoid re-cloning on every container run.
-# Without this, every `podman run --rm` triggers a fresh ~100MB git clone from GitHub.
-# Running any spack command that touches the builtin repo triggers the clone into
-# /root/.spack/package_repos/ which persists in this image layer.
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack info zlib >/dev/null 2>&1 && \
-    echo "✅ spack-packages repo pre-cloned" && \
-    du -sh /root/.spack/package_repos/
+# NOTE: /root/.spack/package_repos pre-clone REMOVED.
+# Since HOME=/tmp/home at runtime, pre-cloning to /root/.spack is useless.
+# spack_bootstrap() will handle first-run clingo bootstrap instead.
 
 # Create working directory for mounted project
 RUN mkdir -p /work
 
 WORKDIR /work
 
-# Create entrypoint script that sources Spack, then runs user command.
-# Per-environment setup (e.g. registering custom repos) is handled by
-# the optional mirror-create.sh hook in each spack-envs/<project>/ directory.
+# Create entrypoint script — no Spack sourcing (done at runtime by spack_bootstrap).
 RUN printf '#!/bin/bash\n\
-. /opt/spack/share/spack/setup-env.sh\n\
 exec "$@"\n' > /opt/entrypoint.sh && chmod +x /opt/entrypoint.sh
 
 ENTRYPOINT ["/opt/entrypoint.sh"]

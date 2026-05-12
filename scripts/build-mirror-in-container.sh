@@ -299,12 +299,21 @@ cmd_bootstrap() {
         return 1
     fi
 
+    # Detect Spack version from the source tree for .spack isolation
+    local spack_ver
+    spack_ver=$("${PROJECT_ROOT}/assets/spack-src/bin/spack" --version 2>/dev/null || echo "unknown")
+    local spack_user_dir="${PROJECT_ROOT}/assets/.spack-host-${spack_ver}"
+
     (
         set -e
+        export SPACK_USER_CONFIG_PATH="${spack_user_dir}"
+        export SPACK_USER_CACHE_PATH="${spack_user_dir}/cache"
+        mkdir -p "${spack_user_dir}" "${spack_user_dir}/cache"
         # shellcheck disable=SC1090
         . "${spack_setup}"
 
         echo "=== Spack version: $(spack --version) ==="
+        echo "=== .spack isolated to: ${spack_user_dir} ==="
         echo ""
         echo ">>> Running: spack bootstrap mirror --binary-packages ${BOOTSTRAP_DIR}"
         spack bootstrap mirror --binary-packages "${BOOTSTRAP_DIR}"

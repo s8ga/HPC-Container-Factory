@@ -23,13 +23,13 @@ MIRROR_SCRIPT="${SCRIPT_DIR}/build-mirror-in-container.sh"
 PODMAN_CMD="${PODMAN_CMD:-podman}"
 MIRROR_BUILDER_IMAGE="${MIRROR_BUILDER_IMAGE:-hpc-mirror-builder}"
 MIRROR_CONTAINER_NAME="${MIRROR_CONTAINER_NAME:-hpc-mirror-builder-work}"
-BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-${PROJECT_ROOT}/assets/bootstrap}"
-EXTRA_PODMAN_OPTS="${EXTRA_PODMAN_OPTS:-}"
-
 FORCE=0
 SKIP_IMAGE_BUILD=0
 CREATE_CONTAINER=0
 USE_CONTAINER=0
+SPACK_VERSION="${SPACK_VERSION:-1.1.0}"
+_BOOTSTRAP_DIR_USER="${BOOTSTRAP_DIR:-}"        # preserve explicit user override
+EXTRA_PODMAN_OPTS="${EXTRA_PODMAN_OPTS:-}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -93,11 +93,13 @@ Options:
   --image <name>           Mirror builder image name (default: hpc-mirror-builder)
   --podman <cmd>           Podman executable (default: podman)
   --podman-opt <opt>       Extra podman run/create option (repeatable)
-  --bootstrap-dir <path>   Output bootstrap directory (default: assets/bootstrap)
+  --spack-version <ver>    Spack version to use (default: 1.1.0)
+  --bootstrap-dir <path>   Output bootstrap directory (default: assets/bootstrap-<version>)
   -h, --help               Show this help
 
 Environment variables:
-  PODMAN_CMD, MIRROR_BUILDER_IMAGE, MIRROR_CONTAINER_NAME, BOOTSTRAP_DIR, EXTRA_PODMAN_OPTS
+  PODMAN_CMD, MIRROR_BUILDER_IMAGE, MIRROR_CONTAINER_NAME, BOOTSTRAP_DIR, EXTRA_PODMAN_OPTS,
+  SPACK_VERSION
 EOF
 }
 
@@ -139,6 +141,10 @@ while [[ $# -gt 0 ]]; do
             BOOTSTRAP_DIR="$2"
             shift 2
             ;;
+        --spack-version)
+            SPACK_VERSION="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -151,6 +157,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Recompute BOOTSTRAP_DIR after CLI parsing (SPACK_VERSION may have changed).
+# If the user passed --bootstrap-dir explicitly, honour it; otherwise derive from version.
+if [[ -n "${_BOOTSTRAP_DIR_USER}" ]]; then
+    BOOTSTRAP_DIR="${_BOOTSTRAP_DIR_USER}"
+else
+    BOOTSTRAP_DIR="${PROJECT_ROOT}/assets/bootstrap-${SPACK_VERSION}"
+fi
+unset _BOOTSTRAP_DIR_USER
 
 if [[ ! -x "${MIRROR_SCRIPT}" ]]; then
     error "Mirror helper script missing or not executable: ${MIRROR_SCRIPT}"
@@ -193,7 +208,7 @@ if [[ ${CREATE_CONTAINER} -eq 1 ]]; then
         "${MIRROR_SCRIPT}" create-container
 fi
 
-info "Generating bootstrap cache"
+info "Generating bootstrap cache for Spack v${SPACK_VERSION}"
 info "Output: ${BOOTSTRAP_REAL}"
 
 # ── Skip if bootstrap cache already exists and is complete ─────────────────
@@ -230,26 +245,38 @@ fi
 # custom repos — it only builds the Spack bootstrap mirror.
 info "Using ephemeral container for bootstrap (avoids stale repo registrations)"
 
-generate_cmd_nofallback='set -euo pipefail
-. /opt/spack/share/spack/setup-env.sh
-rm -rf /tmp/spack-repos /tmp/spack-env-*
-mkdir -p "'"${BOOTSTRAP_IN_CONTAINER}"'"
-spack bootstrap mirror --binary-packages "'"${BOOTSTRAP_IN_CONTAINER}"'"'
+SPACK_ROOT_IN_CONTAINER="/opt/spack-${SPACK_VERSION}"
+SPACK_TARBALL_IN_CONTAINER="/work/assets/spack-v${SPACK_VERSION}.tar.gz"
+SPACK_USER_DIR_IN_CONTAINER="/work/assets/.spack-v${SPACK_VERSION}"
 
-generate_cmd_fallback='set -euo pipefail
-. /opt/spack/share/spack/setup-env.sh
-rm -rf /tmp/spack-repos /tmp/spack-env-*
-mkdir -p "'"${BOOTSTRAP_IN_CONTAINER}"'"
-spack bootstrap mirror "'"${BOOTSTRAP_IN_CONTAINER}"'"'
+extract_and_source="set -euo pipefail
+if [[ ! -f \"${SPACK_ROOT_IN_CONTAINER}/share/spack/setup-env.sh\" ]]; then
+    mkdir -p \"${SPACK_ROOT_IN_CONTAINER}\"
+    tar -axf \"${SPACK_TARBALL_IN_CONTAINER}\" --strip-components=1 -C \"${SPACK_ROOT_IN_CONTAINER}\"
+fi
+mkdir -p \"${SPACK_USER_DIR_IN_CONTAINER}\"
+export SPACK_USER_CONFIG_PATH=\"${SPACK_USER_DIR_IN_CONTAINER}\"
+export SPACK_USER_CACHE_PATH=\"${SPACK_USER_DIR_IN_CONTAINER}/cache\"
+. \"${SPACK_ROOT_IN_CONTAINER}/share/spack/setup-env.sh\"
+rm -rf /tmp/spack-repos /tmp/spack-env-*"
+
+generate_cmd_nofallback="${extract_and_source}
+mkdir -p '"${BOOTSTRAP_IN_CONTAINER}"'
+spack bootstrap mirror --binary-packages '"${BOOTSTRAP_IN_CONTAINER}"'"
+
+generate_cmd_fallback="${extract_and_source}
+mkdir -p '"${BOOTSTRAP_IN_CONTAINER}"'
+spack bootstrap mirror '"${BOOTSTRAP_IN_CONTAINER}"'"
 
 _podman_run() {
     ${PODMAN_CMD} run --rm \
         ${EXTRA_PODMAN_OPTS} \
             --network=host \
             --userns=keep-id \
+            -e HOME=/tmp/home \
             -v "${PROJECT_ROOT}:/work:Z" \
             "${MIRROR_BUILDER_IMAGE}" \
-            bash -lc "$1"
+            bash -lc "mkdir -p /tmp/home && $1"
 }
 
 if ! _podman_run "${generate_cmd_nofallback}"; then

@@ -252,6 +252,8 @@ def build_context(
         "build_only": build_only,
         "default_image_name": default_image_name,
         "default_image_tag": default_image_tag,
+        # Spack version from env.yaml → spack.version (default: "1.1.0")
+        "spack_version": env_config.get("spack", {}).get("version", "1.1.0"),
         # 注入 env.yaml 中的 template_vars 作为顶层变量
         **env_config.get("template_vars", {}),
     }
@@ -759,6 +761,18 @@ def call_mirror_script(
     run_cmd(cmd, env=mirror_env(os.environ, args))
 
 
+def _spack_version_for_env(env_name: str | None) -> str:
+    """Read spack.version from the given env's env.yaml.
+
+    Returns "1.1.0" as default when env_name is None or env.yaml has no version.
+    """
+    if not env_name:
+        return "1.1.0"
+    env_dir = PROJECT_ROOT / "spack-envs" / env_name
+    env_config = load_env_yaml(env_dir / "Dockerfile.j2") if (env_dir / "Dockerfile.j2").exists() else {}
+    return env_config.get("spack", {}).get("version", "1.1.0")
+
+
 def call_prepare_bootstrap(
     *,
     args: argparse.Namespace,
@@ -771,6 +785,8 @@ def call_prepare_bootstrap(
             f"Bootstrap helper script not found: {PREPARE_BOOTSTRAP_SCRIPT}"
         )
 
+    spack_version = _spack_version_for_env(getattr(args, "env", None))
+
     cmd = [
         str(PREPARE_BOOTSTRAP_SCRIPT),
         "--container-name",
@@ -779,6 +795,8 @@ def call_prepare_bootstrap(
         args.mirror_image,
         "--podman",
         args.podman_cmd,
+        "--spack-version",
+        spack_version,
     ]
 
     if args.force_bootstrap:

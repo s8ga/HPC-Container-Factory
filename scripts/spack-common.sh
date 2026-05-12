@@ -57,7 +57,10 @@ with open(sys.argv[1]) as f:
     d = yaml.safe_load(f)
 
 spack = d.get('spack', {})
+spack_ver = spack.get('version', '1.1.0')
 print("SPACK_ENV_NAME='{}'".format(spack.get('env_name', 'cp2k-env')))
+print("SPACK_VERSION='{}'".format(spack_ver))
+print("SPACK_ROOT='/opt/spack-{}'".format(spack_ver))
 
 mb = d.get('mirror_builder', {})
 pkgs = mb.get('system_pkgs', [])
@@ -82,6 +85,8 @@ PYEOF
 
     eval "$(python3 "${_env_parser}" "${env_yaml}")"
     rm -f "${_env_parser}"
+
+    export SPACK_VERSION SPACK_ROOT
 
     # Reconstruct CUSTOM_REPOS array from indexed variables
     CUSTOM_REPOS=()
@@ -112,7 +117,10 @@ step_install_system_pkgs() {
 # step_clean_stale_repos — Remove stale site-level repo registrations
 # ============================================================================
 step_clean_stale_repos() {
-    . /opt/spack/share/spack/setup-env.sh 2>/dev/null || true
+    local spack_root="${SPACK_ROOT:-/opt/spack}"
+    if [[ -f "${spack_root}/share/spack/setup-env.sh" ]]; then
+        . "${spack_root}/share/spack/setup-env.sh" 2>/dev/null || true
+    fi
 
     local stale_repos
     stale_repos=$(spack repo list 2>/dev/null | grep -v 'builtin' | awk '{print $2}' || true)
@@ -156,12 +164,40 @@ step_register_repos() {
                 ;;
         esac
 
-        if spack repo list 2>/dev/null | grep -q "${namespace}"; then
-            _sc_info "Repo ${namespace} already registered — skipping"
-            continue
+        # Determine repo_dir for staleness check
+        local repo_dir
+        case "${repo_type}" in
+            git)  repo_dir="/tmp/spack-repos/spack_repo/${namespace}" ;;
+            local) repo_dir="${ENV_DIR}/${repo_rel_path}" ;;
+        esac
+
+        # Check if already registered AND the path still exists.
+        # Stale registrations (path gone after container restart) are removed.
+        local registered_dir
+        registered_dir=$(spack repo list 2>/dev/null | awk -v ns="${namespace}" '$1 == ns {print $2}')
+        if [[ -n "${registered_dir}" ]]; then
+            if [[ -d "${registered_dir}" && -f "${registered_dir}/repo.yaml" ]]; then
+                _sc_info "Repo ${namespace} already registered at ${registered_dir} — skipping"
+                continue
+            fi
+            _sc_warn "Stale registration for ${namespace} (${registered_dir} not found) — removing"
+            spack repo remove "${namespace}" 2>/dev/null || true
+            # Also purge from user scope repos.yaml directly if spack repo remove missed it
+            local user_repos_yaml="${SPACK_USER_CONFIG_PATH:-$HOME/.spack}/repos.yaml"
+            if [[ -f "${user_repos_yaml}" ]] && python3 -c "import yaml; d=yaml.safe_load(open('${user_repos_yaml}')); print('${namespace}' in (d.get('repos',{}) if isinstance(d.get('repos'),dict) else {}))" 2>/dev/null | grep -q True; then
+                python3 -c "
+import yaml
+with open('${user_repos_yaml}') as f: d = yaml.safe_load(f) or {}
+repos = d.get('repos', {})
+if isinstance(repos, dict) and '${namespace}' in repos:
+    del repos['${namespace}']
+    d['repos'] = repos
+    with open('${user_repos_yaml}', 'w') as f: yaml.dump(d, f, default_flow_style=False)
+    print('Removed ${namespace} from ${user_repos_yaml}')
+" 2>/dev/null || true
+            fi
         fi
 
-        local repo_dir
         case "${repo_type}" in
             git)
                 repo_dir="/tmp/spack-repos/spack_repo/${namespace}"
@@ -252,26 +288,51 @@ step_concretize() {
 # ============================================================================
 # spack_bootstrap — Source spack + configure local bootstrap mirror
 #
-# Prerequisites: /opt/spack installed, /work/assets/bootstrap available
+# Prerequisites: Spack tarball available in /work/assets/, env.yaml parsed
 # After this: spack commands are available, bootstrap uses local mirror
 # ============================================================================
 spack_bootstrap() {
-    _sc_info "Configuring Spack bootstrap..."
-    . /opt/spack/share/spack/setup-env.sh
+    local spack_ver="${SPACK_VERSION:-1.1.0}"
+    export SPACK_ROOT="${SPACK_ROOT:-/opt/spack-${spack_ver}}"
 
-    if [[ -d /work/assets/bootstrap/metadata/sources ]]; then
-        spack bootstrap add --trust local-sources /work/assets/bootstrap/metadata/sources 2>/dev/null || true
-        spack bootstrap add --trust local-binaries /work/assets/bootstrap/metadata/binaries 2>/dev/null || true
+    # Runtime on-demand extraction (only if not already present)
+    if [[ ! -f "${SPACK_ROOT}/share/spack/setup-env.sh" ]]; then
+        local tarball="/work/assets/spack-v${spack_ver}.tar.gz"
+        if [[ ! -f "${tarball}" ]]; then
+            _sc_error "Spack tarball not found: ${tarball}"
+            exit 1
+        fi
+        _sc_info "Extracting Spack v${spack_ver}..."
+        mkdir -p "${SPACK_ROOT}"
+        tar -axf "${tarball}" --strip-components=1 -C "${SPACK_ROOT}"
+    fi
+
+    _sc_info "Configuring Spack bootstrap (v${spack_ver})..."
+    export SPACK_USER_CONFIG_PATH="/work/assets/.spack-v${spack_ver}"
+    export SPACK_USER_CACHE_PATH="/work/assets/.spack-v${spack_ver}/cache"
+    mkdir -p "${SPACK_USER_CONFIG_PATH}" "${SPACK_USER_CACHE_PATH}"
+    . "${SPACK_ROOT}/share/spack/setup-env.sh"
+    export PATH="${SPACK_ROOT}/bin:${PATH}"
+
+    # Bootstrap cache — version-isolated with fallback to shared directory
+    local bootstrap_dir="/work/assets/bootstrap-${spack_ver}"
+    if [[ ! -d "${bootstrap_dir}" ]]; then
+        bootstrap_dir="/work/assets/bootstrap"  # fallback to shared dir
+    fi
+
+    if [[ -d "${bootstrap_dir}/metadata/sources" ]]; then
+        spack bootstrap add --trust local-sources "${bootstrap_dir}/metadata/sources" 2>/dev/null || true
+        spack bootstrap add --trust local-binaries "${bootstrap_dir}/metadata/binaries" 2>/dev/null || true
         spack bootstrap disable github-actions-v2 2>/dev/null || true
         spack bootstrap disable github-actions-v0.6 2>/dev/null || true
         spack bootstrap disable spack-install 2>/dev/null || true
         spack bootstrap now 2>/dev/null || true
-        _sc_ok "Bootstrap configured from local mirror"
+        _sc_ok "Bootstrap configured from ${bootstrap_dir}"
     else
         _sc_warn "No local bootstrap mirror found — using Spack defaults"
     fi
 
-    echo "Spack version: $(spack --version)"
+    echo "Spack version: $(spack --version) at ${SPACK_ROOT}"
 }
 
 # ============================================================================
@@ -408,8 +469,8 @@ streamline_dispatch() {
             echo " Env:  ${ENV_NAME}"
             echo "============================================================"
             step_install_system_pkgs
-            step_clean_stale_repos
             spack_bootstrap
+            step_clean_stale_repos
             step_register_repos
             step_find
             step_concretize
@@ -421,8 +482,8 @@ streamline_dispatch() {
             echo " MODE: mirror"
             echo " Env:  ${ENV_NAME}"
             echo "============================================================"
-            step_clean_stale_repos
             spack_bootstrap
+            step_clean_stale_repos
             step_register_repos
             mirror_create "${ENV_DIR}" "${MIRROR_DIR}"
             echo ""
@@ -434,8 +495,8 @@ streamline_dispatch() {
             echo " Env:  ${ENV_NAME}"
             echo "============================================================"
             step_install_system_pkgs
-            step_clean_stale_repos
             spack_bootstrap
+            step_clean_stale_repos
             step_register_repos
             step_find
             step_concretize
@@ -451,8 +512,8 @@ streamline_dispatch() {
             echo " MODE: verify"
             echo " Env:  ${ENV_NAME}"
             echo "============================================================"
-            step_clean_stale_repos
             spack_bootstrap
+            step_clean_stale_repos
             step_register_repos
             mirror_verify "${ENV_DIR}" "${MIRROR_DIR}"
             echo ""
