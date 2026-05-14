@@ -100,7 +100,7 @@
   - 参考上游 spack.sh 执行顺序：env activate -> external find -> concretize -> install。
   - 适配本仓库路径和镜像约束。
 
-- generate.py 与 docs/GENERATE_CLI.md
+- `hpc_cf/` package 与 docs/GENERATE_CLI.md
   - 增加 cp2k rocm 2026.1 模板入口与参数说明。
 
 ## 7. Credit 保留实施项

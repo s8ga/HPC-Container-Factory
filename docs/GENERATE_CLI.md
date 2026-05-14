@@ -1,11 +1,11 @@
-# generate.py CLI 使用说明
+# HPC Container Factory CLI 使用说明
 
-入口: `generate.py`
+入口: `python -m hpc_cf`
 
 ## 命令总览
 
 ```bash
-python generate.py <command> [options]
+python -m hpc_cf <command> [options]
 ```
 
 | 子命令 | 用途 |
@@ -19,8 +19,8 @@ python generate.py <command> [options]
 ## dockerfile
 
 ```bash
-python generate.py dockerfile \
-  --app-version cp2k-opensource-2025.2 \
+python -m hpc_cf dockerfile \
+  --app-version cp2k_opensource-2025.2 \
   --output Dockerfile
 ```
 
@@ -36,8 +36,8 @@ python generate.py dockerfile \
 ## build
 
 ```bash
-python generate.py build \
-  --app-version cp2k-rocm-2026.1-gfx942 \
+python -m hpc_cf build \
+  --app-version cp2k_rocm-2026.1-gfx942 \
   --engine podman \
   --network-host
 ```
@@ -65,13 +65,13 @@ python generate.py build \
 
 ```bash
 # 从已构建的 OCI 镜像构建 SIF
-python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512
+python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
 
 # 显式指定镜像
-python generate.py build-sif --docker-image cp2k-opensource --docker-tag 2025.2
+python -m hpc_cf build-sif --docker-image cp2k-opensource --docker-tag 2025.2
 
 # 仅安装 apptainer
-python generate.py build-sif --install-apptainer-only
+python -m hpc_cf build-sif --install-apptainer-only
 ```
 
 | 参数 | 说明 |
@@ -90,13 +90,13 @@ python generate.py build-sif --install-apptainer-only
 
 ```bash
 # 打包（默认最大压缩）
-python generate.py pack-apptainer
+python -m hpc_cf pack-apptainer
 
 # 指定输出路径
-python generate.py pack-apptainer -o /path/to/apptainer.run
+python -m hpc_cf pack-apptainer -o /path/to/apptainer.run
 
 # 跳过 SHA256 校验（更快）
-python generate.py pack-apptainer --no-sha256
+python -m hpc_cf pack-apptainer --no-sha256
 ```
 
 | 参数 | 说明 |
@@ -117,14 +117,14 @@ apptainer shell /path/to/image.sif        # 使用
 
 ```bash
 # 一键完整流程
-python generate.py assets --env cp2k-opensource-2025.2
+python -m hpc_cf assets --env cp2k_opensource-2025.2
 
 # 分步执行
-python generate.py assets --create-container
-python generate.py assets --prepare-bootstrap
-python generate.py assets --env cp2k-opensource-2025.2 --download-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --verify-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --status
+python -m hpc_cf assets --create-container
+python -m hpc_cf assets --prepare-bootstrap
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --download-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 ```
 
 | 参数 | 说明 |
@@ -138,7 +138,7 @@ python generate.py assets --env cp2k-opensource-2025.2 --status
 
 ## 自动发现机制
 
-`generate.py` 通过以下顺序查找模板：
+`hpc_cf` 通过以下顺序查找模板：
 
 1. `spack-envs/<app-version>/Dockerfile.j2`（新布局，优先）
 2. `spack-envs/<app>-<app-version>/Dockerfile.j2`（拼接尝试）
@@ -147,7 +147,7 @@ python generate.py assets --env cp2k-opensource-2025.2 --status
 `--app-version` 直接传 `spack-envs/` 下的目录名即可：
 
 ```bash
-python generate.py dockerfile --app-version cp2k-opensource-2025.2
-python generate.py dockerfile --app-version cp2k-opensource-2025.2-force-avx512
-python generate.py dockerfile --app-version cp2k-rocm-2026.1-gfx942
+python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2
+python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2-force-avx512
+python -m hpc_cf dockerfile --app-version cp2k_rocm-2026.1-gfx942
 ```

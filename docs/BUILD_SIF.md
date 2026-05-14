@@ -2,11 +2,11 @@
 
 ## 概述
 
-`generate.py build-sif` 将本地构建的 OCI 镜像（Docker/Podman）转换为 Apptainer SIF 文件，同时注入交互式 MOTD 显示功能。
+`python -m hpc_cf build-sif` 将本地构建的 OCI 镜像（Docker/Podman）转换为 Apptainer SIF 文件，同时注入交互式 MOTD 显示功能。
 
 ```bash
 source ./activate.sh
-python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512
+python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
 ```
 
 产物输出到 `artifacts/`：
@@ -20,7 +20,7 @@ python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512
 ## 命令选项
 
 ```bash
-python generate.py build-sif [options]
+python -m hpc_cf build-sif [options]
 ```
 
 | 参数 | 说明 |
@@ -57,7 +57,7 @@ SIF 镜像 (artifacts/*.sif)
 
 手动安装：
 ```bash
-python generate.py build-sif --install-apptainer-only
+python -m hpc_cf build-sif --install-apptainer-only
 ```
 
 系统依赖（Ubuntu/Debian）：

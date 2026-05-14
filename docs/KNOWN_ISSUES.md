@@ -4,7 +4,7 @@
 
 ## 归档
 
-VASP 与旧版 CP2K MKL 路线已归档到 `legacy/`。当前 MKL 实验版本见 `spack-envs/cp2k-mkl-2025.2-experimental/`。
+VASP 与旧版 CP2K MKL 路线已归档到 `legacy/`。当前 MKL 实验版本见 `spack-envs/cp2k_mkl-2025.2-experimental/`。
 
 ## 已解决：Apptainer Shell MOTD
 

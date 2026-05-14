@@ -1,6 +1,6 @@
 # Mirror Builder Image for HPC-Container-Factory
 # Purpose: Generic Spack-only image shared by all environments.
-#          System packages and mirror setup are installed at runtime by streamline.sh
+#          System packages and mirror setup are installed at runtime by hpc_cf
 #          reading from spack-envs/<env>/env.yaml.
 #
 # Build:
@@ -20,7 +20,7 @@ RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.so
 
 # ── Minimal system deps for Spack (it needs python3 + yaml to run) ─────────
 # Full system packages (compilers, libs, etc.) are installed at runtime
-# by streamline.sh reading env.yaml — NOT baked into this image.
+# by hpc_cf (SpackOps.install_system_pkgs) reading env.yaml — NOT baked into this image.
 # However, build-essential is needed because spack bootstrap mirror
 # requires concretize (which needs a system compiler for target detection).
 RUN apt-get update -qq && \
@@ -37,7 +37,7 @@ RUN apt-get update -qq && \
 RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # ── Spack is NOT pre-installed ──────────────────────────────────────────
-# It is extracted at runtime by spack_bootstrap() in spack-common.sh,
+# It is extracted at runtime by SpackOps._source_spack() in hpc_cf/spack_ops.py,
 # using the version declared in each env's env.yaml → spack.version.
 # assets/ is bind-mounted from host, so all spack-v*.tar.gz files are available.
 #
@@ -46,14 +46,14 @@ RUN mkdir -p /opt && chmod a+w /opt
 
 # NOTE: /root/.spack/package_repos pre-clone REMOVED.
 # Since HOME=/tmp/home at runtime, pre-cloning to /root/.spack is useless.
-# spack_bootstrap() will handle first-run clingo bootstrap instead.
+# SpackOps.bootstrap_mirror() will handle first-run clingo bootstrap instead.
 
 # Create working directory for mounted project
 RUN mkdir -p /work
 
 WORKDIR /work
 
-# Create entrypoint script — no Spack sourcing (done at runtime by spack_bootstrap).
+# Create entrypoint script — no Spack sourcing (done at runtime by SpackOps).
 RUN printf '#!/bin/bash\n\
 exec "$@"\n' > /opt/entrypoint.sh && chmod +x /opt/entrypoint.sh
 

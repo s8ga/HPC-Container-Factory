@@ -7,7 +7,7 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 | 文档 | 说明 |
 |------|------|
 | [快速开始](QUICK_START.md) | 5 步完成构建（Dockerfile → 镜像 → SIF） |
-| [CLI 用法](GENERATE_CLI.md) | `generate.py` 全部子命令与参数 |
+| [CLI 用法](GENERATE_CLI.md) | `hpc_cf` 全部子命令与参数 |
 | [离线资源](ASSETS_GUIDE.md) | bootstrap + mirror 容器化构建流程 |
 | [SIF 构建](BUILD_SIF.md) | Apptainer SIF 转换、MOTD 技术方案 |
 | [模板矩阵](TEMPLATE_MATRIX.md) | 环境 ↔ 模板映射表 |
@@ -20,7 +20,16 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 
 ```
 .
-├── generate.py              # 统一 CLI 入口
+├── hpc_cf/                  # Python 包 (python -m hpc_cf)
+│   ├── __main__.py          # 入口
+│   ├── cli.py               # argparse + 调度
+│   ├── assets.py            # assets 工作流
+│   ├── container.py         # Podman 容器管理
+│   ├── spack_ops.py         # Spack 操作
+│   ├── template.py          # Jinja2 渲染
+│   ├── sif.py               # SIF 构建 + apptainer
+│   ├── env.py               # env.yaml 解析
+│   └── config.py            # 路径常量
 ├── activate.sh              # 激活开发环境
 ├── requirements.txt         # Python 依赖 (jinja2, pyyaml)
 ├── spack-envs/              # 每个环境自包含
@@ -30,8 +39,9 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 │       └── spack-env-file/
 │           ├── env.yaml     # Single source of truth
 │           ├── spack.yaml
-│           └── streamline.sh
-├── scripts/                 # 构建、mirror、激活脚本
+│           └── spack.lock   # concretize 产出
+├── scripts/                 # 运行时脚本 (apptainer 激活、MOTD 等)
+├── containers/              # Dockerfile.mirror-builder
 ├── templates/               # Legacy 模板回退
 ├── assets/                  # 离线资源
 ├── artifacts/               # 构建产物
@@ -51,33 +61,32 @@ spack-envs/<env>/
       ├── env.yaml        ← Single source of truth
       ├── spack.yaml      ← Spack 包定义
       ├── spack.lock      ← concretize 产出
-      ├── streamline.sh   ← mirror pipeline 入口（~15 行，逻辑在 spack-common.sh）
       └── repos/          ← (可选) 自定义 Spack repo
 ```
 
-### Mirror 构建三层架构
+### Mirror 构建架构
 
 ```
-scripts/build-mirror-in-container.sh    调度器（宿主机）
-    ↓ podman run ... bash streamline.sh
-spack-envs/<env>/spack-env-file/streamline.sh   Per-env 入口（~15 行）
-    ↓ source spack-common.sh
-scripts/spack-common.sh    通用函数库（所有环境共享）
+hpc_cf/assets.py + hpc_cf/cli.py      工作流调度（宿主机）
+    ↓ Container.exec() / run_ephemeral()
+hpc_cf/container.py                    容器生命周期管理
+    ↓ bash -lc <script>
+hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共享）
 ```
 
 **设计原则**：
 - `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像，不含系统包或 pipeline 逻辑
-- 系统包在运行时由 `streamline.sh` 从 `env.yaml` 读取后安装
+- 系统包在运行时由 `hpc_cf/spack_ops.py` 从 `env.yaml` 读取后安装
 - 每个 env 的差异完全由 `env.yaml` 驱动
 
 ## 当前环境
 
 | `--app-version` | 说明 | 自动镜像名 |
 |------|------|-----------|
-| `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k-opensource:2025.2` |
-| `cp2k-opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel | `cp2k-opensource:2025.2-force-avx512` |
-| `cp2k-mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k-mkl:2025.2-experimental` |
-| `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
+| `cp2k_opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k_opensource:2025.2` |
+| `cp2k_opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel | `cp2k_opensource:2025.2-force-avx512` |
+| `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k_mkl:2025.2-experimental` |
+| `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k_rocm:2026.1-gfx942` |
 
 ## Build Notes 与专题文档（开发参考）
 
@@ -89,4 +98,4 @@ scripts/spack-common.sh    通用函数库（所有环境共享）
 
 ## 归档
 
-历史路线（VASP、旧版 CP2K MKL）已迁移至 `legacy/` 目录。当前 MKL 实验版本见 `spack-envs/cp2k-mkl-2025.2-experimental/`。
+历史路线（VASP、旧版 CP2K MKL）已迁移至 `legacy/` 目录。当前 MKL 实验版本见 `spack-envs/cp2k_mkl-2025.2-experimental/`。

@@ -6,26 +6,27 @@
 
 | 能力 | 命令 |
 |------|------|
-| 生成 Dockerfile | `python generate.py dockerfile --app-version <env>` |
-| 构建容器镜像 | `python generate.py build --app-version <env>` |
-| 转换为 SIF | `python generate.py build-sif --app-version <env>` |
-| 准备离线资源 | `python generate.py assets --env <env>` |
-| 打包 Apptainer | `python generate.py pack-apptainer` |
+| 生成 Dockerfile | `python -m hpc_cf dockerfile --app-version <env>` |
+| 构建容器镜像 | `python -m hpc_cf build --app-version <env>` |
+| 转换为 SIF | `python -m hpc_cf build-sif --app-version <env>` |
+| 准备离线资源 | `python -m hpc_cf assets --env <env>` |
+| 打包 Apptainer | `python -m hpc_cf pack-apptainer` |
 
 ## 当前环境
 
-| 环境 | 说明 | 自动镜像名 |
-|------|------|-----------|
-| `cp2k-opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k-opensource:2025.2` |
-| `cp2k-opensource-2025.2-force-avx512` | 同上 + 强制 AVX512 kernel | `cp2k-opensource:2025.2-force-avx512` |
-| `cp2k-mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k-mkl:2025.2-experimental` |
-| `cp2k-rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k-rocm:2026.1-gfx942` |
+| 环境 | 说明 | Spack | 自动镜像名 |
+|------|------|-------|------------|
+| `cp2k_opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | 1.1.0 | `cp2k_opensource:2025.2` |
+| `cp2k_opensource-2025.2-force-avx512` | 同上 + 强制 AVX512 kernel | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
+| `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
+| `cp2k_opensource-2026.1-force-avx512` | CP2K 2026.1 开源版 + 强制 AVX512 | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
+| `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
 
 ## ROCm 镜像构建参考
 
-`cp2k-rocm-2026.1-gfx942` 使用 AMD InfinityHub CI 的 ROCm 构建流。构建器镜像为 `rocm/dev-ubuntu-24.04:7.2.1-complete`，运行时镜像为 `rocm/dev-ubuntu-24.04:7.2.1`。
+`cp2k_rocm-2026.1-gfx942` 使用 AMD InfinityHub CI 的 ROCm 构建流。构建器镜像为 `rocm/dev-ubuntu-24.04:7.2.1-complete`，运行时镜像为 `rocm/dev-ubuntu-24.04:7.2.1`。
 
-上游参考和本地适配记录见 `spack-envs/cp2k-rocm-2026.1-gfx942/README_SOURCE.md`，主要包括：
+上游参考和本地适配记录见 `spack-envs/cp2k_rocm-2026.1-gfx942/README_SOURCE.md`，主要包括：
 
 - 上游来源：`https://github.com/amd/InfinityHub-CI`，路径 `cp2k/docker/cp2k_environment`
 - 保持 ROCm 7.2.1 兼容性
@@ -38,7 +39,7 @@
 
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Python | ≥ 3.10 | 运行 `generate.py` |
+| Python | ≥ 3.10 | 运行 `hpc_cf` (`python -m hpc_cf`) |
 | Podman 或 Docker | 任意 | 容器构建、mirror 构建 |
 | Bash | ≥ 4.0 | 脚本运行 |
 
@@ -56,7 +57,7 @@ uv pip install -r requirements.txt
 
 | 工具 | 用途 | 安装 |
 |------|------|------|
-| Apptainer / Singularity | SIF 构建、SIF 运行 | `python generate.py build-sif --install-apptainer-only` |
+| Apptainer / Singularity | SIF 构建、SIF 运行 | `python -m hpc_cf build-sif --install-apptainer-only` |
 | makeself | 打包 Apptainer 自解压包 | `sudo apt install makeself` |
 | gzip | pack-apptainer 压缩（默认 gzip，系统自带） | 系统自带 |
 | `curl`, `rpm2cpio`, `cpio` | Apptainer 非特权安装 | `sudo apt install curl rpm2cpio cpio` |
@@ -71,7 +72,7 @@ uv pip install -r requirements.txt
 
 - [文档总览](docs/README.md) — 架构与文档导航
 - [快速开始](docs/QUICK_START.md) — 5 步完成构建
-- [CLI 用法](docs/GENERATE_CLI.md) — `generate.py` 全部命令
+- [CLI 用法](docs/GENERATE_CLI.md) — `hpc_cf` 全部命令
 - [离线资源指南](docs/ASSETS_GUIDE.md) — bootstrap + mirror 流程
 - [SIF 构建](docs/BUILD_SIF.md) — Apptainer SIF 转换与 MOTD
 - [模板矩阵](docs/TEMPLATE_MATRIX.md) — 环境 ↔ 模板映射
@@ -90,17 +91,16 @@ uv pip install -r requirements.txt
 
 ```
 .
-├── generate.py              # 统一 CLI 入口
+├── hpc_cf/                  # Python 包 (python -m hpc_cf)
 ├── activate.sh              # 激活开发环境 (venv + apptainer)
 ├── requirements.txt         # Python 依赖
 ├── spack-envs/              # 每个环境自包含
-│   ├── cp2k-opensource-2025.2/
+│   ├── cp2k_opensource-2025.2/
 │   │   ├── Dockerfile.j2    # 镜像模板
 │   │   ├── cp2k.def.j2      # (可选) SIF 定义模板
 │   │   └── spack-env-file/
 │   │       ├── env.yaml     # Single source of truth
-│   │       ├── spack.yaml   # Spack 包定义
-│   │       └── streamline.sh
+│   │       └── spack.yaml   # Spack 包定义
 │   └── ...
 ├── scripts/                 # 构建、mirror、激活脚本
 ├── templates/               # Legacy 模板 (回退)

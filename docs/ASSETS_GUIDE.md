@@ -13,7 +13,7 @@ assets/
 
 ## 容器化缓存流程（推荐）
 
-统一使用 `generate.py assets` 入口，底层调用 `scripts/build-mirror-in-container.sh` 与 `scripts/prepare-bootstrap-cache.sh`。
+统一使用 `python -m hpc_cf assets` 入口，底层由 `hpc_cf/` Python 包驱动。
 
 ### 前置条件
 
@@ -25,78 +25,82 @@ assets/
 
 ```bash
 # 一键完整流程
-python generate.py assets --env cp2k-opensource-2025.2
+python -m hpc_cf assets --env cp2k_opensource-2025.2
 
 # 分步
-python generate.py assets --create-container
-python generate.py assets --prepare-bootstrap
-python generate.py assets --env cp2k-opensource-2025.2 --download-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --verify-mirror
-python generate.py assets --env cp2k-opensource-2025.2 --status
+python -m hpc_cf assets --create-container
+python -m hpc_cf assets --prepare-bootstrap
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --download-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 ```
-
-也可直接调用底层脚本：
 
 ```bash
-./scripts/build-mirror-in-container.sh image
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 mirror
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 verify
-./scripts/build-mirror-in-container.sh -e cp2k-opensource-2025.2 status
+# 也可通过 CLI 参数直接调用
+python -m hpc_cf assets --create-container
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --download-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
+python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 ```
 
-### 三层架构
+### 模块架构
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  scripts/build-mirror-in-container.sh           │
-│  调度器 — 宿主机上运行，只管容器生命周期           │
+│  hpc_cf/cli.py + hpc_cf/assets.py               │
+│  CLI 调度 + 工作流编排                           │
 └───────────────┬─────────────────────────────────┘
-                │ podman run ... bash streamline.sh
+                │ Container.exec() / run_ephemeral()
                 ▼
 ┌─────────────────────────────────────────────────┐
-│  spack-envs/<env>/spack-env-file/streamline.sh  │
-│  Per-env 入口 — ~15 行，只设路径，委托通用函数     │
+│  hpc_cf/container.py                            │
+│  容器生命周期管理 (Podman)                       │
 └───────────────┬─────────────────────────────────┘
-                │ source spack-common.sh
+                │ bash -lc <script>
                 ▼
 ┌─────────────────────────────────────────────────┐
-│  scripts/spack-common.sh                        │
-│  通用函数库 — 所有环境共享                        │
-│  提供: streamline_parse_env(),                   │
-│        step_install_system_pkgs(),               │
-│        step_register_repos(), step_find(),       │
-│        step_concretize(), mirror_create(),       │
+│  hpc_cf/spack_ops.py                            │
+│  Spack 操作函数库 — 所有环境共享                 │
+│  提供: bootstrap_mirror(),                       │
+│        install_system_pkgs(),                    │
+│        register_repos(), compiler_find(),        │
+│        concretize(), mirror_create(),            │
 │        mirror_verify()                           │
 └─────────────────────────────────────────────────┘
 ```
 
 **设计原则**：
 - `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像，不含系统包或 pipeline 逻辑
-- 系统包在运行时由 `streamline.sh` 从 `env.yaml` 读取后安装
-- 每个 env 的差异完全由 `env.yaml` 驱动，`streamline.sh` 内容相同
+- 系统包在运行时由 `hpc_cf/spack_ops.py` 从 `env.yaml` 读取后安装
+- 每个 env 的差异完全由 `env.yaml` 驱动，代码路径统一
 
-### 子命令说明
+### 子命令/动作标志说明
 
-| 子命令 | 需要 `-e` | 说明 |
-|--------|-----------|------|
-| `image` | 否 | 构建 `hpc-mirror-builder` 容器镜像 |
-| `create-container` | 否 | 创建或启动 reusable mirror worker container |
-| `concretize` | **是** | 在容器中重新 concretize，生成/更新 `spack.lock` |
-| `mirror` | **是** | 使用已有 `spack.lock` 下载源码 mirror |
-| `verify` | **是** | 校验 mirror 完整性 |
-| `all` | **是** | concretize → mirror → verify |
-| `status` | **是** | 显示镜像、bootstrap、mirror、环境的状态 |
+通过 `python -m hpc_cf assets` 使用，支持以下标志组合：
+
+| 标志 | 需要 `--env` | 说明 |
+|------|-------------|------|
+| （无标志） | **是** | 一键完整流程：构建镜像 → 创建容器 → bootstrap → mirror → verify |
+| `--create-container` | 否 | 构建镜像并创建/启动 reusable mirror worker container |
+| `--prepare-bootstrap` | 否 | 生成 Spack bootstrap mirror |
+| `--download-mirror` | **是** | 下载源码 mirror |
+| `--verify-mirror` | **是** | 校验 mirror 完整性 |
+| `--status` | **是** | 显示镜像、bootstrap、mirror、环境的状态 |
 
 ### HOME 隔离
 
 容器运行时设置了 `HOME=/tmp/home`，Spack 用户配置写入容器内部，容器销毁时自动清理。避免跨 env 的 `repos.yaml` / `packages.yaml` 污染。
 
-### 环境变量
+### CLI 参数
 
-| 变量 | 默认值 | 说明 |
+| 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `MIRROR_BUILDER_IMAGE` | `hpc-mirror-builder` | 容器镜像名 |
-| `PODMAN_CMD` | `podman` | 容器运行时 |
-| `ENV_NAME` | （空） | 环境名（可替代 `-e`） |
-| `MIRROR_DIR` | `assets/spack-mirror` | mirror 输出路径 |
+| `--mirror-image` | `hpc-mirror-builder` | 容器镜像名 |
+| `--podman-cmd` | `podman` | 容器运行时 |
+| `--container-name` | `hpc-mirror-builder-work` | reusable 容器名 |
+| `--podman-opt` | （空） | 额外 podman 选项（可重复） |
+| `--skip-image-build` | false | 不自动构建容器镜像 |
+| `--force-bootstrap` | false | 强制重新生成 bootstrap |
+| `--skip-create-container` | false | 默认流程中跳过创建容器 |
+| `--skip-verify` | false | 默认流程中跳过验证 |
 | `EXTRA_PODMAN_OPTS` | （空） | 额外 podman run 选项 |

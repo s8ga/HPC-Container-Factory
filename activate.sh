@@ -5,7 +5,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/venv/bin/activate"
 
-# Add local apptainer to PATH (installed by generate.py build-sif)
+# Add local apptainer to PATH (installed by hpc_cf build-sif)
 APPTAINER_LOCAL="$SCRIPT_DIR/tools/apptainer/bin"
 if [ -d "$APPTAINER_LOCAL" ]; then
     case ":${PATH}:" in

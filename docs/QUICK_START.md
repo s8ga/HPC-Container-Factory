@@ -16,7 +16,7 @@ source ./activate.sh
 
 ```bash
 # 一键完整流程：构建 builder → 下载 bootstrap → 下载 mirror → 校验
-python generate.py assets --env cp2k-opensource-2025.2
+python -m hpc_cf assets --env cp2k_opensource-2025.2
 ```
 
 > 此步需要网络。完成后 `assets/` 目录包含所有构建所需资源，后续构建可完全离线。
@@ -25,28 +25,28 @@ python generate.py assets --env cp2k-opensource-2025.2
 ## 3. 构建容器镜像
 
 ```bash
-# 默认环境（cp2k-opensource-2025.2）
-python generate.py build --app-version cp2k-opensource-2025.2 --network-host
+# 默认环境（cp2k_opensource-2025.2）
+python -m hpc_cf build --app-version cp2k_opensource-2025.2 --network-host
 
 # ROCm GPU 版
-python generate.py build --app-version cp2k-rocm-2026.1-gfx942 --network-host
+python -m hpc_cf build --app-version cp2k_rocm-2026.1-gfx942 --network-host
 
 # force-avx512 变体
-python generate.py build --app-version cp2k-opensource-2025.2-force-avx512 --network-host
+python -m hpc_cf build --app-version cp2k_opensource-2025.2-force-avx512 --network-host
 ```
 
 自动镜像命名：
-- opensource → `cp2k-opensource:<version>`
-- rocm → `cp2k-rocm:<version>-<gpu>`
+- opensource → `cp2k_opensource:<version>`
+- rocm → `cp2k_rocm:<version>-<gpu>`
 
 ## 4. 构建 SIF（Apptainer）
 
 ```bash
 # 从本地 OCI 镜像构建 SIF
-python generate.py build-sif --app-version cp2k-opensource-2025.2-force-avx512
+python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
 
 # 仅安装 apptainer（不构建 SIF）
-python generate.py build-sif --install-apptainer-only
+python -m hpc_cf build-sif --install-apptainer-only
 ```
 
 详细说明见 [BUILD_SIF.md](BUILD_SIF.md)。
@@ -56,7 +56,7 @@ python generate.py build-sif --install-apptainer-only
 将本地 apptainer 打包为自解压包，分发到目标机器：
 
 ```bash
-python generate.py pack-apptainer
+python -m hpc_cf pack-apptainer
 # 产出: artifacts/apptainer-<version>-x86_64.run
 ```
 
@@ -73,10 +73,10 @@ apptainer shell /path/to/image.sif      # 使用
 
 ```bash
 # 指定环境 + 输出路径
-python generate.py dockerfile --app-version cp2k-opensource-2025.2 --output Dockerfile
+python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2 --output Dockerfile
 
 # 列出所有可用环境
-python generate.py dockerfile --app-version
+python -m hpc_cf dockerfile --app-version
 ```
 
 ## 查看可用环境
@@ -84,7 +84,7 @@ python generate.py dockerfile --app-version
 任何需要 `--app-version` 的命令，不传值即可列出：
 
 ```bash
-python generate.py build --app-version
-python generate.py build-sif --app-version
-python generate.py assets --env
+python -m hpc_cf build --app-version
+python -m hpc_cf build-sif --app-version
+python -m hpc_cf assets --env
 ```

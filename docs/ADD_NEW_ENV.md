@@ -12,13 +12,13 @@
 
 ```bash
 # 例：基于 opensource 环境创建新变体
-cp -r spack-envs/cp2k-opensource-2025.2 spack-envs/<new-env-name>
+cp -r spack-envs/cp2k_opensource-2025.2 spack-envs/<new-env-name>
 ```
 
-> **命名规则**：目录名即 `--app-version` 的值。`generate.py` 直接用这个名字查找模板和推断镜像名/tag。
+> **命名规则**：目录名即 `--app-version` 的值。`hpc_cf` 直接用这个名字查找模板和推断镜像名/tag。
 >
 > 推荐格式：`<app>-<variant>-<version>[-<suffix>]`
-> 例：`cp2k-opensource-2025.2-force-avx512`
+> 例：`cp2k_opensource-2025.2-force-avx512`
 
 ### Step 2: 修改 `spack-env-file/env.yaml`
 
@@ -110,19 +110,19 @@ git diff spack-envs/<original-env>/
 source activate.sh
 
 # 查看新环境是否被自动发现
-python generate.py assets --env
+python -m hpc_cf assets --env
 
 # concretize + 下载 mirror（在容器内）
-python generate.py assets --env <new-env-name> --create-container
-python generate.py assets --env <new-env-name> --download-mirror
+python -m hpc_cf assets --env <new-env-name> --create-container
+python -m hpc_cf assets --env <new-env-name> --download-mirror
 
 # 生成 Dockerfile 验证
-python generate.py dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
+python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
 ```
 
 ---
 
-## generate.py 自动发现机制
+## hpc_cf 自动发现机制
 
 ### 模板查找顺序
 
@@ -143,10 +143,10 @@ python generate.py dockerfile --app-version <new-env-name> --output /tmp/test.Do
 
 | 目录名 | 镜像名 | tag |
 |--------|--------|-----|
-| `cp2k-opensource-2025.2` | `cp2k-opensource` | `2025.2` |
-| `cp2k-opensource-2025.2-force-avx512` | `cp2k-opensource` | `2025.2-force-avx512` |
-| `cp2k-mkl-2025.2-experimental` | `cp2k-mkl` | `2025.2-experimental` |
-| `cp2k-rocm-2026.1-gfx942` | `cp2k-rocm` | `2026.1-gfx942` |
+| `cp2k_opensource-2025.2` | `cp2k-opensource` | `2025.2` |
+| `cp2k_opensource-2025.2-force-avx512` | `cp2k-opensource` | `2025.2-force-avx512` |
+| `cp2k_mkl-2025.2-experimental` | `cp2k-mkl` | `2025.2-experimental` |
+| `cp2k_rocm-2026.1-gfx942` | `cp2k-rocm` | `2026.1-gfx942` |
 
 新增变体时无需修改任何代码，只要目录名遵循 `<app>-<variant>-<version>[-<suffix>]` 约定即可自动工作。
 
@@ -177,12 +177,12 @@ images:
 
 ## 完整派生示例：force-avx512
 
-以下是从 `cp2k-opensource-2025.2` 派生 `cp2k-opensource-2025.2-force-avx512` 的实际操作步骤。
+以下是从 `cp2k_opensource-2025.2` 派生 `cp2k_opensource-2025.2-force-avx512` 的实际操作步骤。
 
 ### 1. 复制环境
 
 ```bash
-cp -r spack-envs/cp2k-opensource-2025.2 spack-envs/cp2k-opensource-2025.2-force-avx512
+cp -r spack-envs/cp2k_opensource-2025.2 spack-envs/cp2k_opensource-2025.2-force-avx512
 ```
 
 ### 2. 修改 `spack-env-file/spack.yaml`
@@ -225,15 +225,15 @@ spack:
 ### 5. 删除 spack.lock
 
 ```bash
-rm spack-envs/cp2k-opensource-2025.2-force-avx512/spack-env-file/spack.lock
+rm spack-envs/cp2k_opensource-2025.2-force-avx512/spack-env-file/spack.lock
 ```
 
 ### 6. 验证
 
 ```bash
 source activate.sh
-python generate.py dockerfile --app-version cp2k-opensource-2025.2-force-avx512 --output /tmp/test.Dockerfile
-# 确认输出: cp2k-opensource:2025.2-force-avx512
+python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2-force-avx512 --output /tmp/test.Dockerfile
+# 确认输出: cp2k_opensource:2025.2-force-avx512
 ```
 
 ---
@@ -243,7 +243,7 @@ python generate.py dockerfile --app-version cp2k-opensource-2025.2-force-avx512 
 | 注意项 | 说明 |
 |--------|------|
 | **spack.lock 不可复用** | lock 包含具体平台/编译器约束，必须重新 concretize |
-| **streamline.sh 不需修改** | 当前所有 `streamline.sh` 内容相同（~15 行入口），差异由 `env.yaml` 驱动 |
+| **env.yaml 驱动** | 差异完全由 `env.yaml` 驱动，代码路径统一 |
 | **Dockerfile.j2 路径引用** | 如果 Dockerfile 中硬编码了环境路径，需要同步修改 |
 | **local repo 优先级** | `env.yaml` 中 `custom_repos` 的 local repo 注册在 git repo 之后，优先级更高（可覆盖 builtin 和 git repo 的 package.py） |
 | **patch sha256** | Spack `patch()` 会在 concretize 时记录 patch 文件的 sha256。修改 patch 后需要 `spack concretize -f` |
