@@ -15,6 +15,7 @@ from pathlib import Path
 
 import logging
 
+from hpc_cf.env import validate_manual_packages
 from hpc_cf.sif import (
     build_apptainer,
     build_docker_like,
@@ -25,6 +26,7 @@ from hpc_cf.sif import (
 from hpc_cf.template import (
     _extract_available_versions,
     generate_dockerfile,
+    load_env_yaml,
     resolve_image_and_tag,
     select_template,
 )
@@ -399,6 +401,11 @@ def run_new_cli(argv: list[str]) -> int:
             use_mirror=use_mirror,
             build_only=args.build_only,
         )
+
+        # Validate manual_packages before starting the (expensive) build
+        _resolved_template = select_template(args.app, args.app_version, args.template)
+        _env_config = load_env_yaml(_resolved_template)
+        validate_manual_packages(_env_config)
 
         if args.engine == "apptainer":
             logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)

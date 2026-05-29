@@ -130,10 +130,10 @@ def _human_size(n_bytes: int) -> str:
 
 
 def _find_def_template(app_version: str) -> Path | None:
-    """Look for a cp2k.def.j2 in the spack-envs/<app_version>/ directory."""
+    """Look for a *.def.j2 in the spack-envs/<app_version>/ directory."""
     env_dir = PROJECT_ROOT / "spack-envs" / app_version
-    candidate = env_dir / "cp2k.def.j2"
-    return candidate if candidate.exists() else None
+    candidates = sorted(env_dir.glob("*.def.j2"))
+    return candidates[0] if candidates else None
 
 
 # ── Build helpers ────────────────────────────────────────────────────────

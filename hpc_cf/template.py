@@ -187,6 +187,7 @@ def build_context(
         "default_image_tag": default_image_tag,
         "spack_version": env_config.get("spack", {}).get("version", "1.1.0"),
         "env_dir_name": env_dir_name,
+        "manual_packages": env_config.get("manual_packages", []),
         **env_config.get("template_vars", {}),
     }
 
