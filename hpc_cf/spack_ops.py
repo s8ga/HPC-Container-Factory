@@ -312,23 +312,33 @@ spack bootstrap mirror "{container_dir}"
 
     # ── Repo management ───────────────────────────────────────────────────
 
-    def clean_stale_repos(self) -> None:
-        """Remove stale site-level repo registrations.
+    def clean_stale_state(self) -> None:
+        """Remove stale Spack state from previous runs in persistent container.
 
-        Matches the behaviour of the old ``step_clean_stale_repos`` in
-        ``spack-common.sh``: remove every non-builtin repo so that
-        ``register_repos`` can re-register them from a clean state.
-        This avoids false positives from ``spack repo list`` parsing
-        and stale ``/tmp`` paths left by previous runs.
+        Cleans:
+          1. repos.yaml — non-builtin repo registrations (re-added by register_repos)
+          2. packages.yaml — external package detections (re-added by compiler_find)
+          3. Spack environments under var/spack/environments/ — avoids ``env create`` conflicts
+          4. /tmp work dirs from previous runs
 
-        Also cleans the ``repos.yaml`` directly to prevent warnings
-        when a fresh ephemeral container reads the bind-mounted config.
+        This MUST run before any ``spack env create`` / ``spack repo add`` calls
+        to guarantee a clean slate on persistent worker containers.
         """
         source = self._source_spack()
         script = f"""{source}
-# Nuke repos.yaml and /tmp leftovers — register_repos() will re-add from scratch
+# 1. Nuke repo/external-package registrations — will be re-added from scratch
 rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
-rm -rf /tmp/spack-repos /tmp/spack-env-*
+rm -f "${{SPACK_USER_CONFIG_PATH}}/packages.yaml"
+
+# 2. Remove ALL Spack environments to avoid ``env create`` name collisions.
+#    Each pipeline recreates its env from spack.yaml anyway.
+env_dir="{self.spack_root}/var/spack/environments"
+if [[ -d "${{env_dir}}" ]]; then
+    rm -rf "${{env_dir}}"/*
+fi
+
+# 3. Clean /tmp work dirs from previous runs
+rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
 """
         self.ctr.exec(script)
 
@@ -439,6 +449,7 @@ spack compiler find
 work_env="/tmp/spack-env-$(date +%s)"
 mkdir -p "${{work_env}}"
 cp "{env_dir_container}/spack.yaml" "${{work_env}}/spack.yaml"
+
 
 spack env create "{spack_env_name}" "${{work_env}}/spack.yaml"
 
@@ -557,7 +568,7 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
         logger.info("MODE: concretize — Env: %s", self.env.spack.env_name)
 
         self.install_system_pkgs()
-        self.clean_stale_repos()
+        self.clean_stale_state()
         self.register_repos(env_dir_container)
         self.compiler_find()
         self.concretize(env_dir_host, env_dir_container)
@@ -566,7 +577,7 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
         """Full mirror pipeline: bootstrap → repos → mirror_create."""
         logger.info("MODE: mirror — Env: %s", self.env.spack.env_name)
 
-        self.clean_stale_repos()
+        self.clean_stale_state()
         self.register_repos(env_dir_container)
         self.mirror_create(env_dir_container, mirror_dir_container)
 
@@ -580,7 +591,7 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
         logger.info("MODE: all (concretize + mirror) — Env: %s", self.env.spack.env_name)
 
         self.install_system_pkgs()
-        self.clean_stale_repos()
+        self.clean_stale_state()
         self.register_repos(env_dir_container)
         self.compiler_find()
         self.concretize(env_dir_host, env_dir_container)
@@ -590,7 +601,7 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
         """Verify pipeline: bootstrap → repos → mirror_verify."""
         logger.info("MODE: verify — Env: %s", self.env.spack.env_name)
 
-        self.clean_stale_repos()
+        self.clean_stale_state()
         self.register_repos(env_dir_container)
         self.mirror_verify(env_dir_container, mirror_dir_container)
 
