@@ -1,0 +1,70 @@
+--- src/mpi.F   2026-05-28 16:07:55.019249437 +0000
++++ src/mpi.F   2026-05-28 16:08:23.215245097 +0000
+@@ -7206,6 +7206,30 @@
+          CALLMPI( M_bcast_l( COMM, LSAME, 1))
+       END SUBROUTINE M_compare_d
+
++! Subroutine for VASPsol - Added by D. Gaissmaier
++!----------------------------------------------------------------------
++!
++! Global sum function - required for VASPsol
++!
++!----------------------------------------------------------------------
++
++      SUBROUTINE M_sum_1(COMM, v1)
++      USE mpimy
++      IMPLICIT NONE
++
++      TYPE(communic) COMM
++      REAL(q) vec(1),v1
++
++      vec(1)=v1
++
++      CALL M_sumb_d(COMM, vec, 1)
++
++      v1=vec(1)
++
++      RETURN
++      END SUBROUTINE
++! End of VASPsol subroutine
++
+ #else // defined(MPI) || defined(MPI_CHAIN)
+
+ !======================================================================
+--- src/pot.F	2026-05-28 15:43:10.595480623 +0000
++++ src/pot.F	2026-05-28 15:43:22.127479877 +0000
+@@ -738,6 +738,12 @@
+ 
+       CALL POT_FLIP(CVTOT, GRIDC,WDES%NCDIJ )
+ 
++! solvation__
++! vaclevel
++      IF (LSOL) CALL GET_FERMISHIFT(LATT_CUR, T_INFO, GRIDC, WDES, CWORK, CHTOT)
++! vaclevel
++! solvation__
++
+       DO ISP=1,WDES%NCDIJ
+          CALL SETUNB_COMPAT(CVTOT(1,ISP),GRIDC)
+          CALL CP_GRID(GRIDC,GRID_SOFT,SOFT_TO_C,CVTOT(1,ISP),CWORK1)
+
+--- src/solvation.F	2019-02-21 15:56:46.000000000 +0100
++++ src/solvation.F	2020-09-30 17:19:41.821342000 +0200
+@@ -2203,7 +2203,7 @@
+ !test
+    CALL MY_D_PROD(Ecorr3, SP_CHTOT(1,1), Vcorr, SP_GRIDC)
+ !   CALLMPI( M_sum_d(SP_GRIDC%COMM,Ecorr3,1))
+-   CALLMPI( M_sum_s(SP_GRIDC%COMM,1,Ecorr3,0,0,0))
++   CALLMPI( M_sum_1(SP_GRIDC%COMM,Ecorr3))
+ 
+ !-------------------------------------------------------------
+ !Ecorr4 = Vdiel*n, 
+@@ -2214,7 +2214,7 @@
+ !test
+    CALL MY_D_PROD(Ecorr4, SP_CHTOT(1,1), Vdiel, SP_GRIDC)
+ !   CALLMPI( M_sum_d(SP_GRIDC%COMM,Ecorr4,1))
+-   CALLMPI( M_sum_s(SP_GRIDC%COMM,1,Ecorr4,0,0,0))
++   CALLMPI( M_sum_1(SP_GRIDC%COMM,Ecorr4))
+ 
+ !-------------------------------------------------------------
+ !calculate force correction,flag=5(not used)
+

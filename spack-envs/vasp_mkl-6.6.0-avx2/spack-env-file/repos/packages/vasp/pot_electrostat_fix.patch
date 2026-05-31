@@ -1,0 +1,11 @@
+--- a/src/pot_electrostat.F	2026-05-29 05:13:05.692832131 +0000
++++ b/src/pot_electrostat.F	2026-05-29 05:12:41.341421469 +0000
+@@ -911,7 +911,7 @@
+ IFXW2 GPOMP !$omp target exit data map(release: coulomb_pot_periodic) if(offload_on)
+ __GPU   call delete_typed_var(coulomb_pot_periodic)
+         !
++        call setunb_compat(potential,gridc)
+-        call setunb(potential,gridc)
+    end subroutine
+ 
+    subroutine potion_particle_mesh_truncated(gridc, p, latt_cur, t_info, &

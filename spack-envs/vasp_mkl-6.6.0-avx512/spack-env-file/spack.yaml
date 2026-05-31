@@ -1,0 +1,90 @@
+# This is a Spack Environment file.
+#
+# It describes a set of packages to be installed, along with
+# configuration settings.
+spack:
+  concretizer:
+    unify: true
+    targets:
+      host_compatible: false
+      granularity: generic
+  config:
+    install_tree:
+      root: /opt/spack
+      padded_length: 0
+    build_stage:
+    - /tmp/spack-build
+  packages:
+    all:
+      buildable: true
+      prefer:
+      - ~cuda
+      - +mpi
+      - +openmp
+      - +pic
+      - ~rocm
+      - target="x86_64_v3"
+      providers:
+        blas: [intel-oneapi-mkl]
+        lapack: [intel-oneapi-mkl]
+        scalapack: [netlib-scalapack]
+        mpi: [openmpi]
+        fftw-api: [intel-oneapi-mkl]
+        
+    mpi:
+      require:
+      - openmpi
+    mpich:
+      require:
+      - ~xpmem
+    openmpi:
+      require:
+      - +internal-hwloc
+    xpmem:
+      buildable: false
+      externals:
+      - spec: xpmem@master
+        prefix: /opt/spack
+    intel-oneapi-mkl:
+      require:
+      - +shared
+      - +gfortran
+      - ~ilp64
+      - threads=openmp
+      - mpi_family=openmpi
+
+    mctc-lib:
+      require:
+      - ~openmp
+    dftd4:
+      require:
+      - build_system=cmake
+    
+    libbeef:
+      require:
+      - target="x86_64_v4"
+
+#    elpa:
+#      require:
+#        - +openmp
+#        - +force_all_x86_kernel
+
+  specs:
+  - intel-oneapi-mkl@2025.3.0
+  - "netlib-scalapack@2.2.2 target=x86_64_v4 fflags='-O2 -ffp-contract=off'"
+  - openmpi@5.0.8
+  - hdf5@1.14.5
+  - libxc@7.0.0 target="x86_64_v4"
+  - wannier90@3.1.0 target="x86_64_v4"
+  - dftd4@3.7.0
+  - simple-dftd3@1.2.1
+#    - "elpa@2025.01.001"
+  - vasp@6.6.0~cuda+dftd4~elpa+fftlib+hdf5+libbeef+libxc+openmp+sdftd3+shmem+vaspsol+vtst+wannier90 target="x86_64_v4"
+  view:
+    default:
+      root: ./view
+      exclude:
+        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
+      - gcc-runtime
+
+# EOF

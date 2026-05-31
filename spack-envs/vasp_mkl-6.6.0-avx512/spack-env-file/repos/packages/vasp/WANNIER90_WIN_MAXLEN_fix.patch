@@ -1,0 +1,11 @@
+--- a/src/mlwf.F	2026-05-29 04:17:06.530587375 +0000
++++ b/src/mlwf.F	2026-05-29 04:18:55.118569975 +0000
+@@ -144,7 +144,7 @@
+    !> i.e. not from the INCAR file
+    LOGICAL,SAVE :: WANNIER90_WIN_LEGACY_MODE=.FALSE.
+    !> maximum length of the wanneir90.win file specified in the INCAR file
+-   INTEGER, PARAMETER :: WANNIER90_WIN_MAXLEN=8192
++   INTEGER, PARAMETER :: WANNIER90_WIN_MAXLEN=262144
+    !> character containing the wannier90.win file
+    CHARACTER(LEN=WANNIER90_WIN_MAXLEN),SAVE :: WANNIER90_WIN
+ 
