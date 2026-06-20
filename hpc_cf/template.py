@@ -12,7 +12,7 @@ try:
 except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install jinja2") from exc
 
-from hpc_cf.config import PROJECT_ROOT, TEMPLATES_DIR, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, TEMPLATES_DIR, SPACK_ENVS_DIR
 from hpc_cf.env import load_env_yaml
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ def build_context(
         "build_only": build_only,
         "default_image_name": default_image_name,
         "default_image_tag": default_image_tag,
-        "spack_version": env_config.get("spack", {}).get("version", "1.1.0"),
+        "spack_version": env_config.get("spack", {}).get("version", DEFAULT_SPACK_VERSION),
         "env_dir_name": env_dir_name,
         "manual_packages": env_config.get("manual_packages", []),
         **env_config.get("template_vars", {}),

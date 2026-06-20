@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from functools import lru_cache
 from pathlib import Path
 
 try:
@@ -11,21 +12,42 @@ try:
 except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install pyyaml") from exc
 
-from hpc_cf.config import PROJECT_ROOT, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, SPACK_ENVS_DIR
 
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=None)
+def find_env_yaml(env_dir: Path) -> Path:
+    """Resolve the env.yaml file for an environment directory.
+
+    Single source of truth for env.yaml location. Prefers
+    ``<env_dir>/spack-env-file/env.yaml`` (new layout) and falls back to
+    ``<env_dir>/env.yaml`` (legacy/bare). Works whether *env_dir* is the
+    top-level env directory or already the ``spack-env-file/`` subdirectory.
+
+    Raises ``FileNotFoundError`` if neither exists — callers can rely on a
+    concrete path rather than re-implementing the lookup (previously done
+    inconsistently in 3 places with REVERSED order; see plan A2).
+    """
+    nested = env_dir / "spack-env-file" / "env.yaml"
+    if nested.exists():
+        return nested
+    bare = env_dir / "env.yaml"
+    if bare.exists():
+        return bare
+    raise FileNotFoundError(
+        f"env.yaml not found in {env_dir} (looked for spack-env-file/env.yaml and env.yaml)"
+    )
+
+
 def load_env_yaml(template_path: Path | None) -> dict:
-    """Load env.yaml from the spack-env-file/ subdirectory or template directory."""
+    """Load env.yaml associated with a Dockerfile.j2 template path."""
     if not template_path:
         return {}
-    # New layout: spack-envs/<env>/Dockerfile.j2 + spack-envs/<env>/spack-env-file/env.yaml
-    env_yaml = template_path.parent / "spack-env-file" / "env.yaml"
-    if not env_yaml.exists():
-        # Fallback: env.yaml alongside template (old layout)
-        env_yaml = template_path.parent / "env.yaml"
-    if not env_yaml.exists():
+    try:
+        env_yaml = find_env_yaml(template_path.parent)
+    except FileNotFoundError:
         return {}
     with env_yaml.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -47,13 +69,14 @@ def list_available_envs() -> list[str]:
 def spack_version_for_env(env_name: str | None) -> str:
     """Read spack.version from the given env's env.yaml.
 
-    Returns "1.1.0" as default when env_name is None or env.yaml has no version.
+    Returns :data:`DEFAULT_SPACK_VERSION` when env_name is None or env.yaml
+    has no version.
     """
     if not env_name:
-        return "1.1.0"
+        return DEFAULT_SPACK_VERSION
     env_dir = SPACK_ENVS_DIR / env_name
     env_config = load_env_yaml(env_dir / "Dockerfile.j2") if (env_dir / "Dockerfile.j2").exists() else {}
-    return env_config.get("spack", {}).get("version", "1.1.0")
+    return env_config.get("spack", {}).get("version", DEFAULT_SPACK_VERSION)
 
 
 def validate_manual_packages(env_config: dict) -> None:

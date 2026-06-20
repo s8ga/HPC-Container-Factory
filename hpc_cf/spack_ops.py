@@ -20,8 +20,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from hpc_cf.config import PROJECT_ROOT, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, SPACK_ENVS_DIR
 from hpc_cf.container import Container
+
+try:
+    import yaml
+except ImportError as exc:  # pragma: no cover - exercised when pyyaml missing
+    raise ImportError(f"Required package not installed: {exc}. Install: pip install pyyaml") from exc
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +88,15 @@ class EnvConfig:
 
 
 def load_env_config(env_dir: Path) -> EnvConfig:
-    """Parse env.yaml from an environment directory into an EnvConfig."""
-    try:
-        import yaml
-    except ImportError as exc:
-        raise ImportError("pip install pyyaml") from exc
+    """Parse env.yaml from an environment directory into an EnvConfig.
 
-    env_yaml = env_dir / "env.yaml"
-    if not env_yaml.exists():
-        env_yaml = env_dir / "spack-env-file" / "env.yaml"
-    if not env_yaml.exists():
-        raise FileNotFoundError(f"env.yaml not found in {env_dir}")
+    Uses the shared :func:`hpc_cf.env.find_env_yaml` resolver so that this
+    loader and ``load_env_yaml`` agree on which file is read (previously these
+    two had REVERSED lookup orders; see plan A2).
+    """
+    from hpc_cf.env import find_env_yaml
 
+    env_yaml = find_env_yaml(env_dir)
     with open(env_yaml) as f:
         raw = yaml.safe_load(f)
 
@@ -120,7 +122,7 @@ def load_env_config(env_dir: Path) -> EnvConfig:
 
     return EnvConfig(
         spack=SpackConfig(
-            version=spack_raw.get("version", "1.1.0"),
+            version=spack_raw.get("version", DEFAULT_SPACK_VERSION),
             env_name=spack_raw.get("env_name", "cp2k-env"),
             custom_repos=repos,
         ),
@@ -146,6 +148,43 @@ def resolve_env_paths(env_name: str) -> tuple[Path, Path]:
         container_dir = container_dir / "spack-env-file"
 
     return host_dir, container_dir
+
+
+# ── Mirror stats parsing (pure, unit-testable) ──────────────────────────
+
+
+# Sentinel: callers treat failed < 0 as "status could not be determined".
+# This is the fix for the silent-success bug (plan A3): previously any parse
+# exception returned failed=0, and callers only raised on failed>0, so a
+# broken/incomplete mirror was reported as success.
+MIRROR_STATS_UNKNOWN = -1
+
+
+def _parse_mirror_stats_from_text(text: str) -> dict[str, int]:
+    """Parse spack mirror-create/verify stdout into {present, added, failed}.
+
+    Pure function (no I/O) so it can be unit-tested directly. Returns the
+    LAST match of each counter (spack prints progress lines; the final
+    summary is what matters). If the text has no recognizable failed-count
+    line, returns ``failed=MIRROR_STATS_UNKNOWN`` (-1) so callers can
+    distinguish "0 failures" from "couldn't tell" — never reports 0 on
+    garbage.
+    """
+    present: int | None = None
+    added: int | None = None
+    failed: int | None = None
+    if text:
+        for m in re.finditer(r"(\d+)\s+already present", text):
+            present = int(m.group(1))
+        for m in re.finditer(r"(\d+)\s+added", text):
+            added = int(m.group(1))
+        for m in re.finditer(r"(\d+)\s+failed", text):
+            failed = int(m.group(1))
+    return {
+        "present": present if present is not None else MIRROR_STATS_UNKNOWN,
+        "added": added if added is not None else MIRROR_STATS_UNKNOWN,
+        "failed": failed if failed is not None else MIRROR_STATS_UNKNOWN,
+    }
 
 
 # ── SpackOps ─────────────────────────────────────────────────────────────
@@ -516,6 +555,11 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
             stats["present"], stats["added"], stats["failed"],
         )
 
+        if stats["failed"] < 0:
+            raise RuntimeError(
+                "Could not determine mirror status — stats log unreadable or "
+                "unparseable. Treat the mirror as untrusted (plan A3)."
+            )
         if stats["failed"] > 0:
             raise RuntimeError(f"{stats['failed']} package(s) failed to fetch!")
 
@@ -556,6 +600,11 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
             stats["present"], stats["added"], stats["failed"],
         )
 
+        if stats["failed"] < 0:
+            raise RuntimeError(
+                "Could not determine mirror status — stats log unreadable or "
+                "unparseable. Treat the mirror as untrusted (plan A3)."
+            )
         if stats["failed"] > 0:
             raise RuntimeError(f"{stats['failed']} package(s) still missing!")
 
@@ -608,20 +657,23 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
     # ── Internal helpers ──────────────────────────────────────────────────
 
     def _parse_mirror_stats(self) -> dict[str, int]:
-        """Parse the last mirror/verify output for statistics."""
-        present = 0
-        added = 0
-        failed = 0
+        """Read the mirror/verify log from the container and parse stats.
+
+        Delegates parsing to the pure :func:`_parse_mirror_stats_from_text`.
+        If the container read itself fails, returns ``failed=MIRROR_STATS_UNKNOWN``
+        rather than masking the error as ``failed=0`` (plan A3).
+        """
         try:
-            result = self.ctr.exec("cat /tmp/mirror-output.log /tmp/verify-output.log 2>/dev/null || true", capture=True)
-            text = result.stdout
-            # Find the last occurrence of each stat
-            for m in re.finditer(r"(\d+)\s+already present", text):
-                present = int(m.group(1))
-            for m in re.finditer(r"(\d+)\s+added", text):
-                added = int(m.group(1))
-            for m in re.finditer(r"(\d+)\s+failed", text):
-                failed = int(m.group(1))
-        except Exception:
-            pass
-        return {"present": present, "added": added, "failed": failed}
+            result = self.ctr.exec(
+                "cat /tmp/mirror-output.log /tmp/verify-output.log 2>/dev/null || true",
+                capture=True,
+            )
+            text = result.stdout or ""
+        except Exception as exc:
+            logger.error("Failed to read mirror stats log from container: %s", exc)
+            return {
+                "present": MIRROR_STATS_UNKNOWN,
+                "added": MIRROR_STATS_UNKNOWN,
+                "failed": MIRROR_STATS_UNKNOWN,
+            }
+        return _parse_mirror_stats_from_text(text)
