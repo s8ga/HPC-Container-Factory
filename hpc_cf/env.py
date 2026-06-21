@@ -153,3 +153,69 @@ def validate_spack_assets(env_config: dict) -> None:
             "COPYs it, so the build will fail if absent).",
             bootstrap,
         )
+
+
+def validate_branch_consistency(env_dir: Path) -> None:
+    """Ensure the cp2k git branch is parametrized consistently.
+
+    After the 3.3 refactor every env's Dockerfile.j2 clones with
+    ``-b {{ cp2k_branch }}`` and env.yaml declares it under template_vars.
+    This catches a regression where someone re-hardcodes the branch or
+    forgets the template_vars entry (which would render a literal
+    ``{{ cp2k_branch }}`` into the Dockerfile).
+    """
+    dockerfile = env_dir / "Dockerfile.j2"
+    if not dockerfile.exists():
+        return  # nothing to check
+    text = dockerfile.read_text(encoding="utf-8")
+    uses_var = "{{ cp2k_branch }}" in text
+
+    try:
+        env_yaml = find_env_yaml(env_dir)
+        raw = yaml.safe_load(env_yaml.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        env_yaml, raw = None, {}
+    tv = raw.get("template_vars") or {}
+    has_var = "cp2k_branch" in tv
+
+    if uses_var and not has_var:
+        where = f" ({env_yaml})" if env_yaml else ""
+        raise ValueError(
+            f"Dockerfile.j2 uses {{{{ cp2k_branch }}}} but env.yaml{where} "
+            f"does not declare it under template_vars — "
+            f"rendering would emit a literal."
+        )
+
+    # Catch a re-hardcoded cp2k clone branch. Join backslash continuations
+    # first, because the clone URL (cp2k.git) sits on the line after the
+    # `-b <branch>` flag.
+    joined = text.replace("\\\n", " ")
+    for line in joined.splitlines():
+        if "git clone" in line and "cp2k" in line and "-b " in line:
+            if "{{ cp2k_branch }}" not in line:
+                raise ValueError(
+                    "cp2k git clone hardcodes a branch instead of "
+                    f"{{{{ cp2k_branch }}}}:\n  {line.strip()}"
+                )
+
+
+def validate_spack_yaml(env_dir: Path) -> None:
+    """Basic spack.yaml sanity: parses; if repos.builtin.commit is set it
+    must be a 40-char hex string."""
+    candidates = [env_dir / "spack-env-file" / "spack.yaml", env_dir / "spack.yaml"]
+    spack_yaml = next((c for c in candidates if c.exists()), None)
+    if spack_yaml is None:
+        logger.debug("No spack.yaml under %s — skipping spack.yaml checks", env_dir)
+        return
+    try:
+        data = yaml.safe_load(spack_yaml.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"spack.yaml is not valid YAML: {spack_yaml}\n  {exc}") from exc
+
+    builtin = ((data.get("spack", {}) or {}).get("repos", {}) or {}).get("builtin", {}) or {}
+    commit = builtin.get("commit")
+    if commit is not None and not (isinstance(commit, str) and len(commit) == 40):
+        logger.warning(
+            "repos.builtin.commit in %s is not a 40-char hex string: %r",
+            spack_yaml, commit,
+        )

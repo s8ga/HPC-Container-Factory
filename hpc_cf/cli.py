@@ -294,6 +294,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Confirm apptainer installation without prompting (CI-friendly)",
     )
 
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Static pre-build checks for an env (manual_packages, spack assets, "
+             "branch consistency, spack.yaml sanity)",
+    )
+    validate_parser.add_argument(
+        "--app-version",
+        default=None,
+        nargs="?",
+        const="__LIST__",
+        help="Environment name under spack-envs/ (pass without value to list).",
+    )
+    validate_parser.add_argument(
+        "--template",
+        type=Path,
+        default=None,
+        help="Explicit env directory (overrides --app-version resolution).",
+    )
+
     return parser
 
 
@@ -357,6 +376,32 @@ def run_new_cli(argv: list[str]) -> int:
             yes=getattr(args, "yes", False),
         )
         logger.info("Done")
+        return 0
+
+    # ── validate ──
+    if args.command == "validate":
+        from hpc_cf.env import validate_branch_consistency, validate_spack_yaml
+
+        if args.app_version == "__LIST__":
+            for v in _extract_available_versions():
+                print(v)
+            return 0
+
+        if args.template:
+            resolved = args.template
+        else:
+            if not args.app_version:
+                logger.error("validate requires --app-version <env> or --template <dir>.")
+                return 1
+            resolved = select_template(getattr(args, "app", "cp2k"), args.app_version, None)
+
+        env_config = load_env_yaml(resolved)
+        env_dir = resolved.parent
+        validate_manual_packages(env_config)
+        validate_spack_assets(env_config)
+        validate_branch_consistency(env_dir)
+        validate_spack_yaml(env_dir)
+        logger.info("✅ %s: all static checks passed", env_dir.name)
         return 0
 
     # ── Handle --app-version without value → list available versions ──
