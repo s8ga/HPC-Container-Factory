@@ -45,12 +45,6 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         help="Explicit Dockerfile template path",
     )
     parser.add_argument(
-        "--app",
-        choices=["cp2k"],
-        default="cp2k",
-        help="Application type",
-    )
-    parser.add_argument(
         "--app-version",
         default=None,
         nargs="?",
@@ -265,12 +259,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output SIF file path (default: <image>_<tag>.sif)",
     )
     build_sif_parser.add_argument(
-        "--app",
-        choices=["cp2k"],
-        default="cp2k",
-        help="Application type (for auto image/tag detection)",
-    )
-    build_sif_parser.add_argument(
         "--app-version",
         default=None,
         nargs="?",
@@ -359,7 +347,7 @@ def run_new_cli(argv: list[str]) -> int:
                 )
                 return 1
             try:
-                resolved_template = select_template(args.app, args.app_version, None)
+                resolved_template = select_template("cp2k", args.app_version, None)
             except FileNotFoundError:
                 resolved_template = None
             from hpc_cf.template import resolve_output_image_tag
@@ -437,7 +425,7 @@ def run_new_cli(argv: list[str]) -> int:
     if args.command == "dockerfile":
         generate_dockerfile(
             template=args.template,
-            app=args.app,
+            app="cp2k",
             app_version=args.app_version,
             output=args.output,
             use_mirror=use_mirror,
@@ -450,14 +438,14 @@ def run_new_cli(argv: list[str]) -> int:
         resolved_image, resolved_tag = resolve_image_and_tag(
             app_version=args.app_version,
             template=args.template,
-            app=args.app,
+            app="cp2k",
             image_arg=args.image,
             tag_arg=args.tag,
         )
 
         dockerfile = generate_dockerfile(
             template=args.template,
-            app=args.app,
+            app="cp2k",
             app_version=args.app_version,
             output=args.output,
             use_mirror=use_mirror,
@@ -465,7 +453,7 @@ def run_new_cli(argv: list[str]) -> int:
         )
 
         # Validate manual_packages before starting the (expensive) build
-        _resolved_template = select_template(args.app, args.app_version, args.template)
+        _resolved_template = select_template("cp2k", args.app_version, args.template)
         _env_config = load_env_yaml(_resolved_template)
         validate_manual_packages(_env_config)
         validate_spack_assets(_env_config)
