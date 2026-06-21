@@ -12,7 +12,6 @@ Replaces the Spack-specific portions of:
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shlex
 import subprocess
@@ -20,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION, SPACK_ENVS_DIR
 from hpc_cf.container import Container
 
 try:

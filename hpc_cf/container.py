@@ -9,7 +9,6 @@ Replaces the container-management portions of:
 from __future__ import annotations
 
 import logging
-import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -243,7 +242,7 @@ class Container:
             print(f"  Broken symlinks: {broken} {'⚠' if broken else '✓'}")
         else:
             mirror_display = str(mirror_dir) if mirror_dir else "assets/spack-mirror"
-            print(f"  (empty — run mirror command)")
+            print(f"  ({mirror_display} — empty, run mirror command)")
         print()
 
         # Spack environment
@@ -334,7 +333,7 @@ def _count_broken_symlinks(path: Path) -> int:
             ["find", "-L", str(path), "-type", "l"],
             capture_output=True, text=True, check=False,
         )
-        lines = [l for l in result.stdout.strip().splitlines() if l]
+        lines = [ln for ln in result.stdout.strip().splitlines() if ln]
         return len(lines)
     except Exception:
         return 0

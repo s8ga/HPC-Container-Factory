@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -12,7 +11,7 @@ try:
 except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install jinja2") from exc
 
-from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, TEMPLATES_DIR, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION, TEMPLATES_DIR, SPACK_ENVS_DIR
 from hpc_cf.env import load_env_yaml
 
 logger = logging.getLogger(__name__)
