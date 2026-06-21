@@ -109,7 +109,7 @@ RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
 # Uses sparse checkout to avoid downloading the full ~1GB+ repo.
 # The actual build comes from spack (source mirror), not this clone.
 
-RUN git clone --filter=blob:none --no-checkout -b support/v2025.2 \
+RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
         https://github.com/cp2k/cp2k.git /opt/cp2k && \
     cd /opt/cp2k && \
     git sparse-checkout init --cone && \
