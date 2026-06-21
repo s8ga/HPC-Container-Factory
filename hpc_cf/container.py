@@ -239,7 +239,10 @@ class Container:
             print(f"  Size: {size}")
             print(f"  Files: {file_count}")
             broken = _count_broken_symlinks(mirror_dir)
-            print(f"  Broken symlinks: {broken} {'⚠' if broken else '✓'}")
+            if broken < 0:
+                print("  Broken symlinks: (check failed)")
+            else:
+                print(f"  Broken symlinks: {broken} {'⚠' if broken else '✓'}")
         else:
             mirror_display = str(mirror_dir) if mirror_dir else "assets/spack-mirror"
             print(f"  ({mirror_display} — empty, run mirror command)")
@@ -322,12 +325,17 @@ def _du_sh(path: Path) -> str:
             ["du", "-sh", str(path)], capture_output=True, text=True, check=True,
         )
         return result.stdout.split()[0]
-    except Exception:
+    except Exception as exc:
+        logger.debug("du -sh failed for %s: %s", path, exc)
         return "?"
 
 
 def _count_broken_symlinks(path: Path) -> int:
-    """Count broken symlinks under *path*."""
+    """Count broken symlinks under *path*.
+
+    Returns -1 if the check itself failed, so callers can distinguish
+    "couldn't tell" from "0 broken".
+    """
     try:
         result = subprocess.run(
             ["find", "-L", str(path), "-type", "l"],
@@ -335,5 +343,6 @@ def _count_broken_symlinks(path: Path) -> int:
         )
         lines = [ln for ln in result.stdout.strip().splitlines() if ln]
         return len(lines)
-    except Exception:
-        return 0
+    except Exception as exc:
+        logger.warning("broken-symlink check failed for %s: %s", path, exc)
+        return -1

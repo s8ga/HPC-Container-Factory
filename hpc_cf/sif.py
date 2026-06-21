@@ -127,7 +127,8 @@ def _get_apptainer_version() -> str:
         )
         ver = result.stdout.strip()
         return ver.rsplit(" ", 1)[-1] if " " in ver else ver
-    except Exception:
+    except Exception as exc:
+        logger.debug("apptainer --version failed: %s", exc)
         return "unknown"
 
 
