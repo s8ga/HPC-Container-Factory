@@ -168,6 +168,11 @@ EXPECTED_BOOTSTRAP_BINARIES = ("clingo", "gnupg", "patchelf")
 def _parse_mirror_stats_from_text(text: str) -> dict[str, int]:
     """Parse spack mirror-create/verify stdout into {present, added, failed}.
 
+    NOTE: ``spack mirror create`` has NO ``--json`` flag (verified in spack
+    1.1.1 — only find/spec/config/diff/blame support JSON). Regex parsing of
+    the human-readable "Archive stats" summary is the only option. The format
+    is: ``N already present / N added / N failed to fetch.``
+
     Pure function (no I/O) so it can be unit-tested directly. Returns the
     LAST match of each counter (spack prints progress lines; the final
     summary is what matters). If the text has no recognizable failed-count
