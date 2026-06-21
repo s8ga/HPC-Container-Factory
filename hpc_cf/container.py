@@ -277,12 +277,23 @@ class Container:
     ) -> subprocess.CompletedProcess:
         cmd = [self.podman_cmd] + args
         logger.debug("podman: %s", shlex.join(cmd))
-        return subprocess.run(
+        # Always capture output so it's testable and can be routed through
+        # the logger. When capture=False, re-emit stdout/stderr via logger
+        # so the user still sees it (plan 5.2).
+        result = subprocess.run(
             cmd,
-            capture_output=capture,
-            text=True if capture else False,
+            capture_output=True,
+            text=True,
             check=check,
         )
+        if not capture:
+            if result.stdout:
+                for line in result.stdout.rstrip("\n").splitlines():
+                    logger.info("[podman] %s", line)
+            if result.stderr:
+                for line in result.stderr.rstrip("\n").splitlines():
+                    logger.warning("[podman] %s", line)
+        return result
 
     def _ps_table(self) -> None:
         self._run(
