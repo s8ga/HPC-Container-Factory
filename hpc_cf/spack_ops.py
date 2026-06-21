@@ -289,28 +289,28 @@ fi
         local_dir.mkdir(parents=True, exist_ok=True)
 
         # Run in ephemeral container to avoid stale repo pollution
-        source = self._source_spack()
-        script = f"""{source}
-rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
-rm -rf /tmp/spack-repos /tmp/spack-env-*
-mkdir -p "{container_dir}"
-spack bootstrap mirror --binary-packages "{container_dir}"
-"""
         logger.info("Generating bootstrap mirror for Spack %s", self.spack_ver)
         try:
-            self.ctr.run_ephemeral(script)
+            self.ctr.run_ephemeral(
+                self._build_bootstrap_mirror_script(container_dir, binary_packages=True)
+            )
         except subprocess.CalledProcessError:
             logger.warning("Bootstrap with --binary-packages failed, retrying sources only...")
-            script_fallback = f"""{source}
-rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
-rm -rf /tmp/spack-repos /tmp/spack-env-*
-mkdir -p "{container_dir}"
-spack bootstrap mirror "{container_dir}"
-"""
-            self.ctr.run_ephemeral(script_fallback)
+            self.ctr.run_ephemeral(
+                self._build_bootstrap_mirror_script(container_dir, binary_packages=False)
+            )
 
         self._verify_bootstrap(local_dir)
         return local_dir
+
+    def _build_bootstrap_mirror_script(self, container_dir: str, *, binary_packages: bool) -> str:
+        flag = " --binary-packages" if binary_packages else ""
+        return f"""{self._source_spack()}
+rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
+rm -rf /tmp/spack-repos /tmp/spack-env-*
+mkdir -p "{container_dir}"
+spack bootstrap mirror{flag} "{container_dir}"
+"""
 
     def _bootstrap_metadata_complete(self, bootstrap_dir: Path) -> bool:
         """Check whether all expected bootstrap metadata files are present."""
@@ -368,8 +368,10 @@ spack bootstrap mirror "{container_dir}"
         This MUST run before any ``spack env create`` / ``spack repo add`` calls
         to guarantee a clean slate on persistent worker containers.
         """
-        source = self._source_spack()
-        script = f"""{source}
+        self.ctr.exec(self._build_clean_stale_state_script())
+
+    def _build_clean_stale_state_script(self) -> str:
+        return f"""{self._source_spack()}
 # 1. Nuke repo/external-package registrations — will be re-added from scratch
 rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
 rm -f "${{SPACK_USER_CONFIG_PATH}}/packages.yaml"
@@ -384,7 +386,6 @@ fi
 # 3. Clean /tmp work dirs from previous runs
 rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
 """
-        self.ctr.exec(script)
 
     def register_repos(self, env_dir_in_container: str) -> None:
         """Register custom repos from env.yaml."""
@@ -472,12 +473,13 @@ fi
 
     def compiler_find(self) -> None:
         """Find system compilers (no external find)."""
-        source = self._source_spack()
-        script = f"""{source}
+        self.ctr.exec(self._build_compiler_find_script())
+        logger.info("Compilers registered")
+
+    def _build_compiler_find_script(self) -> str:
+        return f"""{self._source_spack()}
 spack compiler find
 """
-        self.ctr.exec(script)
-        logger.info("Compilers registered")
 
     # ── Concretize ────────────────────────────────────────────────────────
 
