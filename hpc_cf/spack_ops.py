@@ -394,15 +394,17 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
             logger.info("No custom repos configured — skipping")
             return
 
-        parts = [self._source_spack()]
+        self.ctr.exec(self._build_register_repos_script(env_dir_in_container))
 
+    def _build_register_repos_script(self, env_dir_in_container: str) -> str:
+        repos = self.env.spack.custom_repos
+        parts = [self._source_spack()]
         for repo in repos:
             if repo.type == "git":
                 parts.append(self._register_git_repo(repo))
             elif repo.type == "local":
                 parts.append(self._register_local_repo(repo, env_dir_in_container))
-
-        self.ctr.exec("\n".join(parts))
+        return "\n".join(parts)
 
     def _register_git_repo(self, repo: CustomRepo) -> str:
         if not repo.url:
@@ -488,7 +490,10 @@ spack compiler find
 
         Replaces ``step_concretize`` in spack-common.sh.
         """
-        source = self._source_spack()
+        self.ctr.exec(self._build_concretize_script(env_dir_container))
+        logger.info("Concretize complete")
+
+    def _build_concretize_script(self, env_dir_container: str) -> str:
         spack_env_name = self.env.spack.env_name
         # Quote config-derived tokens once: env name and paths flow
         # from env.yaml and could contain spaces/special chars; the previous
@@ -499,7 +504,7 @@ spack compiler find
             f"{self.spack_root}/var/spack/environments/{spack_env_name}/spack.lock"
         )
         env_q = shlex.quote(spack_env_name)
-        script = f"""{source}
+        return f"""{self._source_spack()}
 # Create environment from spack.yaml
 work_env="/tmp/spack-env-$(date +%s)"
 mkdir -p "${{work_env}}"
@@ -531,8 +536,6 @@ else
     exit 1
 fi
 """
-        self.ctr.exec(script)
-        logger.info("Concretize complete")
 
     # ── Mirror create ─────────────────────────────────────────────────────
 
