@@ -545,31 +545,7 @@ fi
         mirror_dir_container: str,
     ) -> dict[str, int]:
         """Create Spack mirror. Returns stats dict with present/added/failed counts."""
-        source = self._source_spack()
-        # Quote config-derived paths.
-        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
-        spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
-        mirror_dir = shlex.quote(mirror_dir_container)
-        script = f"""{source}
-work_env="/tmp/spack-mirror-$(date +%s)"
-mkdir -p "${{work_env}}"
-cp {spack_yaml} "${{work_env}}/spack.yaml"
-
-if [[ -f {spack_lock} ]]; then
-    cp {spack_lock} "${{work_env}}/spack.lock"
-else
-    echo "ERROR: spack.lock not found — run concretize first" >&2
-    exit 1
-fi
-
-cd "${{work_env}}"
-spack env activate . 2>/dev/null || true
-
-mkdir -p {mirror_dir}
-echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
-spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirror-output.log
-"""
-        self.ctr.exec(script)
+        self.ctr.exec(self._build_mirror_create_script(env_dir_container, mirror_dir_container))
 
         # Parse stats from the output log
         stats = self._parse_mirror_stats()
@@ -588,20 +564,37 @@ spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirr
 
         return stats
 
-    # ── Mirror verify ─────────────────────────────────────────────────────
-
-    def mirror_verify(
-        self,
-        env_dir_container: str,
-        mirror_dir_container: str,
-    ) -> dict[str, int]:
-        """Verify mirror completeness by re-running mirror create."""
-        source = self._source_spack()
+    def _build_mirror_create_script(self, env_dir_container: str, mirror_dir_container: str) -> str:
         # Quote config-derived paths.
         spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
         spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
         mirror_dir = shlex.quote(mirror_dir_container)
-        script = f"""{source}
+        return f"""{self._source_spack()}
+work_env="/tmp/spack-mirror-$(date +%s)"
+mkdir -p "${{work_env}}"
+cp {spack_yaml} "${{work_env}}/spack.yaml"
+
+if [[ -f {spack_lock} ]]; then
+    cp {spack_lock} "${{work_env}}/spack.lock"
+else
+    echo "ERROR: spack.lock not found — run concretize first" >&2
+    exit 1
+fi
+
+cd "${{work_env}}"
+spack env activate . 2>/dev/null || true
+
+mkdir -p {mirror_dir}
+echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
+spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirror-output.log
+"""
+
+    def _build_mirror_verify_script(self, env_dir_container: str, mirror_dir_container: str) -> str:
+        # Quote config-derived paths.
+        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
+        spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
+        mirror_dir = shlex.quote(mirror_dir_container)
+        return f"""{self._source_spack()}
 work_env="/tmp/spack-verify-$(date +%s)"
 mkdir -p "${{work_env}}"
 cp {spack_yaml} "${{work_env}}/spack.yaml"
@@ -619,7 +612,16 @@ spack env activate . 2>/dev/null || true
 echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/verify-output.log
 """
-        self.ctr.exec(script)
+
+    # ── Mirror verify ─────────────────────────────────────────────────────
+
+    def mirror_verify(
+        self,
+        env_dir_container: str,
+        mirror_dir_container: str,
+    ) -> dict[str, int]:
+        """Verify mirror completeness by re-running mirror create."""
+        self.ctr.exec(self._build_mirror_verify_script(env_dir_container, mirror_dir_container))
 
         stats = self._parse_mirror_stats()
         logger.info(
