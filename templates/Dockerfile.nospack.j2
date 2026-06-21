@@ -1,0 +1,86 @@
+{# Shared template for method: no_spack envs (pure Docker, no Spack). #}
+{# Expects context: builder_base_image, runtime_base_image, script, #}
+{# runtime_copy_dirs, runtime_extra_pkgs, default_image_name/tag, timestamp #}
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+
+# ============================================================================
+# STAGE 1: BUILDER
+# ============================================================================
+FROM {{ builder_base_image }} AS builder
+
+LABEL stage="builder" method="no_spack"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# APT mirror
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# User build script (runs in builder stage)
+RUN {{ script | indent(width=4, first=False) }}
+
+# Strip debug symbols
+RUN find /opt -type f \( -name '*.so' -o -name '*.so.*' \) \
+      -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
+    find /opt -path '*/bin/*' -type f -print0 2>/dev/null \
+      | xargs -0 -r file 2>/dev/null \
+      | grep 'ELF.*executable' | cut -d: -f1 \
+      | xargs -r strip --strip-all 2>/dev/null || true
+
+{% if not build_only %}
+# ============================================================================
+# STAGE 2: RUNTIME
+# ============================================================================
+FROM {{ runtime_base_image }} AS runtime
+
+LABEL stage="runtime" method="no_spack"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# APT mirror + runtime packages
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true && \
+    apt-get update -qq && apt-get install -y --no-install-recommends \
+    ca-certificates bash python3 curl tar \
+{% for p in runtime_extra_pkgs %}    {{ p }} \
+{% endfor %}    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy artifacts from builder
+{% for dir in runtime_copy_dirs %}
+COPY --from=builder {{ dir }} {{ dir }}
+{% endfor %}
+
+# Register library paths
+RUN find /opt -maxdepth 3 -type d -name lib \
+      -printf '%p\n' > /etc/ld.so.conf.d/app.conf 2>/dev/null || true && \
+    ldconfig
+
+# Non-root user
+RUN useradd -m -s /bin/bash hpc && mkdir -p /workspace && chown hpc:hpc /workspace
+
+ENV PATH="/opt/bin:${PATH}" \
+    HPC_CONTAINER_NAME="{{ default_image_name }}" \
+    HPC_CONTAINER_TAG="{{ default_image_tag }}" \
+    HPC_CONTAINER_BUILD_TS="{{ timestamp }}" \
+    LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+WORKDIR /workspace
+USER hpc
+
+# MOTD + entrypoint (reuse shared scripts)
+COPY --chmod=755 scripts/hpc-motd.sh /usr/local/bin/hpc-motd.sh
+COPY --chmod=755 scripts/cp2k-entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]
+
+# ============================================================================
+# STAGE 3: FINAL (alias for backward compat)
+# ============================================================================
+FROM runtime AS final
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+LABEL version="{{ default_image_tag }}" method="no_spack"
+{% endif %}

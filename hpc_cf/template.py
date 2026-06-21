@@ -242,13 +242,36 @@ def generate_dockerfile(
     use_mirror: bool,
     build_only: bool,
 ) -> Path:
-    template_path = select_template(app, app_version, template)
+    # Resolve template path. For no_spack envs without a per-env Dockerfile.j2,
+    # fall back to the shared templates/Dockerfile.nospack.j2. build_context
+    # uses template_path.parent to locate env.yaml, so we pass the per-env path
+    # (even if the Dockerfile.j2 doesn't exist) to keep env.yaml resolution working.
+    nospack_tpl = TEMPLATES_DIR / "Dockerfile.nospack.j2"
+    per_env_tpl = SPACK_ENVS_DIR / app_version / "Dockerfile.j2"
+
+    if per_env_tpl.exists():
+        template_path = per_env_tpl
+    elif template and template.exists():
+        template_path = template
+    elif nospack_tpl.exists():
+        template_path = per_env_tpl  # doesn't exist, but .parent resolves env.yaml
+    else:
+        raise FileNotFoundError(
+            f"No Dockerfile.j2 for '{app_version}' and no shared no_spack template. "
+            f"Looked for: {per_env_tpl}, {nospack_tpl}"
+        )
+
     context = build_context(
         use_mirror=use_mirror,
         build_only=build_only,
         app_version=app_version,
         template_path=template_path,
     )
+
+    # For no_spack envs, render from the shared template.
+    if context.get("method") == "no_spack" and not per_env_tpl.exists() and nospack_tpl.exists():
+        template_path = nospack_tpl
+
     content = render_template(template_path, context)
     write_output(content, output)
     return output
