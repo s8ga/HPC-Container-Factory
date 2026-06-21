@@ -101,6 +101,19 @@ apptainer shell /path/to/image.sif      # 使用
 python -m hpc_cf build --app-version    # 列出可用环境
 ```
 
+## 验证与测试
+
+```bash
+# 静态预检（分支一致性 + spack assets + spack.yaml 语法）
+python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512
+
+# 单元测试（快速，无外部依赖）
+./venv/bin/pytest -q
+
+# 集成测试（需要 podman + 镜像 + assets）
+./venv/bin/pytest --run-integration -v -s
+```
+
 ## 更多文档
 
 - 完整 CLI 参考：[docs/GENERATE_CLI.md](docs/GENERATE_CLI.md)
