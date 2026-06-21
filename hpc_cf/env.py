@@ -28,7 +28,7 @@ def find_env_yaml(env_dir: Path) -> Path:
 
     Raises ``FileNotFoundError`` if neither exists — callers can rely on a
     concrete path rather than re-implementing the lookup (previously done
-    inconsistently in 3 places with REVERSED order; see plan A2).
+    inconsistently in 3 places with REVERSED order).
     """
     nested = env_dir / "spack-env-file" / "env.yaml"
     if nested.exists():
@@ -125,7 +125,7 @@ def validate_spack_assets(env_config: dict) -> None:
 
     The Dockerfile ``COPY assets/spack-v<ver>.tar.gz`` and
     ``COPY assets/bootstrap-<ver>`` fail the build if these are missing; this
-    check surfaces the problem early (plan A6). Currently applies to all envs
+    check surfaces the problem early. Currently applies to all envs
     (all are Spack-based); gate on ``method == 'spack'`` once the no_spack
     path lands.
     """

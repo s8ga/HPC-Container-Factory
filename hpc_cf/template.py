@@ -93,7 +93,7 @@ def _extract_available_versions() -> list[str]:
     versions: list[str] = []
     seen: set[str] = set()
 
-    # 优先扫描 spack-envs/*/Dockerfile.j2 (新布局)
+    # Prefer spack-envs/*/Dockerfile.j2 (current layout)
     if SPACK_ENVS_DIR.exists():
         for env_dir in sorted(SPACK_ENVS_DIR.iterdir()):
             if env_dir.is_dir() and (env_dir / "Dockerfile.j2").exists():
@@ -102,7 +102,7 @@ def _extract_available_versions() -> list[str]:
                     versions.append(name)
                     seen.add(name)
 
-    # 回退扫描 templates/ (legacy 布局)
+    # Fallback: scan templates/ (legacy layout)
     for f in sorted(TEMPLATES_DIR.glob("Dockerfile-*.j2")):
         if f.name == "Dockerfile-base.j2":
             continue
@@ -121,13 +121,13 @@ def select_template(app: str, app_version: str, explicit_template: Path | None) 
             raise FileNotFoundError(f"Specified template not found: {explicit_template}")
         return explicit_template
 
-    # 优先: spack-envs/<app-version>/Dockerfile.j2 (新布局，app_version 是完整目录名)
+    # Prefer: spack-envs/<app-version>/Dockerfile.j2 (current layout; app_version is the full dir name)
     env_dir = SPACK_ENVS_DIR / app_version
     env_template = env_dir / "Dockerfile.j2"
     if env_template.exists():
         return env_template
 
-    # 回退: spack-envs/<app>_<app-version>/Dockerfile.j2
+    # Fallback: spack-envs/<app>_<app-version>/Dockerfile.j2
     env_dir = SPACK_ENVS_DIR / f"{app}_{app_version}"
     env_template = env_dir / "Dockerfile.j2"
     if env_template.exists():
@@ -140,7 +140,7 @@ def select_template(app: str, app_version: str, explicit_template: Path | None) 
         if candidate.exists():
             return candidate
 
-    # 回退: templates/Dockerfile-<app>-<app-version>.j2 (legacy)
+    # Fallback: templates/Dockerfile-<app>-<app-version>.j2 (legacy)
     template_name = f"Dockerfile-{app}-{app_version}.j2"
     template_path = TEMPLATES_DIR / template_name
     if template_path.exists():

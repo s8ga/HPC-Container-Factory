@@ -91,7 +91,7 @@ def load_env_config(env_dir: Path) -> EnvConfig:
 
     Uses the shared :func:`hpc_cf.env.find_env_yaml` resolver so that this
     loader and ``load_env_yaml`` agree on which file is read (previously these
-    two had REVERSED lookup orders; see plan A2).
+    two had REVERSED lookup orders).
     """
     from hpc_cf.env import find_env_yaml
 
@@ -153,7 +153,7 @@ def resolve_env_paths(env_name: str) -> tuple[Path, Path]:
 
 
 # Sentinel: callers treat failed < 0 as "status could not be determined".
-# This is the fix for the silent-success bug (plan A3): previously any parse
+# This is the fix for the silent-success bug: previously any parse
 # exception returned failed=0, and callers only raised on failed>0, so a
 # broken/incomplete mirror was reported as success.
 MIRROR_STATS_UNKNOWN = -1
@@ -161,7 +161,7 @@ MIRROR_STATS_UNKNOWN = -1
 # Bootstrap binaries that a complete bootstrap mirror must provide.
 # Single source of truth — previously the ("clingo","gnupg","patchelf") tuple
 # was duplicated in spack_ops (_bootstrap_metadata_complete, _verify_bootstrap)
-# and assets._verify_host_side (plan 3.6).
+# and assets._verify_host_side.
 EXPECTED_BOOTSTRAP_BINARIES = ("clingo", "gnupg", "patchelf")
 
 
@@ -488,7 +488,7 @@ spack compiler find
         """
         source = self._source_spack()
         spack_env_name = self.env.spack.env_name
-        # Quote config-derived tokens once (plan 3.4): env name and paths flow
+        # Quote config-derived tokens once: env name and paths flow
         # from env.yaml and could contain spaces/special chars; the previous
         # f-string left them only double-quoted, which breaks on embedded ".
         spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
@@ -541,7 +541,7 @@ fi
     ) -> dict[str, int]:
         """Create Spack mirror. Returns stats dict with present/added/failed counts."""
         source = self._source_spack()
-        # Quote config-derived paths (plan 3.4).
+        # Quote config-derived paths.
         spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
         spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
         mirror_dir = shlex.quote(mirror_dir_container)
@@ -576,7 +576,7 @@ spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirr
         if stats["failed"] < 0:
             raise RuntimeError(
                 "Could not determine mirror status — stats log unreadable or "
-                "unparseable. Treat the mirror as untrusted (plan A3)."
+                "unparseable. Treat the mirror as untrusted."
             )
         if stats["failed"] > 0:
             raise RuntimeError(f"{stats['failed']} package(s) failed to fetch!")
@@ -592,7 +592,7 @@ spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirr
     ) -> dict[str, int]:
         """Verify mirror completeness by re-running mirror create."""
         source = self._source_spack()
-        # Quote config-derived paths (plan 3.4).
+        # Quote config-derived paths.
         spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
         spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
         mirror_dir = shlex.quote(mirror_dir_container)
@@ -625,7 +625,7 @@ spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/veri
         if stats["failed"] < 0:
             raise RuntimeError(
                 "Could not determine mirror status — stats log unreadable or "
-                "unparseable. Treat the mirror as untrusted (plan A3)."
+                "unparseable. Treat the mirror as untrusted."
             )
         if stats["failed"] > 0:
             raise RuntimeError(f"{stats['failed']} package(s) still missing!")
@@ -683,7 +683,7 @@ spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/veri
 
         Delegates parsing to the pure :func:`_parse_mirror_stats_from_text`.
         If the container read itself fails, returns ``failed=MIRROR_STATS_UNKNOWN``
-        rather than masking the error as ``failed=0`` (plan A3).
+        rather than masking the error as ``failed=0``.
         """
         try:
             result = self.ctr.exec(

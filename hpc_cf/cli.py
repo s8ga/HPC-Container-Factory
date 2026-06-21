@@ -369,7 +369,7 @@ def run_new_cli(argv: list[str]) -> int:
 
     # Default app-version when not specified at all.
     # Pick the first available env dynamically instead of hardcoding a version
-    # that goes stale every release (plan A5).
+    # that goes stale every release.
     if not getattr(args, "app_version", None):
         available = _extract_available_versions()
         if available:

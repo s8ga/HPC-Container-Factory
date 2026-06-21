@@ -11,7 +11,7 @@ ASSETS_DIR = PROJECT_ROOT / "assets"
 
 # Default Spack version assumed when an env.yaml omits `spack.version`.
 # Single source of truth — import this instead of hardcoding "1.1.0" everywhere.
-# (Previously scattered across env.py, spack_ops.py, template.py — see plan A1.)
+# (Previously scattered across env.py, spack_ops.py, template.py.)
 DEFAULT_SPACK_VERSION = "1.1.1"
 
 APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"

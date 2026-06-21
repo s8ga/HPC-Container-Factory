@@ -300,7 +300,7 @@ def _extra_opts_for_create(opts: list[str]) -> list[str]:
 
 
 def _common_run_args(ctr: "Container") -> list[str]:
-    """Shared podman create/run options (plan 3.6 dedupe).
+    """Shared podman create/run options (dedupe of create/run_ephemeral).
 
     The ``create`` and ``run_ephemeral`` paths used to repeat this identical
     option block; both now splat this helper.

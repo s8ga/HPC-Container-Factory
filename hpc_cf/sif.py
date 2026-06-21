@@ -55,7 +55,7 @@ def ensure_apptainer(*, auto_confirm: bool = False) -> str:
     The install prompt is skipped when *auto_confirm* is True (e.g. the CLI
     ``--yes`` flag), making this safe for non-interactive/CI use. Without it,
     a non-interactive context (EOF on stdin) raises with a hint instead of
-    silently refusing (plan 1.4).
+    silently refusing.
     """
     apptainer = find_apptainer()
     if apptainer:
@@ -95,7 +95,7 @@ def ensure_apptainer(*, auto_confirm: bool = False) -> str:
             raise RuntimeError(
                 "apptainer installation requires confirmation but stdin is "
                 "non-interactive. Re-run with --yes (or auto_confirm=True) to "
-                "proceed without a prompt (plan 1.4)."
+                "proceed without a prompt."
             ) from None
         if answer not in ("y", "yes"):
             raise RuntimeError("apptainer installation cancelled by user")

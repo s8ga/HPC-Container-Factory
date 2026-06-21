@@ -1,4 +1,4 @@
-"""Quoting regression for generated bash scripts (plan 3.4).
+"""Quoting regression for generated bash scripts.
 
 Captures the script that SpackOps sends to the container and asserts that
 config-derived paths with spaces are shlex-quoted, so a future refactor

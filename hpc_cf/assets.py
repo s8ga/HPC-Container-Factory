@@ -59,8 +59,7 @@ def find_bootstrap_dir() -> Path | None:
     """Return the first ``assets/bootstrap-*`` directory, or None.
 
     Single resolver for both status reporting and host-side verification
-    (previously the loop was duplicated in _verify_host_side and run_status;
-    plan 3.6).
+    (previously the loop was duplicated in _verify_host_side and run_status).
     """
     assets = PROJECT_ROOT / "assets"
     if not assets.is_dir():
