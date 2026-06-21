@@ -140,12 +140,7 @@ class Container:
         cmd = [
             "create",
             "--name", self.name,
-            *_extra_opts_for_create(self.extra_opts),
-            "--network=host",
-            "--userns=keep-id",
-            "-e", "HOME=/tmp/home",
-            "-v", f"{self.project_root}:/work:Z",
-            self.image,
+            *_common_run_args(self),
             "bash", "-lc", "mkdir -p /tmp/home && tail -f /dev/null",
         ]
         self._run(cmd)
@@ -185,12 +180,7 @@ class Container:
         """Run a one-off command in an ephemeral container (``podman run --rm``)."""
         cmd = [
             "run", "--rm",
-            *_extra_opts_for_create(self.extra_opts),
-            "--network=host",
-            "--userns=keep-id",
-            "-e", "HOME=/tmp/home",
-            "-v", f"{self.project_root}:/work:Z",
-            self.image,
+            *_common_run_args(self),
             "bash", "-lc", f"mkdir -p /tmp/home && {script}",
         ]
         logger.debug("ephemeral run: %s", script[:200])
@@ -308,6 +298,22 @@ def _extra_opts_for_create(opts: list[str]) -> list[str]:
     for item in opts:
         result.extend(shlex.split(item))
     return result
+
+
+def _common_run_args(ctr: "Container") -> list[str]:
+    """Shared podman create/run options (plan 3.6 dedupe).
+
+    The ``create`` and ``run_ephemeral`` paths used to repeat this identical
+    option block; both now splat this helper.
+    """
+    return [
+        *_extra_opts_for_create(ctr.extra_opts),
+        "--network=host",
+        "--userns=keep-id",
+        "-e", "HOME=/tmp/home",
+        "-v", f"{ctr.project_root}:/work:Z",
+        ctr.image,
+    ]
 
 
 def _du_sh(path: Path) -> str:

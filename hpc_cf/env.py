@@ -118,3 +118,38 @@ def validate_manual_packages(env_config: dict) -> None:
                     f"  Update env.yaml or replace the file."
                 )
             logger.info("✅ manual_packages: '%s' sha256 verified", rel_path)
+
+
+def validate_spack_assets(env_config: dict) -> None:
+    """Verify the Spack tarball and bootstrap cache exist before an expensive build.
+
+    The Dockerfile ``COPY assets/spack-v<ver>.tar.gz`` and
+    ``COPY assets/bootstrap-<ver>`` fail the build if these are missing; this
+    check surfaces the problem early (plan A6). Currently applies to all envs
+    (all are Spack-based); gate on ``method == 'spack'`` once the no_spack
+    path lands.
+    """
+    spack_version = env_config.get("spack", {}).get("version")
+    if not spack_version:
+        # Nothing to validate (and no spack build to drive); skip silently.
+        return
+
+    from hpc_cf.config import ASSETS_DIR
+
+    tarball = ASSETS_DIR / f"spack-v{spack_version}.tar.gz"
+    if not tarball.exists():
+        raise FileNotFoundError(
+            f"Spack tarball not found: {tarball}\n"
+            f"  env.yaml declares spack.version={spack_version!r}. "
+            f"Place the tarball under assets/ before building (the Dockerfile "
+            f"COPY would fail ~20 min into the build otherwise)."
+        )
+
+    bootstrap = ASSETS_DIR / f"bootstrap-{spack_version}"
+    if not bootstrap.is_dir():
+        logger.warning(
+            "Bootstrap cache missing: %s — run "
+            "`python -m hpc_cf assets --prepare-bootstrap` (the Dockerfile "
+            "COPYs it, so the build will fail if absent).",
+            bootstrap,
+        )

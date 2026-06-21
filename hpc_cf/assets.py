@@ -21,7 +21,9 @@ from hpc_cf.config import PROJECT_ROOT
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
 from hpc_cf.spack_ops import (
+    EXPECTED_BOOTSTRAP_BINARIES,
     EnvConfig,
+    SpackConfig,
     SpackOps,
     load_env_config,
     resolve_env_paths,
@@ -53,6 +55,22 @@ def _make_spack_ops(env_name: str, container: Container) -> tuple[EnvConfig, Spa
     return env_config, ops
 
 
+def find_bootstrap_dir() -> Path | None:
+    """Return the first ``assets/bootstrap-*`` directory, or None.
+
+    Single resolver for both status reporting and host-side verification
+    (previously the loop was duplicated in _verify_host_side and run_status;
+    plan 3.6).
+    """
+    assets = PROJECT_ROOT / "assets"
+    if not assets.is_dir():
+        return None
+    for d in sorted(assets.iterdir()):
+        if d.is_dir() and d.name.startswith("bootstrap-"):
+            return d
+    return None
+
+
 # ── Image & container lifecycle ──────────────────────────────────────────
 
 
@@ -71,7 +89,7 @@ def run_bootstrap(ctr: Container, *, spack_version: str, force: bool = False) ->
     Uses a minimal EnvConfig with just the version to drive ``SpackOps.bootstrap_mirror()``.
     """
     env_config = EnvConfig(
-        spack=__import__("hpc_cf.spack_ops", fromlist=["SpackConfig"]).SpackConfig(
+        spack=SpackConfig(
             version=spack_version,
             env_name="bootstrap-env",
         )
@@ -135,13 +153,7 @@ def _verify_host_side(*, mirror_dir_host: Path) -> None:
         logger.info("No broken symlinks in mirror")
 
     # Bootstrap metadata
-    bootstrap_dir = None
-    # Find any bootstrap directory
-    assets = PROJECT_ROOT / "assets"
-    for d in sorted(assets.iterdir()):
-        if d.is_dir() and d.name.startswith("bootstrap-"):
-            bootstrap_dir = d
-            break
+    bootstrap_dir = find_bootstrap_dir()
 
     if bootstrap_dir:
         metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
@@ -153,7 +165,7 @@ def _verify_host_side(*, mirror_dir_host: Path) -> None:
                 "(run --prepare-bootstrap to create)", metadata,
             )
 
-        for name in ("clingo", "gnupg", "patchelf"):
+        for name in EXPECTED_BOOTSTRAP_BINARIES:
             f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
             if not f.exists() or f.stat().st_size == 0:
                 logger.debug("Missing optional binary metadata: %s", f)
@@ -170,12 +182,7 @@ def _verify_host_side(*, mirror_dir_host: Path) -> None:
 def run_status(ctr: Container, env_name: str) -> None:
     """Print comprehensive status report."""
     host_dir, _ = resolve_env_paths(env_name)
-    bootstrap_dir = None
-    assets = PROJECT_ROOT / "assets"
-    for d in sorted(assets.iterdir()):
-        if d.is_dir() and d.name.startswith("bootstrap-"):
-            bootstrap_dir = d
-            break
+    bootstrap_dir = find_bootstrap_dir()
 
     ctr.status(
         bootstrap_dir=bootstrap_dir,

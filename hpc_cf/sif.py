@@ -49,8 +49,14 @@ def find_apptainer() -> str:
     return ""
 
 
-def ensure_apptainer() -> str:
-    """Ensure apptainer is available; install if missing."""
+def ensure_apptainer(*, auto_confirm: bool = False) -> str:
+    """Ensure apptainer is available; install if missing.
+
+    The install prompt is skipped when *auto_confirm* is True (e.g. the CLI
+    ``--yes`` flag), making this safe for non-interactive/CI use. Without it,
+    a non-interactive context (EOF on stdin) raises with a hint instead of
+    silently refusing (plan 1.4).
+    """
     apptainer = find_apptainer()
     if apptainer:
         logger.info("Found apptainer: %s", apptainer)
@@ -82,12 +88,17 @@ def ensure_apptainer() -> str:
         "apptainer not found. Will install (unprivileged) to: %s",
         APPTAINER_LOCAL_PREFIX,
     )
-    try:
-        answer = input("Proceed with installation? [y/N] ").strip().lower()
-    except EOFError:
-        answer = "n"
-    if answer not in ("y", "yes"):
-        raise RuntimeError("apptainer installation cancelled by user")
+    if not auto_confirm:
+        try:
+            answer = input("Proceed with installation? [y/N] ").strip().lower()
+        except EOFError:
+            raise RuntimeError(
+                "apptainer installation requires confirmation but stdin is "
+                "non-interactive. Re-run with --yes (or auto_confirm=True) to "
+                "proceed without a prompt (plan 1.4)."
+            ) from None
+        if answer not in ("y", "yes"):
+            raise RuntimeError("apptainer installation cancelled by user")
 
     APPTAINER_LOCAL_PREFIX.mkdir(parents=True, exist_ok=True)
     subprocess.run(
@@ -212,9 +223,10 @@ def build_sif(
     output: Path | None = None,
     app_version: str | None = None,
     mksquashfs_args: str = "-comp zstd -Xcompression-level 22 -b 1M",
+    yes: bool = False,
 ) -> None:
     """Build a SIF image from an existing Docker/Podman OCI image."""
-    apptainer = ensure_apptainer()
+    apptainer = ensure_apptainer(auto_confirm=yes)
     artifacts_dir = PROJECT_ROOT / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 

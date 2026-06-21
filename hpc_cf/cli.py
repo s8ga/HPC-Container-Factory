@@ -15,7 +15,7 @@ from pathlib import Path
 
 import logging
 
-from hpc_cf.env import validate_manual_packages
+from hpc_cf.env import validate_manual_packages, validate_spack_assets
 from hpc_cf.sif import (
     build_apptainer,
     build_docker_like,
@@ -56,7 +56,7 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         const="__LIST__",
         help="Application version used for template auto-selection. "
-             "If omitted, defaults to opensource-2025.2. "
+             "If omitted, defaults to the first available env under spack-envs/. "
              "Pass without value to list available versions.",
     )
     parser.add_argument(
@@ -171,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942\n"
             "  python -m hpc_cf assets --create-container\n"
             "  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942 --download-mirror\n"
-            "  python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512\n"
+            "  python -m hpc_cf build-sif --app-version cp2k_opensource-2026.1-force-avx512\n"
             "  python -m hpc_cf build-sif --install-apptainer-only\n"
             "  python -m hpc_cf pack-apptainer\n"
         ),
@@ -287,6 +287,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only install apptainer, do not build SIF",
     )
+    build_sif_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Confirm apptainer installation without prompting (CI-friendly)",
+    )
 
     return parser
 
@@ -319,7 +325,7 @@ def run_new_cli(argv: list[str]) -> int:
             return 0
 
         if getattr(args, "install_apptainer_only", False):
-            apptainer_path = ensure_apptainer()
+            apptainer_path = ensure_apptainer(auto_confirm=getattr(args, "yes", False))
             print(f"apptainer installed: {apptainer_path}")
             return 0
 
@@ -348,6 +354,7 @@ def run_new_cli(argv: list[str]) -> int:
             output=args.output,
             app_version=getattr(args, "app_version", None),
             mksquashfs_args=args.mksquashfs_args,
+            yes=getattr(args, "yes", False),
         )
         logger.info("Done")
         return 0
@@ -360,9 +367,19 @@ def run_new_cli(argv: list[str]) -> int:
             print(f"  {v}")
         return 0
 
-    # Default app-version when not specified at all
+    # Default app-version when not specified at all.
+    # Pick the first available env dynamically instead of hardcoding a version
+    # that goes stale every release (plan A5).
     if not getattr(args, "app_version", None):
-        args.app_version = "opensource-2025.2"
+        available = _extract_available_versions()
+        if available:
+            args.app_version = available[0]
+        else:
+            logger.error(
+                "No --app-version specified and no envs found under spack-envs/. "
+                "Pass --app-version explicitly."
+            )
+            return 1
 
     # Mirror priority: --no-mirror > --mirror > default true
     if getattr(args, "no_mirror", False):
@@ -406,6 +423,7 @@ def run_new_cli(argv: list[str]) -> int:
         _resolved_template = select_template(args.app, args.app_version, args.template)
         _env_config = load_env_yaml(_resolved_template)
         validate_manual_packages(_env_config)
+        validate_spack_assets(_env_config)
 
         if args.engine == "apptainer":
             logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)

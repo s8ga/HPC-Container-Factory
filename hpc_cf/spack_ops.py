@@ -159,6 +159,12 @@ def resolve_env_paths(env_name: str) -> tuple[Path, Path]:
 # broken/incomplete mirror was reported as success.
 MIRROR_STATS_UNKNOWN = -1
 
+# Bootstrap binaries that a complete bootstrap mirror must provide.
+# Single source of truth — previously the ("clingo","gnupg","patchelf") tuple
+# was duplicated in spack_ops (_bootstrap_metadata_complete, _verify_bootstrap)
+# and assets._verify_host_side (plan 3.6).
+EXPECTED_BOOTSTRAP_BINARIES = ("clingo", "gnupg", "patchelf")
+
 
 def _parse_mirror_stats_from_text(text: str) -> dict[str, int]:
     """Parse spack mirror-create/verify stdout into {present, added, failed}.
@@ -312,7 +318,7 @@ spack bootstrap mirror "{container_dir}"
         metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
         if not metadata.exists() or metadata.stat().st_size == 0:
             return False
-        for name in ("clingo", "gnupg", "patchelf"):
+        for name in EXPECTED_BOOTSTRAP_BINARIES:
             f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
             if not f.exists() or f.stat().st_size == 0:
                 return False
@@ -324,7 +330,7 @@ spack bootstrap mirror "{container_dir}"
         if not metadata.exists() or metadata.stat().st_size == 0:
             raise RuntimeError(f"Bootstrap metadata missing or empty: {metadata}")
 
-        for name in ("clingo", "gnupg", "patchelf"):
+        for name in EXPECTED_BOOTSTRAP_BINARIES:
             f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
             if not f.exists() or f.stat().st_size == 0:
                 logger.warning("Missing optional binary metadata: %s", f)
@@ -483,20 +489,29 @@ spack compiler find
         """
         source = self._source_spack()
         spack_env_name = self.env.spack.env_name
+        # Quote config-derived tokens once (plan 3.4): env name and paths flow
+        # from env.yaml and could contain spaces/special chars; the previous
+        # f-string left them only double-quoted, which breaks on embedded ".
+        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
+        lock_dst = shlex.quote(f"{env_dir_container}/spack.lock")
+        lock_src = shlex.quote(
+            f"{self.spack_root}/var/spack/environments/{spack_env_name}/spack.lock"
+        )
+        env_q = shlex.quote(spack_env_name)
         script = f"""{source}
 # Create environment from spack.yaml
 work_env="/tmp/spack-env-$(date +%s)"
 mkdir -p "${{work_env}}"
-cp "{env_dir_container}/spack.yaml" "${{work_env}}/spack.yaml"
+cp {spack_yaml} "${{work_env}}/spack.yaml"
 
 
-spack env create "{spack_env_name}" "${{work_env}}/spack.yaml"
+spack env create {env_q} "${{work_env}}/spack.yaml"
 
 echo "Concretizing (spack -e {spack_env_name} concretize -f)..."
-spack -e "{spack_env_name}" concretize -f
+spack -e {env_q} concretize -f
 
-lock_src="{self.spack_root}/var/spack/environments/{spack_env_name}/spack.lock"
-lock_dst="{env_dir_container}/spack.lock"
+lock_src={lock_src}
+lock_dst={lock_dst}
 
 if [[ -f "${{lock_src}}" ]]; then
     if [[ -f "${{lock_dst}}" ]]; then
@@ -527,13 +542,17 @@ fi
     ) -> dict[str, int]:
         """Create Spack mirror. Returns stats dict with present/added/failed counts."""
         source = self._source_spack()
+        # Quote config-derived paths (plan 3.4).
+        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
+        spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
+        mirror_dir = shlex.quote(mirror_dir_container)
         script = f"""{source}
 work_env="/tmp/spack-mirror-$(date +%s)"
 mkdir -p "${{work_env}}"
-cp "{env_dir_container}/spack.yaml" "${{work_env}}/spack.yaml"
+cp {spack_yaml} "${{work_env}}/spack.yaml"
 
-if [[ -f "{env_dir_container}/spack.lock" ]]; then
-    cp "{env_dir_container}/spack.lock" "${{work_env}}/spack.lock"
+if [[ -f {spack_lock} ]]; then
+    cp {spack_lock} "${{work_env}}/spack.lock"
 else
     echo "ERROR: spack.lock not found — run concretize first" >&2
     exit 1
@@ -542,9 +561,9 @@ fi
 cd "${{work_env}}"
 spack env activate . 2>/dev/null || true
 
-mkdir -p "{mirror_dir_container}"
+mkdir -p {mirror_dir}
 echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
-spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | tee /tmp/mirror-output.log
+spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirror-output.log
 """
         self.ctr.exec(script)
 
@@ -574,13 +593,17 @@ spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | t
     ) -> dict[str, int]:
         """Verify mirror completeness by re-running mirror create."""
         source = self._source_spack()
+        # Quote config-derived paths (plan 3.4).
+        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
+        spack_lock = shlex.quote(f"{env_dir_container}/spack.lock")
+        mirror_dir = shlex.quote(mirror_dir_container)
         script = f"""{source}
 work_env="/tmp/spack-verify-$(date +%s)"
 mkdir -p "${{work_env}}"
-cp "{env_dir_container}/spack.yaml" "${{work_env}}/spack.yaml"
+cp {spack_yaml} "${{work_env}}/spack.yaml"
 
-if [[ -f "{env_dir_container}/spack.lock" ]]; then
-    cp "{env_dir_container}/spack.lock" "${{work_env}}/spack.lock"
+if [[ -f {spack_lock} ]]; then
+    cp {spack_lock} "${{work_env}}/spack.lock"
 else
     echo "ERROR: spack.lock not found" >&2
     exit 1
@@ -590,7 +613,7 @@ cd "${{work_env}}"
 spack env activate . 2>/dev/null || true
 
 echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
-spack -e . mirror create -d "{mirror_dir_container}" --all -D --private 2>&1 | tee /tmp/verify-output.log
+spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/verify-output.log
 """
         self.ctr.exec(script)
 

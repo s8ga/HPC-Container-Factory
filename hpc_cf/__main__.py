@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -19,13 +20,13 @@ def main() -> None:
         print("  python -m hpc_cf dockerfile --app-version cp2k_rocm-2026.1-gfx942")
         print("  python -m hpc_cf build --app-version cp2k_rocm-2026.1-gfx942")
         print("  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942")
-        print("  python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512")
+        print("  python -m hpc_cf build-sif --app-version cp2k_opensource-2026.1-force-avx512")
         print("  python -m hpc_cf pack-apptainer")
         sys.exit(0)
 
     try:
         code = run_new_cli(argv)
-    except (FileNotFoundError, RuntimeError, ValueError, __import__("subprocess").CalledProcessError) as exc:
+    except (FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         logging.getLogger(__name__).error(str(exc))
         sys.exit(1)
 
