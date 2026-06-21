@@ -101,6 +101,16 @@ class TestSpackScriptsIntegration:
         assert stats["failed"] == 0
         assert stats["present"] >= 1
 
+    def test_phase3b_mirror_verify(self, spack_ops: SpackOps):
+        """_build_mirror_verify_script works and stats parse correctly."""
+        ops = spack_ops
+        ops.clean_stale_state()
+        ops.ctr.exec(ops._build_mirror_verify_script(ENV_DIR, MIRROR_DIR))
+        stats = ops._parse_mirror_stats()
+        assert stats["failed"] != -1, f"verify regex didn't match: {stats}"
+        assert stats["failed"] == 0
+        assert stats["present"] >= 1
+
     def test_phase4_forced_failure(self, spack_ops: SpackOps):
         """Bad proxy → fetch fails → 'failed' counter >= 1, regex matches."""
         ops = spack_ops
