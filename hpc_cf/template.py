@@ -168,6 +168,8 @@ def build_context(
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags."""
     env_config = load_env_yaml(template_path)
 
+    method = env_config.get("method", "spack")
+
     env_images = env_config.get("images", {})
     builder_base_image = env_images.get("builder", "debian:trixie")
     runtime_base_image = env_images.get("runtime", "debian:trixie-slim")
@@ -178,9 +180,10 @@ def build_context(
     context = {
         "timestamp": datetime.now().isoformat(),
         "generated_with": "HPC Dockerfile Generator",
+        "method": method,
         "builder_base_image": builder_base_image,
         "runtime_base_image": runtime_base_image,
-        "use_mirror": use_mirror,
+        "use_mirror": use_mirror and (method == "spack"),
         "build_only": build_only,
         "default_image_name": default_image_name,
         "default_image_tag": default_image_tag,
@@ -189,6 +192,13 @@ def build_context(
         "manual_packages": env_config.get("manual_packages", []),
         **env_config.get("template_vars", {}),
     }
+
+    # Pass through no_spack-specific keys when applicable.
+    if method == "no_spack":
+        context["script"] = env_config.get("script", "")
+        runtime_cfg = env_config.get("runtime", {}) or {}
+        context["runtime_copy_dirs"] = runtime_cfg.get("copy_dirs", [])
+        context["runtime_extra_pkgs"] = runtime_cfg.get("extra_pkgs", [])
 
     logger.debug("Build context keys: %s", list(context.keys()))
     return context

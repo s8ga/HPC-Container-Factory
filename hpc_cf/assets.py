@@ -202,6 +202,18 @@ def run_assets(args: argparse.Namespace) -> None:
       - Default one-command workflow (image → container → bootstrap → mirror → verify)
       - Explicit action flags (``--create-container``, ``--prepare-bootstrap``, etc.)
     """
+    # no_spack envs don't use spack assets at all.
+    if args.env and args.env != "__LIST__":
+        try:
+            from hpc_cf.template import select_template
+            tpl = select_template("cp2k", args.env, None)
+            from hpc_cf.env import load_env_yaml
+            if load_env_yaml(tpl).get("method") == "no_spack":
+                print(f"Env '{args.env}' is method=no_spack — no spack assets needed.")
+                return
+        except FileNotFoundError:
+            pass
+
     non_host_mode = detect_non_host_network(getattr(args, "podman_opt", None))
     if non_host_mode:
         logger.warning(
