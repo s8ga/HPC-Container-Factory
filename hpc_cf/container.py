@@ -277,22 +277,41 @@ class Container:
     ) -> subprocess.CompletedProcess:
         cmd = [self.podman_cmd] + args
         logger.debug("podman: %s", shlex.join(cmd))
-        # Always capture output so it's testable and can be routed through
-        # the logger. When capture=False, re-emit stdout/stderr via logger
-        # so the user still sees it (plan 5.2).
-        result = subprocess.run(
+
+        if capture:
+            # Buffered mode: quick commands whose stdout/stderr the caller
+            # needs programmatic access to (image_exists, _parse_mirror_stats).
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=check,
+            )
+
+        # Streaming mode: real-time line-by-line output via logger.
+        # stderr is merged into stdout (stderr=STDOUT) to avoid pipe buffer
+        # deadlock. podman and spack both emit progress info to stderr, so
+        # the distinction is not meaningful for user-facing output.
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            check=check,
         )
-        if not capture:
-            if result.stdout:
-                for line in result.stdout.rstrip("\n").splitlines():
-                    logger.info("[podman] %s", line)
-            if result.stderr:
-                for line in result.stderr.rstrip("\n").splitlines():
-                    logger.warning("[podman] %s", line)
+        lines: list[str] = []
+        assert proc.stdout is not None  # guaranteed by stdout=PIPE
+        for line in iter(proc.stdout.readline, ""):
+            stripped = line.rstrip("\n")
+            if stripped:
+                lines.append(stripped)
+                logger.info("[podman] %s", stripped)
+        proc.stdout.close()
+        returncode = proc.wait()
+
+        output = "\n".join(lines)
+        result = subprocess.CompletedProcess(cmd, returncode, output, "")
+        if check and returncode != 0:
+            raise subprocess.CalledProcessError(returncode, cmd, output, "")
         return result
 
     def _ps_table(self) -> None:
