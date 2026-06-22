@@ -131,6 +131,8 @@ RUN /bin/bash -c 'set -euo pipefail; \
         echo "No spack.lock provided; install step will concretize"; \
     fi'
 
+# Ensure builtin repo matches env config (repos.builtin.commit or default branch).
+RUN spack -e cp2k-env repo update builtin
 # Find all compilers + all external packages
 RUN spack compiler find && \
     spack external find --all --not-buildable
