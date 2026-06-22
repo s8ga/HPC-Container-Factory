@@ -1,0 +1,103 @@
+# Spack environment file for ABACUS LTS 3.10.1 with OpenBLAS (force-avx512)
+
+spack:
+  concretizer:
+    unify: true
+  config:
+    deprecated: true
+    install_tree:
+      root: /opt/spack
+      padded_length: 0
+    build_stage:
+    - /tmp/spack-build
+  packages:
+    all:
+      buildable: true
+      prefer:
+        - ~cuda
+        - +mpi
+        - +openmp
+        - +pic
+        - ~rocm
+        - target="x86_64_v3"
+    mpi:
+      require:
+        - openmpi
+    openmpi:
+      require:
+        - +internal-hwloc
+    xpmem:
+      buildable: false
+      externals:
+        - spec: xpmem@master
+          prefix: /opt/spack
+    blas:
+      require:
+        - openblas
+    lapack:
+      require:
+        - openblas
+    openblas:
+      require:
+        - +dynamic_dispatch
+        - +fortran
+        - threads=openmp
+        - build_system=makefile
+        - +force_avx512
+    scalapack:
+      require:
+        - netlib-scalapack
+    # force-avx512 math libs (custom packages with force_avx512 variants)
+    elpa:
+      require:
+        - +openmp
+        - +force_all_x86_kernel
+    fftw:
+      require:
+        - +openmp
+        - +force_avx512
+    # ABACUS dependencies
+    deepmdkit:
+      require:
+        - build_system=cmake
+        - +pytorch
+    libxc:
+      require:
+        - +kxc
+        - build_system=cmake
+    pexsi:
+      require:
+        - +fortran
+    py-torch:
+      require:
+        - ~cuda
+        - ~distributed
+        - ~kineto
+        - ~mkldnn
+        - ~rocm
+        - ~valgrind
+  specs:
+    # Minimal
+    - "netlib-scalapack@2.2.2"
+    - "openblas@0.3.30"
+    - "openmpi@5.0.8"
+    # All
+    - "cereal@1.3.2"
+    - "deepmdkit@3.1.3"
+    - "elpa@2025.01.001"
+    - "fftw@3.3.10"
+    - "libcomm@0.1.1"
+    - "libnpy@1.0.1"
+    - "libri@0.2.1.1"
+    - "libxc@7.0.0"
+    - "pexsi@2.0.0"
+    - "py-torch@2.4.1"
+    - "abacus@3.10.1-lts+deepmd+deepks+elpa+lcao+libri+libxc+mpi+openmp+pexsi"
+  view:
+    default:
+      root: ./view
+      exclude:
+        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
+        - gcc-runtime
+
+# EOF
