@@ -93,11 +93,6 @@ spack:
     - "pexsi@2.0.0"
     - "py-torch@2.4.1"
     - "abacus@3.10.1-lts+deepmd+deepks+elpa+lcao+libri+libxc+mpi+openmp+pexsi"
-  view:
-    default:
-      root: ./view
-      exclude:
-        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
-        - gcc-runtime
+  view: false
 
 # EOF

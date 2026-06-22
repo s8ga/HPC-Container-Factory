@@ -62,6 +62,7 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `config: deprecated: true` in spack.yaml — allows deprecated package versions (e.g. py-torch@2.4.1). Spack v1.2.0 enforces the check at concretize time; this setting bypasses it.
+- `view: false` in spack.yaml + `spack env view enable /opt/spack-view` in Dockerfile — works around spack v1.2.0 PR #52551 which changed view updates from symlink swap to `os.rename` (fails with EXDEV on Docker overlayfs). The view is created after `spack gc` so build dependencies are removed first.
 - `_parse_mirror_stats_from_text` returns `failed=-1` (MIRROR_STATS_UNKNOWN) when output is unparseable — callers raise on `< 0`
 - `_build_*_script` methods are pure (return str) — unit-testable without a container
 - `Container._run` streams output line-by-line via `Popen` when `capture=False` (real-time `[podman]` logging). `capture=True` uses `subprocess.run` for quick programmatic queries. stderr merged into stdout in streaming mode to avoid pipe deadlock.
