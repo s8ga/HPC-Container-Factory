@@ -57,9 +57,13 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 
 - `method: spack|no_spack` in env.yaml — discriminator for build mode (default: spack)
 - `{{ cp2k_branch }}` parametrized in all Dockerfile.j2 (declared once in env.yaml template_vars)
+- `{{ cp2k_dev_repo_path }}` parametrized — cp2k's spack repo path (changes between versions: `tools/spack/cp2k_dev_repo` → `tools/spack/spack_repo/cp2k_dev`)
+- `spack repo update builtin` runs in every pipeline — ensures builtin repo clone matches env config (`repos.builtin.commit` or default branch). Required because `RemoteRepoDescriptor.initialize()` reuses existing clones without checking commit match.
+- `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `_parse_mirror_stats_from_text` returns `failed=-1` (MIRROR_STATS_UNKNOWN) when output is unparseable — callers raise on `< 0`
 - `_build_*_script` methods are pure (return str) — unit-testable without a container
+- `Container._run` always captures output — re-emits via logger when not explicitly captured
 
 ## Adding a New CP2K Version
 
