@@ -222,6 +222,7 @@ class SpackOps:
     def _setup_env_vars(self) -> str:
         """Common environment setup for all Spack commands."""
         return f"""
+set -o pipefail
 mkdir -p {self.user_dir} {self.user_cache}
 export SPACK_USER_CONFIG_PATH="{self.user_dir}"
 export SPACK_USER_CACHE_PATH="{self.user_cache}"

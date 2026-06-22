@@ -36,6 +36,22 @@ def test_build_compiler_find_script() -> None:
     assert "spack compiler find" in s
 
 
+def test_all_scripts_have_pipefail() -> None:
+    """Every _build_*_script must include 'set -o pipefail' so that
+    ``cmd | tee`` pipelines correctly propagate spack's exit code."""
+    ops = _ops()
+    scripts = [
+        ops._build_compiler_find_script(),
+        ops._build_clean_stale_state_script(),
+        ops._build_bootstrap_mirror_script("/opt/bootstrap", binary_packages=True),
+        ops._build_concretize_script("/work/env"),
+        ops._build_mirror_create_script("/work/env", "/work/mirror"),
+        ops._build_mirror_verify_script("/work/env", "/work/mirror"),
+    ]
+    for s in scripts:
+        assert "set -o pipefail" in s, f"pipefail missing in script:\n{s[:200]}"
+
+
 def test_build_clean_stale_state_script() -> None:
     s = _ops()._build_clean_stale_state_script()
     assert 'rm -f "${SPACK_USER_CONFIG_PATH}/repos.yaml"' in s
