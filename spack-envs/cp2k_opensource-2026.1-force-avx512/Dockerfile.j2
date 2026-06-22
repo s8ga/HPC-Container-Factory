@@ -137,8 +137,8 @@ RUN spack compiler find && \
 
 # Add custom spack repo from CP2K developers and our local repo with custom package overrides
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
-    cp -a /opt/cp2k/tools/spack/cp2k_dev_repo/ /opt/spack-repo/spack_repo/ && \
-    spack repo add --scope site /opt/spack-repo/spack_repo/cp2k_dev_repo/ && \
+    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
+    spack repo add --scope site /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
     spack repo add --scope site /opt/spack-env-file/repos/ && \
     spack -e cp2k-env repo ls
 
