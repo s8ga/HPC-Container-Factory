@@ -219,3 +219,9 @@ def validate_spack_yaml(env_dir: Path) -> None:
             "repos.builtin.commit in %s is not a 40-char hex string: %r",
             spack_yaml, commit,
         )
+    elif commit is None:
+        logger.info(
+            "Tip: add 'repos: builtin: commit: <sha>' to %s for reproducible "
+            "concretization (prevents builtin recipe drift between builds).",
+            spack_yaml,
+        )

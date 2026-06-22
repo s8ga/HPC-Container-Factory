@@ -100,7 +100,7 @@ class TestSpackScriptsIntegration:
         """_build_register_repos_script can register a local repo."""
         ops = spack_ops
         # Create a minimal local repo inside the container.
-        ops.ctr.exec(f"""
+        ops.ctr.exec("""
 mkdir -p /tmp/itest-local-repo/packages/fakepkg
 cat > /tmp/itest-local-repo/repo.yaml << 'EOF'
 repo:
