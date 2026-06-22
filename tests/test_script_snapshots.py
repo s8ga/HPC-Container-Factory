@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
 from hpc_cf.container import Container
 from hpc_cf.spack_ops import CustomRepo, EnvConfig, SpackConfig, SpackOps
 
@@ -71,6 +72,51 @@ def test_build_bootstrap_mirror_binary_flag() -> None:
     for s in (binary, plain):
         assert 'rm -f "${SPACK_USER_CONFIG_PATH}/repos.yaml"' in s
         assert "spack bootstrap mirror" in s
+
+
+def test_bootstrap_mirror_binary_only_no_fallback(tmp_path, monkeypatch) -> None:
+    """bootstrap_mirror must NOT fall back to source on binary failure."""
+    env = EnvConfig(spack=SpackConfig(version="1.1.1", env_name="test-env"))
+    ctr = CapturingContainer()
+    ops = SpackOps(env, ctr)
+
+    # Redirect PROJECT_ROOT so local_dir lands in tmp_path
+    monkeypatch.setattr("hpc_cf.config.PROJECT_ROOT", tmp_path)
+
+    # Bypass metadata completeness check and verify (avoid real filesystem ops)
+    monkeypatch.setattr(ops, "_bootstrap_metadata_complete", lambda _: False)
+    monkeypatch.setattr(ops, "_verify_bootstrap", lambda _: None)
+
+    # Make run_ephemeral fail immediately
+    call_count = [0]
+
+    def fail_once(script, *, capture=False, check=True):
+        call_count[0] += 1
+        raise subprocess.CalledProcessError(1, ["podman"])
+
+    ctr.run_ephemeral = fail_once  # type: ignore[method-assign]
+
+    with pytest.raises(subprocess.CalledProcessError):
+        ops.bootstrap_mirror(force=True)
+
+    # Must NOT have retried with source
+    assert call_count[0] == 1
+
+
+def test_bootstrap_mirror_always_binary(tmp_path, monkeypatch) -> None:
+    """bootstrap_mirror must always pass binary_packages=True."""
+    env = EnvConfig(spack=SpackConfig(version="1.1.1", env_name="test-env"))
+    ctr = CapturingContainer()
+    ops = SpackOps(env, ctr)
+
+    monkeypatch.setattr("hpc_cf.config.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(ops, "_bootstrap_metadata_complete", lambda _: False)
+    monkeypatch.setattr(ops, "_verify_bootstrap", lambda _: None)
+
+    ops.bootstrap_mirror(force=True)
+
+    assert len(ctr.scripts) == 1
+    assert "--binary-packages" in ctr.scripts[0]
 
 
 def test_build_concretize_script() -> None:

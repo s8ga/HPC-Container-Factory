@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import re
 import shlex
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -295,16 +294,10 @@ fi
         local_dir.mkdir(parents=True, exist_ok=True)
 
         # Run in ephemeral container to avoid stale repo pollution
-        logger.info("Generating bootstrap mirror for Spack %s", self.spack_ver)
-        try:
-            self.ctr.run_ephemeral(
-                self._build_bootstrap_mirror_script(container_dir, binary_packages=True)
-            )
-        except subprocess.CalledProcessError:
-            logger.warning("Bootstrap with --binary-packages failed, retrying sources only...")
-            self.ctr.run_ephemeral(
-                self._build_bootstrap_mirror_script(container_dir, binary_packages=False)
-            )
+        logger.info("Generating bootstrap mirror (binary-only) for Spack %s", self.spack_ver)
+        self.ctr.run_ephemeral(
+            self._build_bootstrap_mirror_script(container_dir, binary_packages=True)
+        )
 
         self._verify_bootstrap(local_dir)
         return local_dir
