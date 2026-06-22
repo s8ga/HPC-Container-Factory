@@ -63,7 +63,8 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `_parse_mirror_stats_from_text` returns `failed=-1` (MIRROR_STATS_UNKNOWN) when output is unparseable — callers raise on `< 0`
 - `_build_*_script` methods are pure (return str) — unit-testable without a container
-- `Container._run` always captures output — re-emits via logger when not explicitly captured
+- `Container._run` streams output line-by-line via `Popen` when `capture=False` (real-time `[podman]` logging). `capture=True` uses `subprocess.run` for quick programmatic queries. stderr merged into stdout in streaming mode to avoid pipe deadlock.
+- `set -o pipefail` in all generated bash scripts — ensures `spack ... | tee` pipelines correctly propagate non-zero exit codes.
 
 ## Adding a New CP2K Version
 
@@ -77,8 +78,8 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 
 | Layer | Location | Default? | External deps | Count |
 |---|---|---|---|---|
-| **Unit** | `tests/test_*.py` (excl. integration) | ✅ runs always | None | 35 |
-| **Integration** | `tests/test_integration_spack.py` | ❌ `--run-integration` | podman + image + assets | 5 |
+| **Unit** | `tests/test_*.py` (excl. integration) | ✅ runs always | None | 53 |
+| **Integration** | `tests/test_integration_spack.py` | ❌ `--run-integration` | podman + image + assets | 7 |
 
 Integration tests create a persistent container, set up a minimal spack env via CLI, and exercise `_build_*_script` methods against real spack 1.1.1.
 
@@ -86,6 +87,21 @@ Integration tests create a persistent container, set up a minimal spack env via 
 
 For non-Spack containers (simple binary packages), set `method: no_spack` in env.yaml.
 Uses shared `templates/Dockerfile.nospack.j2` (multi-stage: builder runs user script, runtime copies artifacts).
+
+## Spack Version Compatibility
+
+Current `DEFAULT_SPACK_VERSION = "1.1.1"`. Spack v1.2.0 (2026-06-21) audited — no blocking breaking changes.
+
+**v1.2.0 highlights relevant to hpc_cf**:
+- New parallel installer (TUI auto-detects non-TTY → text mode in Docker build)
+- Concretization caching enabled by default — speeds up repeated solves
+- **SBOM auto-generation** (SPDX 2.3 at `$prefix/.spack/sbom/`) — Phase 3 item 6.3 is now free
+- Package API v2.5 — our custom packages use v2.2, fully backward compatible
+- `spack isolate --self` — future candidate to simplify `SPACK_USER_CONFIG_PATH` setup
+
+**Verified safe**: `--fail-fast`, `-j`, `spack bootstrap mirror --binary-packages`, `spack repo update builtin`
+
+**Upgrade path** (when ready): `assets/spack-v1.2.0.tar.gz` + `assets/bootstrap-1.2.0` → update `DEFAULT_SPACK_VERSION` → verify `-p 20` flag still exists during first real build.
 
 ## Branch Strategy
 
