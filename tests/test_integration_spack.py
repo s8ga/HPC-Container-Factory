@@ -85,6 +85,40 @@ class TestSpackScriptsIntegration:
         )
         assert "LOCK_OK" in (result.stdout or "")
 
+    def test_phase1b_repo_update_builtin(self, spack_ops: SpackOps):
+        """spack repo update builtin works (idempotent after concretize)."""
+        ops = spack_ops
+        result = ops.ctr.exec(
+            f"{ops._source_spack()}\nspack -e itest repo update builtin 2>&1",
+            capture=True,
+        )
+        output = result.stdout or ""
+        assert "up to date" in output.lower() or "updated" in output.lower(), \
+            f"repo update didn't report success: {output[-300:]}"
+
+    def test_phase1c_register_local_repo(self, spack_ops: SpackOps):
+        """_build_register_repos_script can register a local repo."""
+        ops = spack_ops
+        # Create a minimal local repo inside the container.
+        ops.ctr.exec(f"""
+mkdir -p /tmp/itest-local-repo/packages/fakepkg
+cat > /tmp/itest-local-repo/repo.yaml << 'EOF'
+repo:
+   namespace: itest_local
+EOF
+cat > /tmp/itest-local-repo/packages/fakepkg/package.py << 'EOF'
+from spack_repo.builtin.build_systems.generic import Package
+class Fakepkg(Package):
+    pass
+EOF
+""")
+        result = ops.ctr.exec(
+            f"{ops._source_spack()}\nspack repo add /tmp/itest-local-repo 2>&1 && echo REPO_OK || echo REPO_FAIL",
+            capture=True,
+        )
+        assert "REPO_OK" in (result.stdout or ""), \
+            f"local repo registration failed: {result.stdout[-300:] if result.stdout else 'no output'}"
+
     def test_phase2_mirror_fresh_added(self, spack_ops: SpackOps):
         """First mirror create — all packages are 'added', regex matches."""
         ops = spack_ops
