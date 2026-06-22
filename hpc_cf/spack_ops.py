@@ -518,6 +518,11 @@ cp {spack_yaml} "${{work_env}}/spack.yaml"
 
 spack env create {env_q} "${{work_env}}/spack.yaml"
 
+# Ensure builtin repo matches env config (repos.builtin.commit or default
+# branch). Required because RemoteRepoDescriptor.initialize() reuses existing
+# clones without checking if the commit matches config.
+spack -e {env_q} repo update builtin
+
 echo "Concretizing (spack -e {spack_env_name} concretize -f)..."
 spack -e {env_q} concretize -f
 
@@ -589,6 +594,9 @@ fi
 cd "${{work_env}}"
 spack env activate . 2>/dev/null || true
 
+# Ensure builtin repo matches env config.
+spack -e . repo update builtin
+
 mkdir -p {mirror_dir}
 echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/mirror-output.log
@@ -613,6 +621,9 @@ fi
 
 cd "${{work_env}}"
 spack env activate . 2>/dev/null || true
+
+# Ensure builtin repo matches env config.
+spack -e . repo update builtin
 
 echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e . mirror create -d {mirror_dir} --all -D --private 2>&1 | tee /tmp/verify-output.log

@@ -62,6 +62,7 @@ def test_build_concretize_script() -> None:
     assert "spack env create" in s
     assert "concretize -f" in s
     assert "spack.lock" in s
+    assert "repo update builtin" in s
     # env name from config is present
     assert "cp2k-env" in s
 
