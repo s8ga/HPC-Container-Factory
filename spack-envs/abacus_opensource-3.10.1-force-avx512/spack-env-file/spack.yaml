@@ -76,6 +76,11 @@ spack:
         - ~mkldnn
         - ~rocm
         - ~valgrind
+    # Pin py-networkx to @:2.7 to avoid py-pandas → py-numba → py-llvmlite → llvm (9.4 GB).
+    # py-networkx@2.8.6+ adds py-pandas as a default dependency; @2.7 does not.
+    py-networkx:
+      require:
+        - "@:2.7"
   specs:
     # Minimal
     - "netlib-scalapack@2.2.2"
