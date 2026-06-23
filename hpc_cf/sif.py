@@ -216,6 +216,23 @@ def build_docker_like(
     cmd.append(".")
     run_cmd(cmd)
 
+    # Tag the builder stage for debugging (instant — all layers cached)
+    builder_tag = f"{image}:{tag}-builder"
+    logger.info("Tagging builder stage: %s", builder_tag)
+    builder_cmd = [engine, "build", "--target", "builder",
+                   "-f", str(dockerfile), "-t", builder_tag]
+    if network_host:
+        builder_cmd += ["--network", "host"]
+    for arg in (build_args or []):
+        builder_cmd += ["--build-arg", arg]
+    for opt in (build_opts or []):
+        builder_cmd += shlex.split(opt)
+    builder_cmd.append(".")
+    try:
+        run_cmd(builder_cmd)
+    except Exception as exc:
+        logger.warning("Could not tag builder stage: %s", exc)
+
 
 def build_sif(
     *,
