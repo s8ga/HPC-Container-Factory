@@ -1,0 +1,333 @@
+# Multi-stage Dockerfile for ABACUS LTS 3.9.0.27 with Spack (force-avx512)
+# BUILD REQUIREMENTS:
+# - assets/ directory with spack-v{{ spack_version }}.tar.gz, bootstrap-{{ spack_version }}, spack-mirror (optional)
+# - spack-envs/{{ env_dir_name }}/spack-env-file with spack.yaml and spack.lock
+#
+# NOTE: 不要修改各 stage 内的 RUN 步骤，否则会破坏构建缓存。
+
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+
+# ============================================================================
+# STAGE 1: BUILDER - ABACUS compilation environment
+# ============================================================================
+FROM {{ builder_base_image }} AS builder
+
+LABEL stage="builder" \
+      description="Builder stage: Compiles ABACUS 3.9.0.27 with Spack" \
+      maintainer="s8ga"
+
+# ============================================================================
+# BUILDER BASE - Common initialization (inlined from former Dockerfile-base.j2)
+# ============================================================================
+
+# Configure APT mirrors to use USTC (中科大) for faster downloads in China
+# This significantly speeds up apt-get operations in containers
+# Note: Debian Trixie uses .sources format in /etc/apt/sources.list.d/
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# System dependencies for Spack and compilation
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    curl \
+    environment-modules \
+    gfortran \
+    git \
+    openssh-client \
+    pkg-config \
+    unzip \
+    wget \
+    cmake \
+    file \
+    automake \
+    bzip2 \
+    xxd \
+    xz-utils \
+    zstd \
+    ninja-build \
+    patch \
+    patchelf \
+    pkgconf \
+    libtool-bin \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt
+
+# Copy pre-downloaded Spack from assets and extract in builder container
+# This avoids network issues and git clone limitations in containers
+COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
+
+ENV SPACK_ROOT=/opt/spack-exe
+
+RUN cd /opt && \
+    mkdir ${SPACK_ROOT} && \
+    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
+    rm /tmp/spack.tar.gz && \
+    cd ${SPACK_ROOT} && \
+    ls -la bin/ lib/ var/
+
+ENV PATH="${SPACK_ROOT}/bin:${PATH}"
+
+# Configure Spack to use local bootstrap mirror.
+COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
+
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
+    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
+    spack bootstrap disable github-actions-v2 && \
+    spack bootstrap disable github-actions-v0.6 && \
+    spack bootstrap disable spack-install && \
+    spack bootstrap now && \
+    spack bootstrap list && \
+    spack --version && \
+    echo "✅ Spack bootstrap configured from local mirror"
+{% if use_mirror %}
+# Register local mirror as primary source (highest priority)
+RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
+    spack mirror list && \
+    echo "✅ Local source mirror configured at /opt/spack-mirror"
+{% endif %}
+
+# Configure build directory (actual install location set in spack.yaml)
+RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
+
+# ============================================================================
+# ABACUS BUILD
+# ============================================================================
+
+# Prepare the spack environment + configuration
+COPY spack-envs/{{ env_dir_name }}/spack-env-file /opt/spack-env-file
+
+# Create env, then import lock/config/repos from source directory.
+RUN /bin/bash -c 'set -euo pipefail; \
+    spack env create abacus-env /opt/spack-env-file/spack.yaml && \
+    if [ -f /opt/spack-env-file/spack.lock ]; then \
+        cp -f /opt/spack-env-file/spack.lock "${SPACK_ROOT}/var/spack/environments/abacus-env/spack.lock"; \
+        echo "Imported existing spack.lock"; \
+    else \
+        echo "No spack.lock provided; install step will concretize"; \
+    fi'
+
+# Ensure builtin repo matches env config (repos.builtin.commit or default branch).
+RUN spack -e abacus-env repo update builtin
+# Find all compilers + all external packages
+RUN spack compiler find && \
+    spack external find --all --not-buildable
+
+# Add custom local repo with abacus packages + force-avx512 math lib overrides
+RUN spack repo add --scope site /opt/spack-env-file/repos/ && \
+    spack -e abacus-env repo ls
+
+# Special Fix for compile Openmpi@5.0.8
+# checking for zlib library (z) in /usr... not found
+RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
+
+RUN {% if use_mirror %}
+    --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    {% endif %}
+        spack -e abacus-env install --fail-fast -j "$(nproc)" -p 20;
+
+RUN spack -e abacus-env gc -y
+
+# Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
+# Actual library / executable locations are still in /opt/spack/ to allow flexible runtime image construction
+RUN spack -e abacus-env env view enable /opt/spack-view
+
+# ----------------------------------------------------------------------------
+# STEP: Strip debug symbols
+# ----------------------------------------------------------------------------
+# With padded_length: 0, binaries live under /opt/spack/<os-target>/.../bin|lib
+# Follow symlinks from the view to find and strip all real ELF files.
+
+RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
+    echo "=== Stripping debug symbols (${BEFORE}MB) ===" && \
+    find /opt/spack -type f \( -name '*.so' -o -name '*.so.*' \) \
+        -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
+    find /opt/spack -path '*/bin/*' -type f -print0 2>/dev/null \
+        | xargs -0 -r file 2>/dev/null \
+        | grep 'ELF.*executable' | cut -d: -f1 \
+        | xargs -r strip --strip-all 2>/dev/null || true && \
+    AFTER=$(du -sm /opt/spack/ | cut -f1) && \
+    echo "✅ Stripped: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB)"
+
+# ----------------------------------------------------------------------------
+# STEP: Build manifest
+# ----------------------------------------------------------------------------
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    { echo "=== ABACUS 3.9.0.27 Build Manifest ==="; \
+      echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
+      echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
+      echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
+    echo "=== Generating Dependency Graph ===" && \
+    spack -e abacus-env graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
+    echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
+
+{% if not build_only %}
+# ============================================================================
+# STAGE 2: RUNTIME - Minimal container with only ABACUS and runtime libraries
+# ============================================================================
+FROM {{ runtime_base_image }} AS runtime
+
+LABEL stage="runtime" \
+      description="Runtime stage: Minimal container with ABACUS 3.9.0.27 only" \
+      maintainer="s8ga"
+
+# Spack view provides all binaries and libraries via symlinks.
+# PATH points to the view for transparent binary access.
+# LD_LIBRARY_PATH is intentionally NOT set — we rely solely on ldconfig
+# (registered via /etc/ld.so.conf.d/abacus.conf) for library discovery.
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/opt/spack-view/bin:/opt/bin:$PATH"
+
+# Configure APT mirrors to use USTC (中科大) for faster downloads in China
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# Install minimal runtime dependencies (system libraries not included in spack view)
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    bash \
+    python3 \
+    curl \
+    tar \
+    libgfortran5 \
+    libstdc++6 \
+    libgcc-s1 \
+    libnuma1 \
+    openssh-client \
+    util-linux \
+    bc \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security (before COPY to use --chown)
+RUN useradd -m -s /bin/bash hpc
+
+# Copy spack install tree and view from builder.
+WORKDIR /opt
+
+# 1. Spack install tree (real files: binaries, libraries, data)
+COPY --from=builder --chown=hpc:hpc /opt/spack /opt/spack
+
+# 2. Spack view (symlinks into /opt/spack, provides unified bin/lib/share layout)
+COPY --from=builder --chown=hpc:hpc /opt/spack-view /opt/spack-view
+
+# Register spack library paths with ldconfig for system-wide discovery.
+RUN { echo "/opt/spack-view/lib"; } > /etc/ld.so.conf.d/abacus.conf && \
+    ldconfig
+
+COPY spack-envs/{{ env_dir_name }}/abacus_run_integration_tests.sh /opt
+COPY spack-envs/{{ env_dir_name }}/abacus_run_module_tests.sh /opt
+
+# ----------------------------------------------------------------------------
+# RUNTIME CLEANUP: Remove development-only content to minimize image size
+# ----------------------------------------------------------------------------
+RUN echo "=== Runtime cleanup: removing development-only content ===" && \
+    BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
+    echo "Before: ${BEFORE}MB" && \
+    \
+    echo "--- [1/7] Purging system compiler packages ---" && \
+    apt-get purge -y --auto-remove \
+        gcc-14 gcc-14-x86-64-linux-gnu \
+        gfortran-14 gfortran-14-x86-64-linux-gnu \
+        cpp-14 cpp-14-x86-64-linux-gnu \
+        libgcc-14-dev libgfortran-14-dev \
+        gcc gfortran cpp 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    \
+    echo "--- [2/7] Removing headers (include/) ---" && \
+    find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/include && \
+    rm -rf /usr/include && \
+    \
+    echo "--- [3/7] Removing Python bytecode cache ---" && \
+    find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    \
+    echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
+    for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
+        rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
+    done && \
+    \
+    echo "--- [5/8] Removing docs and man pages ---" && \
+    find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man && \
+    \
+    echo "--- [6/8] Removing .spack metadata ---" && \
+    find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
+    \
+    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
+    find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
+    \
+    echo "--- [8/8] Removing static libraries (.a) ---" && \
+    find /opt -name "*.a" -delete 2>/dev/null || true && \
+    \
+    AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
+    echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown hpc:hpc /workspace
+
+# Set working directory
+WORKDIR /workspace
+
+# Switch to non-root user
+USER hpc
+
+# ============================================================================
+# STAGE 3: FINAL - Alias for runtime (for backward compatibility)
+# ============================================================================
+FROM runtime AS final
+
+ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
+ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
+
+LABEL version="3.9.0.27" \
+      description="ABACUS 3.9.0.27 container (force-avx512)" \
+      maintainer="s8ga" \
+      image_name="{{ default_image_name }}" \
+      image_tag="{{ default_image_tag }}" \
+      timestamp="{{ timestamp }}"
+
+# Container identity for MOTD and runtime inspection.
+ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
+    HPC_CONTAINER_TAG="{{ default_image_tag }}" \
+    HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
+
+ENV MPI_RUNVAR=" --bind-to none "
+
+# MOTD system: shown only for interactive shell sessions.
+#
+# 1. Docker/Podman: ENTRYPOINT + CMD
+#    - `podman run -it img`       → entrypoint detects "bash" → shows MOTD
+#    - `podman run img abacus`    → entrypoint skips MOTD
+#
+# 2. Apptainer: SINGULARITY_SHELL wrapper in def.j2
+#    - `apptainer shell img.sif`  → wrapper detects APPTAINER_COMMAND=shell → shows MOTD
+#    - `apptainer exec/run`       → wrapper skipped, no MOTD
+
+# Shared: the MOTD renderer (required by both Docker/Podman and Apptainer)
+COPY --chmod=755 scripts/abacus-motd.sh /usr/local/bin/hpc-motd.sh
+
+# Docker/Podman: entrypoint that conditionally shows MOTD
+COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]
+
+{% endif %}
+
+# ============================================================================
+# END OF DOCKERFILE
+# ============================================================================

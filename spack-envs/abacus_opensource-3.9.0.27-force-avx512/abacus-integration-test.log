@@ -1,0 +1,3215 @@
+================================================================
+  ABACUS Integration Tests
+  /opt/spack/linux-x86_64_v3/abacus-3.9.0.27-qyz7rkhae7d6dolugtlwmerjrz4jlxqt/share/abacus/tests
+================================================================
+
+--- 01_PW (127 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] nscf_out_pot
+[----------] test out_pot in PW KSDFT. symmetry = on. in nscf
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparePot1_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_elf
+[----------] test out_elf in PW KSDFT. symmetry = on.; test init_chg=auto, and no chg file (will use atomic chg). 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparePot1_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_ldos
+[----------] 1. SG15 ONCV pseudopotential
+2. symmetry=on
+3. test LDOS with 2 eV, output LDOS_2eV.cube
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  LDOS.cube_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_chg_tau
+[----------] output of kinectic energy density
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  chg.cube_pass
+[      OK  ]  tau.cube_pass
+
+[ RUN      ] 001_PW_UPF100_Al
+[----------] Test upf100 pseudopotential for Al with 3 electrons, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 002_PW_UPF100_RAPPE_Fe
+[----------] test upf100 Rappe pp, Fe npsin=1, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 003_PW_UPF100_USPP_Fe
+[----------] test upf100 uspp, Fe npsin=2, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 004_PW_UPF201_Si
+[----------] test upf201 pseudopotential, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 005_PW_UPF201_UPF100
+[----------] test calculation with different type of pseudopotential (upf201 for Al and upf100 for Mg)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 006_PW_UPF201_Eu
+[----------] test upf201 pseudopotential which has no cutoff_radius_index and multiserial <PP_LOCAL header, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 007_PW_UPF201_USPP_Fe
+[----------] test upf201 uspp, Fe npsin=2, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 008_PW_UPF201_USPP_NaCl
+[----------] test upf201 uspp, NaCl npsin=1, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 009_PW_UPF201_USPP
+[----------] test combination of upf201 uspp and ncpp, HCl nspin=1, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 010_PW_0TYPE
+[----------] test there is no ntype set in INPUT, and ABACUS will count the ntype from STRU.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 011_PW_0ATOM
+[----------] test calculation when atom number is zero.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 012_PW_DJ
+[----------] Si-dojo-PW, 2*2*2 K-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 013_PW_ONCV_LDA
+[----------] 1. change the dft functional from readin PBE to pz LDA
+2. Fermi-Dirac smearing
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 014_PW_UPF201_BLPS
+[----------] test calculation with different type of pseudopotential (upf201 for Al and blps for Mg)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 015_PW_GTH
+[----------] GTH pseudopotential for Si, energy, force, stress have been tested with PW base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 016_PW_BLPS
+[----------] test BLPS (Bulk local pseudopotential), symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 017_PW_LPS6
+[----------] test LPS in psp6 format, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 018_PW_LPS8
+[----------] test LPS in psp8 format, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 019_PW_Coulomb
+[----------] test coulomb potential, all-electron calculation
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 020_PW_kspace
+[----------] test kspacing
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 021_PW_kspace3
+[----------] test kspacing with 3 input values
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 022_PW_CG
+[----------] test davidson method for diagonalization of H with pw basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 023_PW_DA
+[----------] test davidson method for diagonalization of H with pw basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 024_PW_DS
+[----------] test davidson method for diagonalization of H with pw basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 025_PW_DS_sca
+[----------] test subspace diagonalization with scalapack
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 026_PW_KPAR
+[----------] test parallel method kpar. Must be run by MPI with at least 2 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 027_PW_PINT_RKS
+[----------] examples/scf/pw_Si2 with psi_initializer init_wfc nao (nspin = 1, relax)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 028_PW_PINT_UKS
+[----------] pw basis with the starting wave functions set to 'init_wfc nao' (nspin = 2, scf)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 029_PW_15_CF_CS_S1_smallg
+[----------] test energies, forces, stresses when system is large (small-g components) using SG15 pesudopotential
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 030_PW_15_CF_CS_S2_smallg
+[----------] test energies, forces, stresses when system is large (small-g components) and spin component is 2, sg15 pseudopotential
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 031_PW_15_CF_CS
+[----------] calculate stress and force
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 032_PW_15_CF_CS_bspline
+[----------] Test B-spline interpolation for structure factor, *nbspline 20
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 033_PW_CF_CS_S1_smallg
+[----------] test energies, forces, stresses when system is large (small-g components)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 034_PW_CF_CS_S2_smallg
+[----------] Func:PW/nspin=2,small-g; Sys:H2O; Ref:energy,force,stress
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 035_PW_15_SO
+[----------] test SG15 soc pseudopotential with soc on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 036_PW_AF
+[----------] Fe Anti-ferromagnetic, nspin 2, init magnet: up + down
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 037_PW_FM
+[----------] Fe Ferromagnetic, nspin 2, init magnet: up + up
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 038_PW_NC
+[----------] Test noncolliner-spin calculation for FM-Fe2 , test force and stress for k-222
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 039_PW_FD_smear
+[----------] test smearing method: fd for (110) surface of Al
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 040_PW_FX_smear
+[----------] test smearing method: fixed smearing for GaN (zinc-blend) 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 041_PW_GA_smear
+[----------] test smearing method: gauss for (110) surface of fcc Al
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 042_PW_M2_smear
+[----------] test smearing method: mp2 for fcc Al
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 043_PW_MP_smear
+[----------] test smearing method: mp for bcc Fe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 044_PW_MV_smear
+[----------] test smearing method: mv for hcp Be
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 045_PW_BD_chgmix
+[----------] test SG15 pseudopotential (UPF 2.0.1) for Al with broyden charge mixing 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 046_PW_KK_chgmix
+[----------] test SG15 pseudopotential (UPF 2.0.1) for Al with kerker mixing 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 047_PW_PK_chgmix
+[----------] test SG15 pseudopotential (UPF 2.0.1) for Al with pualy-kerker mixing 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 048_PW_PL_chgmix
+[----------] test SG15 pseudopotential (UPF 2.0.1) for Al with plain charge mixing 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 049_PW_PU_chgmix
+[----------] test SG15 pseudopotential (UPF 2.0.1) for Al with Pulay charge mixing 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 050_PW_CHG_mismatch
+[----------] test init_chg=file when real space grids do not match
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 051_PW_OBOD_MemSaver
+[----------] Test the output of bands and dos with key word "mem_saver"
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+[      OK  ]  CompareBand_pass
+
+[ RUN      ] 052_PW_OB
+[----------] output bands in pw basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareBand_pass
+
+[ RUN      ] 053_PW_OD
+[----------] output DOS in pw basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+
+[ RUN      ] 055_PW_OW
+[----------] test the output of wfc_pw, and verify the maximum absolute coefficient
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Max_wfc_1
+[      OK  ]  Max_wfc_2
+[      OK  ]  Max_wfc_3
+[      OK  ]  Max_wfc_4
+[      OK  ]  Max_wfc_5
+[      OK  ]  Max_wfc_6
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 056_PW_IW
+[----------] Read wavefunctions in G space from binary file (nspin=2)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 057_PW_SO_IW
+[----------] test SG15 soc pseudopotential with soc on and init with wfc
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 058_PW_RE_MB
+[----------] test BFGS method with diamond Si, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 059_PW_RE_MB_traj
+[----------] test BFGS method with diamond Si, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 060_PW_RE_MG
+[----------] test CG method with diamond Si, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 061_PW_RE_NEW
+[----------] test for new relaxation method with cg  mixing_gg0=1.5
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 062_PW_RE_PINT_RKS
+[----------] integrated test 108_PW_RE_NEW with psi_initializer init_wfc nao (nspin = 1, cell-relax)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 063_PW_CR
+[----------] test cell-relax for atom can't move
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 064_PW_CR_fix_a
+[----------] test cell-relax for the fixed a axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 065_PW_CR_fix_ab
+[----------] test cell-relax for the fixed ab axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 066_PW_CR_fix_abc
+[----------] test cell-relax for the fixed abc axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 067_PW_CR_fix_ac
+[----------] test cell-relax for the fixed ac axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 068_PW_CR_fix_b
+[----------] test cell-relax for the fixed b axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 069_PW_CR_fix_bc
+[----------] test cell-relax for the fixed bc axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 070_PW_CR_fix_c
+[----------] test cell-relax for the fixed c axe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 071_PW_CR_move
+[----------] test cell-relax for atom can move
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 073_PW_SY
+[----------] Func:PW/mixing_type=plain,symmetry=0; Sys:Si2 Ref:energy
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 074_PW_SY_LiRH
+[----------] To test the symmetry analysis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 075_PW_CHG_BINARY
+[----------] test read rho in G space from binary file charge-density.dat; init_chg=auto and has chg file.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 076_PW_elec_add
+[----------] test diamond Si with one additional electron, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 077_PW_elec_minus
+[----------] test fcc Al with one subtracted electron, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 078_PW_S2_elec_add
+[----------] test diamond Si with one additional spin-up electron, nspin=2, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 079_PW_S2_elec_minus
+[----------] test fcc Al with one subtracted electron, nspin=2, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 080_PW_dipole
+[----------] test dipole correction, nspin=1, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 081_PW_efield
+[----------] test electric field, nspin=1, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 082_PW_gatefield
+[----------] test gate field, nspin=1, symmetry=off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 083_PW_sol_H2
+[----------] test inplicit solvation model correction for H2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  esolelref
+[      OK  ]  esolcavref
+
+[ RUN      ] 084_PW_sol_H2O
+[----------] test inplicit solvation model correction for H2O
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  esolelref
+[      OK  ]  esolcavref
+
+[ RUN      ] 085_PW_get_pchg
+[----------] test the output of out_pchg
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pchgi1s1.cube
+[      OK  ]  pchgi2s1.cube
+[      OK  ]  pchgi3s1.cube
+[      OK  ]  pchgi4s1.cube
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 086_PW_get_wf
+[----------] test the output of out_wfc_norm and out_wfc_re_im
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  wfi1s1k1.cube
+[      OK  ]  wfi2s1k1im.cube
+[      OK  ]  wfi2s1k1re.cube
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 087_PW_get_pchg_kpar
+[----------] test the output of out_pchg when kpar > 1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pchgi1s1.cube
+[      OK  ]  pchgi2s1.cube
+[      OK  ]  pchgi3s1.cube
+[      OK  ]  pchgi4s1.cube
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 088_PW_get_pchg_sepk
+[----------] test the output of out_pchg when if_separate_k is true
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pchgi1s1k1.cube
+[      OK  ]  pchgi1s1k2.cube
+[      OK  ]  pchgi1s1k3.cube
+[      OK  ]  pchgi2s1k1.cube
+[      OK  ]  pchgi2s1k2.cube
+[      OK  ]  pchgi2s1k3.cube
+[      OK  ]  pchgi3s1k1.cube
+[      OK  ]  pchgi3s1k2.cube
+[      OK  ]  pchgi3s1k3.cube
+[      OK  ]  pchgi4s1k1.cube
+[      OK  ]  pchgi4s1k2.cube
+[      OK  ]  pchgi4s1k3.cube
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 089_PW_get_wf_kpar
+[----------] test the output of out_wfc_norm and out_wfc_re_im when kpar > 1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  wfi1s1k1.cube
+[      OK  ]  wfi1s1k2.cube
+[      OK  ]  wfi1s1k3.cube
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 090_PW_VWR
+[----------] teset vwr pseudopotential, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 091_PW_CR_VDW3
+[----------] test for SnTe system , VDWd3 effect on, PW base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 092_PW_MSST
+[----------] This test for MD-MSST of Si2 crystal, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 093_PW_MSST2
+[----------] This test for MD-MSST level=2 of Si2 crystal, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 094_PW_NPT
+[----------] This test for MD-iso-NPT level=1 of Si2 crystal, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 095_PW_NVT
+[----------] This test for MD-NVT-NHC of Si2 crystal, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 096_PW_PBE0
+[----------] hybrid functionals for pw basis. note that this calculation is not physically correct, only for testing purpose.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalstressref
+
+[ RUN      ] 096_PW_PBE0_AFM
+[----------] Fe Anti-ferromagnetic with nspin=2 hybrid functional (PBE0), PW basis, init magnet: up + down
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 096_PW_PBE0_FM
+[----------] Fe Ferromagnetic with nspin=2 hybrid functional (PBE0), PW basis, init magnet: up + up
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 098_PW_15_SO_avg
+[----------] test SG15 soc pseudopotential with soc off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 099_PW_DJ_SO
+[----------] DFTU + NSPIN4, Fe2, multi-k case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 100_PW_W90
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareAMN_pass
+[      OK  ]  CompareMMN_pass
+[      OK  ]  CompareEIG_pass
+
+[ RUN      ] 101_PW_MD_1O
+[----------] test first-order charge extrapolation in MD, 3 MD STEP
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 102_PW_MD_2O
+[----------] Func:PW/MD,chg_extrap=second-order; Sys:Si2; Ref:energy,force,stress 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 201_PW_UPF201_Ce_f
+[----------] 1. SG15 pseudopotential with f electron
+2. SCAN exchange-correlation functional
+3. symmetry=on
+4. init_chg=file
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 202_PW_ONCV_Libxc
+[----------] teset SG15 pseudopotential, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 204_PW_SY
+[----------] Func:PW/mixing_type=broyden,symmetry=1; Sys:Si16 Ref:energy
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 205_PW_SCAN
+[----------] scan functional test in PW base : system Si2, force and stress are tested
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 206_PW_SCAN_S2
+[----------] scan functional test in PW base : system Si2, force tested, nspin = 2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 207_PW_skip
+[----------] test SG15 pseudopotential, symmetry=on, nz is 3 which less than default MPI_threads 4, ewald calculation is skipped in this case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 208_PW_CG_float
+[----------] test GaAs deformation simulation base parameters use CG method and float precision in CPU device
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 209_PW_DFTHALF
+[----------] DFT-1/2 method in PW basis, soc off
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 801_PW_LT_sc
+[----------] sc (simple cubic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 802_PW_LT_fcc
+[----------] fcc (face centered cubic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 803_PW_LT_bcc
+[----------] bcc (body centered cubic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 804_PW_LT_hex
+[----------] hexagonal for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 805_PW_LT_trigonal
+[----------] trigonal for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 806_PW_LT_st
+[----------] st (simple tetragonal) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 807_PW_LT_bct
+[----------] bct (body centered cubic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 808_PW_LT_so
+[----------] so (simple orthorhombic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 809_PW_LT_baco
+[----------] baco (base centered orthorhombic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 810_PW_LT_fco
+[----------] fco (face centered orthorhombic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 811_PW_LT_bco
+[----------] bco (body centered orthorhombic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 812_PW_LT_sm
+[----------] sm (simple monoclinic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 813_PW_LT_bacm
+[----------] bacm (base centered monoclinic) for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 814_PW_LT_triclinic
+[----------] triclinic for pw base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ PASSED   ]  617 test cases passed.
+[PASS] 01_PW — 513s
+
+--- 02_NAO_Gamma (30 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] get_pchg
+[----------] Obtain the charge density for selected states via the 'calculation get_pchg' 
+opiton in 'INPUT' file, for LCAO gamma_only algorithm
+[      OK  ]  pchgi1s1.cube
+[      OK  ]  pchgi2s1.cube
+[      OK  ]  pchgi3s1.cube
+[      OK  ]  pchgi4s1.cube
+
+[ RUN      ] get_wf_spin2
+[----------] Obtain the electronic wave functions via the 'calculation get_wf' 
+opiton in 'INPUT' file, for LCAO gamma_only
+[      OK  ]  wfi1s1.cube
+[      OK  ]  wfi1s2.cube
+[      OK  ]  wfi2s1im.cube
+[      OK  ]  wfi2s1re.cube
+[      OK  ]  wfi2s2im.cube
+[      OK  ]  wfi2s2re.cube
+
+[ RUN      ] md_msst
+[----------] This test for MD-MSST of Si2 crystal with gamma only, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] md_msst2
+[----------] This test for MD-MSST level=2 of Si2 crystal with gamma only, 3 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] md_out_hk_syns
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  CompareH_pass
+[      OK  ]  CompareS_pass
+[      OK  ]  CompareSYNS_pass
+
+[ RUN      ] md_out_hk_spin2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  CompareH1_pass
+[      OK  ]  CompareH2_pass
+[      OK  ]  CompareS_pass
+
+[ RUN      ] relax_bfgs2
+[----------] test BFGS method with diamond Si, symmetry=on in lcao base set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] relax_cell
+[----------] cell relax calculation of diamond Si in LCAO basis with gamma-only code
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] relax_old_cg
+[----------] Si relaxation with force
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] relax_out_hk
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  CompareH_pass
+[      OK  ]  CompareS_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] relax_out_hk_spin2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  CompareH1_pass
+[      OK  ]  CompareH2_pass
+[      OK  ]  CompareS_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_afm
+[----------] test for initial magnetization from elements, anti-ferromagnetic Fe2, LCAO
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] scf_bsse
+[----------] Testing BSSE for N2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] scf_elenum
+[----------] test fcc Al with one subtracted electron, symmetry=on in lcao base set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_elenum_spin2
+[----------] test fcc Al with one subtracted electron, nspin=2, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_FeBiTe
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_fm
+[----------] FM state of Fe with 'nspin 2'
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_force_stress
+[----------] calculate forces and stresses with LCAO (Gamma only)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_in_wf
+[----------] init_wfc=file for lcao gamma_only
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] scf_metagga
+[----------] scan functional test in LCAO base : system Si2, force and stress are tested
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_ocp_spin2
+[----------] test ocp_set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_dm
+[----------] test out_dm=1 for gamma only
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] scf_out_hk
+[----------] test for output H matrix with gamma_only
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_pass
+[      OK  ]  CompareS_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_hk_spin2
+[----------] test for output H matrix with gamma_only and nspin=2, SZ orbital
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH1_pass
+[      OK  ]  CompareH2_pass
+[      OK  ]  CompareS_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_hxc
+[----------] test for output XC matrix with gamma_only
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareVXC_pass
+[      OK  ]  CompareOrbXC_pass
+[      OK  ]  CompareVXC_R_pass
+[      OK  ]  CompareOrbKinetic_pass
+[      OK  ]  CompareOrbVL_pass
+[      OK  ]  CompareOrbVNL_pass
+[      OK  ]  CompareOrbVHartree_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_mul
+[----------] Mulliken analysis gamma-only
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  Compare_mulliken_pass
+
+[ RUN      ] scf_out_mul_spin2
+[----------] anti-ferromagnetic Fe2, test Mulliken charge
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_mulliken_pass
+
+[ RUN      ] scf_out_wf
+[----------] test out_wfc_lcao > 0 for gamma only and nspin==1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_wfc_lcao_pass
+
+[ RUN      ] scf_solvation
+[----------] test inplicit solvation model correction for H2O, lcao
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  esolelref
+[      OK  ]  esolcavref
+
+[ RUN      ] scf_u_spin2
+[----------] DFTU + NSPIN2, Fe2O2, gamma-only case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ PASSED   ]  161 test cases passed.
+[PASS] 02_NAO_Gamma — 32s
+
+--- 03_NAO_multik (61 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] scf_pp_upf1
+[----------] teset UPF-1.0 pseudopotential with LCAO basis, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_pp_upf201
+[----------] test upf201 pseudopotential, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_pp_sg15
+[----------] teset SG15 pseudopotential with LCAO basis, symmetry=on, kpar = 2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_pp_gth
+[----------] GTH pseudopotential for Si, energy, force, stress have been tested with NAO base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_angle_spin4
+[----------] Test non-collinear Fe in LCAO basis with multiple k points.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_u_spin1
+[----------] DFTU + NSPIN1, Fe2O2, multi-k case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_u_spin2
+[----------] DFTU + NSPIN2, Fe2O2, multi-k case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_u_spin4
+[----------] DFTU + NSPIN2, Fe2O2, multi-k case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_u_ramp
+[----------] DFTU + U-Ramping + NSPIN2 AFM, Fe2O2, multi-k case
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_vdw3abc
+[----------] VDWd3 three body effect on, LCAO base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_solvation
+[----------] test inplicit solvation model correction for H2, lcao
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  esolelref
+[      OK  ]  esolcavref
+
+[ RUN      ] scf_eadd
+[----------] test diamond Si with one additional electron, symmetry=on in lcao base set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_eadd_spin2
+[----------] test diamond Si with one additional spin-up electron, nspin=2, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_eminus
+[----------] test fcc Al with one subtracted electron, symmetry=on in lcao base set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_eminus_spin2
+[----------] test fcc Al with one subtracted electron, nspin=2, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_bspline
+[----------] Func:LCAO/nbspline=10; Sys:AsGa; Ref:energy,force,stress
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_0atoms
+[----------] test calculation when atom number is zero with LCAO.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_symm_prec
+[----------] To test the symmetry analysis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_smallg_spin1
+[----------] test energies, forces, stresses when system is large (small-g components) in lcao base set
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_smallg_spin2
+[----------] test energies, forces, stresses when system is large (small-g components) and spin component is 2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_in_dmr_GaAs
+[----------] test dojo pseudopotentials for GaAs and read density matrix (real space) to restart scf calculations 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_in_dmr_Si
+[----------] test dojo-soc pseudopotential for Si and read density matrix (real space) to restart scf calculations 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] scf_in_restart
+[----------] restart from charge in LCAO calculation
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_dos_spin2
+[----------] FM states of Fe with 2*2*2 kpoints
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_wf
+[----------] test out_wfc_lcao > 0
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_wfc_lcao_pass
+
+[ RUN      ] scf_out_chg_pot1
+[----------] test dojo pseudopotentials for GaAs 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  ComparePot1_pass
+[      OK  ]  chg.cube_pass
+
+[ RUN      ] scf_out_chg_tau
+[----------] Output kinectic energy density using SCAN functional
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  chg.cube_pass
+[      OK  ]  tau.cube_pass
+
+[ RUN      ] scf_out_pot3
+[----------] test out_pot with LCAO basis, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_dmr_dmk
+[----------] test SG15 pseudopotential and orbital for structure containing f electron, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_hsk
+[----------] test the output of H/S matrix; compare the sum of the absolute value of data-0-H/S
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_pass
+[      OK  ]  CompareS_pass
+
+[ RUN      ] scf_out_hsr
+[----------] test the output of H(R)/S(R) matrix; Note: delete OUT folder before testing!
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareSR_pass
+
+[ RUN      ] scf_out_hsr_spin4
+[----------] test out_mat_hs(2) and out_mat_r for nspin=4
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareSR_pass
+[      OK  ]  ComparerR_pass
+
+[ RUN      ] scf_out_dh_t
+[----------] test out_mat_dh and out_mat_t for nspin=1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparerTR_pass
+[      OK  ]  ComparerdHRx_pass
+[      OK  ]  ComparerdHRy_pass
+[      OK  ]  ComparerdHRz_pass
+
+[ RUN      ] scf_out_dos_spin4
+[----------] Func:LCAO/SOC(lspinorb=1); Sys:AsGa; Ref:energy
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  totaldosref
+
+[ RUN      ] scf_out_mul
+[----------] Mulliken analysis multi-k
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  Compare_mulliken_pass
+
+[ RUN      ] scf_out_mul_spin2
+[----------] Test case for Anti-Ferromagnetic Fe2 , mulliken charge and force&stress is compared.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  Compare_mulliken_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_mul_spin4
+[----------] Non-collinear Fe Anti-ferromagnetic (LCAO basis with SG15 pseudopotential)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_mulliken_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_mul_nupdw
+[----------] test diamond Si with one additional electron, nspin=2, symmetry=on, nupdown = 0
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_mulliken_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] scf_out_elf
+[----------] test out_elf for nspin=4
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparePot1_pass
+
+[ RUN      ] scf_out_qo
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] nscf_out_dos
+[----------] nscf calculations and output DOS
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+
+[ RUN      ] nscf_out_band_pband
+[----------] nscf calculations, output bands
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareOrb_pass
+[      OK  ]  CompareBand_pass
+
+[ RUN      ] nscf_out_pot1
+[----------] test out_pot with LCAO basis, symmetry=on in nscf
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparePot1_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] nscf_out_mul
+[----------] Mulliken analysis multi-k nscf
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Compare_mulliken_pass
+
+[ RUN      ] nscf_out_hsr_tr_rr
+[----------] output HR, TR, rR files with nscf calculation
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareSR_pass
+[      OK  ]  ComparerR_pass
+[      OK  ]  ComparerTR_pass
+
+[ RUN      ] relax_bfgs2
+[----------] Test the BFGS method with diamond Si, symmetry=on in LCAO basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] relax_old_cg
+[----------] multiple k points and do relaxation
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] relax_cell
+[----------] cell relxation with multiple k-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] relax_cell_vdw2
+[----------] test for SnTe system , VDWd2 effect on, LCAO base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] relax_cell_vdw3
+[----------] test for SnTe system , VDWd3 effect on, LCAO base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] relax_cell_vdw3bj
+[----------] test for SnTe system , VDWd3_bj effect on, LCAO base
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] md_nvt
+[----------] This test for MD-NVT-NHC of Si2 crystal, 2 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] md_msst
+[----------] This test for MD-MSST of Si2 crystal, 2 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] md_out_wf
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  Compare_wfc_lcao_pass
+
+[ RUN      ] md_out_syns
+[----------] test first-order charge extrapolation in MD, 2 STEPs, LCAO basis 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  CompareSYNS_pass
+
+[ RUN      ] md_chg_extra
+[----------] test second-order charge extrapolation in MD, 3 STEPs, LCAO basis
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] get_wf
+[----------] Obtain the electronic wave functions via the 'calculation get_wf' 
+opiton in 'INPUT' file, for LCAO multi k-point algorithm
+[      OK  ]  wfi1s1k1.cube
+[      OK  ]  wfi1s1k1im.cube
+[      OK  ]  wfi1s1k1re.cube
+[      OK  ]  wfi1s1k2.cube
+[      OK  ]  wfi1s1k2im.cube
+[      OK  ]  wfi1s1k2re.cube
+[      OK  ]  wfi1s1k3.cube
+[      OK  ]  wfi1s1k3im.cube
+[      OK  ]  wfi1s1k3re.cube
+[      OK  ]  wfi1s2k1.cube
+[      OK  ]  wfi1s2k1im.cube
+[      OK  ]  wfi1s2k1re.cube
+[      OK  ]  wfi1s2k2.cube
+[      OK  ]  wfi1s2k2im.cube
+[      OK  ]  wfi1s2k2re.cube
+[      OK  ]  wfi1s2k3.cube
+[      OK  ]  wfi1s2k3im.cube
+[      OK  ]  wfi1s2k3re.cube
+
+[ RUN      ] get_wf0
+[----------] Test the 'calculation get_wf' option with zero-weight k-points.
+This test verifies that ABACUS can handle k-points with zero weights
+by automatically assigning equal weights and issuing a warning.
+[      OK  ]  wfi1s1k1.cube
+[      OK  ]  wfi1s1k1im.cube
+[      OK  ]  wfi1s1k1re.cube
+[      OK  ]  wfi1s1k2.cube
+[      OK  ]  wfi1s1k2im.cube
+[      OK  ]  wfi1s1k2re.cube
+[      OK  ]  wfi1s1k3.cube
+[      OK  ]  wfi1s1k3im.cube
+[      OK  ]  wfi1s1k3re.cube
+[      OK  ]  wfi1s2k1.cube
+[      OK  ]  wfi1s2k1im.cube
+[      OK  ]  wfi1s2k1re.cube
+[      OK  ]  wfi1s2k2.cube
+[      OK  ]  wfi1s2k2im.cube
+[      OK  ]  wfi1s2k2re.cube
+[      OK  ]  wfi1s2k3.cube
+[      OK  ]  wfi1s2k3im.cube
+[      OK  ]  wfi1s2k3re.cube
+
+[ RUN      ] get_pchg
+[----------] Obtain partial charge via 'calculation get_pchg' (multi-k points) 
+[      OK  ]  pchgi1s1.cube
+[      OK  ]  pchgi1s2.cube
+
+[ RUN      ] get_pchg_k
+[----------] Obtain partial charge for each k-point via 'calculation get_pchg'
+[      OK  ]  pchgi1s1k1.cube
+[      OK  ]  pchgi1s1k2.cube
+[      OK  ]  pchgi1s1k3.cube
+[      OK  ]  pchgi1s2k1.cube
+[      OK  ]  pchgi1s2k2.cube
+[      OK  ]  pchgi1s2k3.cube
+
+[ RUN      ] get_s
+[      OK  ]  CompareS_pass
+
+[ PASSED   ]  322 test cases passed.
+[PASS] 03_NAO_multik — 83s
+
+--- 04_FF (20 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_LJ_Anderson
+[----------] This test for MD NVT Anderson, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 02_LJ_Berendsen
+[----------] This test for MD NVT Berendsen, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 03_LJ_FIRE
+[----------] This test for FIRE relax method, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 04_LJ_Langevin
+[----------] This test for MD NVT Langevin, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 05_LJ_MSST
+[----------] This test for MD MSST, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 06_LJ_NHC_NVT
+[----------] This test for MD NVT Nose Hoover Chain, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 07_LJ_NPT_aniso_none
+[----------] This test for MD-NHC-NPT-aniso-none, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 08_LJ_NPT_aniso_xy
+[----------] This test for MD-NHC-NPT-aniso-xy, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 09_LJ_NPT_aniso_xz
+[----------] This test for MD-NHC-NPT-aniso-xz, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 10_LJ_NPT_aniso_yz
+[----------] This test for MD-NHC-NPT-aniso-yz, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 11_LJ_NPT_iso
+[----------] This test for MD-NHC-NPT-iso, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 12_LJ_NPT_tri
+[----------] This test for MD-NHC-NPT-tri, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 13_LJ_NVE
+[----------] This test for MD NVE, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 14_LJ_rescale_v
+[----------] This test for MD NVT rescale_v, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 15_LJ_rescaling
+[----------] This test for MD NVT rescaling, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 16_LJ_RE_rule1
+[----------] This test for 2 atom species relax with Lj pot combination rule 1, 5 steps
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 17_LJ_CR_multi_ele
+[----------] This test for 2 atom species cell-relax with Lj pot, 5 step
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 18_LJ_single_rule2
+[----------] This test for 2 atom species single-point calculation with Lj pot combination rule 2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 19_LJ_RE_stop
+[----------] This test for stop calculation manually with file
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 20_LJ_dry_run
+[----------] This test for dry fun 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ PASSED   ]  78 test cases passed.
+[PASS] 04_FF — 11s
+
+--- 05_rtTDDFT (18 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_NO_KP_ocp_TDDFT
+[----------] set different occupations in rt-TDDFT (LCAO)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 02_NO_CH_OW_TDDFT
+[----------] output wave functions, dipole from rt-TDDFT (LCAO)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  Compare_wfc_lcao_pass
+
+[ RUN      ] 03_NO_CO_TDDFT
+[----------] rt-TDDFT for CO (two elements)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 04_NO_CO_ocp_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 05_NO_cur_TDDFT
+[----------] Test rt-TDDFT length gauge current output for non-periodic system (output currents)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  CompareCurrent_pass
+
+[ RUN      ] 06_NO_dir_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 07_NO_EDM_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 08_NO_ETRS_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 09_NO_HEAV_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 10_NO_HHG_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 11_NO_O3_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 12_NO_re_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 13_NO_Taylor_TDDFT
+[----------] Test the 4th-order Taylor expansion approximation 
+for the time propagator in RT-TDDFT simulations of H2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 14_NO_TRAP_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 15_NO_TRI_TDDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 16_NO_vel_TDDFT
+[----------] Test RT-TDDFT velocity gauge output for non-periodic system
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  CompareCurrent_pass
+
+[ RUN      ] 17_NO_vel_TDDFT
+[----------] Test RT-TDDFT velocity gauge output for periodic system
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareCurrent_pass
+
+[ RUN      ] 18_NO_hyb_TDDFT
+[----------] Test RT-TDDFT hybrid gauge output and parameter td_dt for periodic system
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareCurrent_pass
+
+[ PASSED   ]  73 test cases passed.
+[PASS] 05_rtTDDFT — 16s
+
+--- 06_SDFT (23 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_PW_SDFT_10S_M
+[----------] test SDFT with 10 stochastic orbitals, 1*1*1 kpoint, -20000 seed_sto (must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 02_PW_SDFT_10S_P
+[----------] test SDFT with 10 stochastic orbitals, 1*1*1 kpoint, 20000 seed_sto(must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 03_PW_SDFT_5D10S
+[----------] test SDFT with 5 KS orbitals and 10 stochastic orbitals, 1*1*1 kpoint, 20000 seed_sto(must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 04_PW_SDFT_ALL
+[----------] test SDFT with all complete basis, 1*1*1 kpoint, 20000 seed_sto
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 05_PW_MD_SDFT_10S
+[----------] test SDFT md, mdstep = 3 (must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 06_PW_MD_SDFT_5D10S
+[----------] test MDFT md, mdstep = 3 (must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 07_PW_MD_SDFT_ALL
+[----------] test CT MD, nstep = 2
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 08_PW_BNDKPAR_SDFT_ALL
+[----------] test parallel method bndpar and kpar. Must be run by MPI with at least 4 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 09_PW_BNDKPAR_SDFT_MALL
+[----------] test parallel method bndpar and kpar. Must be run by MPI with at least 4 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 10_PW_BNDPAR_SDFT_10S
+[----------] test parallel method bndpar. Must be run by MPI with 4 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 11_PW_BNDPAR_SDFT_5D10S
+[----------] test parallel method bndpar. Must be run by MPI with 4 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 12_PW_BPCG_SDFT_5D11S
+[----------] test parallel method bndpar with BPCG. Must be run by MPI with 4 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 13_PW_KPAR_SDFT_ALL
+[----------] test parallel method kpar. Must be run by MPI with at least 2 cores, otherwise please ignore this test.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 14_PW_SDFT_10D10S_METHD2
+[----------] test method_sto = 2 SDFT with 10 KS orbitals and 10 stochastic orbitals, 1*1*1 kpoint, 20000 seed_sto(must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 15_PW_SDFT_10S_METHD2
+[----------] test method_sto = 2 SDFT with 10 stochastic orbitals, 1*1*1 kpoint, 20000 seed_sto(must use 4 cores)
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 16_PW_KG_100
+[----------] test Kubo-Greenwood with 100 KS, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 17_PW_NLKG_100
+[----------] test Kubo-Greenwood with nonlocal effects and 100 KS, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 18_PW_NSCF_KG_100
+[----------] test Kubo-Greenwood with 100 KS NSCF, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 19_PW_SDOS_10D10S
+[----------] test stochastic-KG with 10 KS + 10 stochastic, 2*1*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 20_PW_SDOS_MALL
+[----------] test stochastic-KG with 10 KS + complete basis, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totaldosref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 21_PW_SKG_10D10S
+[----------] test stochastic-KG with 10 KS + 10 stochastic, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 22_PW_SKG_ALL
+[----------] test stochastic-KG with complete basis, gamma point
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 23_PW_SNLKG_10D10S
+[----------] test stochastic-KG with nonlocal effects and 10 KS + 10 stochastic, 2*2*1 kpoint
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareH_Failed
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ PASSED   ]  108 test cases passed.
+[PASS] 06_SDFT — 239s
+
+--- 07_OFDFT (33 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_OF_OP_CG1
+[----------] Test Polak-Ribire form conjugate gradient method (of_method = cg1) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 02_OF_OP_CG2
+[----------] Test Hager-Zhang form conjugate gradient method (of_method = cg2) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 03_OF_OP_TN
+[----------] Test truncated Newton method (of_method = tn) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 04_OF_KE_CPN5
+[----------] Test the energy of CPN5 kinetic energy functional (of_method = ml) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 05_OF_KE_LKT
+[----------] Test the energy, force, and stress of Luo-Karasiev-Trickey (LKT) kinetic energy functional (of_method = lkt) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 06_OF_KE_MPN
+[----------] Test the energy of MPN kinetic energy functional (of_method = ml) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 07_OF_KE_TF
+[----------] Test the energy, force, and stress of Thomas-Fermi kinetic energy functional (of_method = tf) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 08_OF_KE_TF+
+[----------] Test the energy, force, and stress of TF+1/9vW kinetic energy functional (of_method = tf+, of_vw_weight = 1/9) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 09_OF_KE_WT
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 10_OF_KE_vW
+[----------] Test the energy, force, and stress of von Weizsäcke (vW) kinetic energy functional (of_method = vw) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 11_OF_TF_weight
+[----------] Test the energy, force, and stress of `WT + 1.1 * TF + vW`, with of_tf_weight=1.1, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 12_OF_WT_HOLD
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT, with of_hold_rho0 = 1, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 13_OF_WT_RHO0
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT, with of_wt_rho0 = 1., symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 14_OF_WT_alphabeta
+[----------] Test the energy, force, and stress of WT, with different alpha and beta, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 15_OF_WT_readKernel
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt, of_read_kernel = 1) in OFDFT, with WT kernel read from kernel.txt, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 16_OF_vW_weight
+[----------] Test the energy, force, and stress of `WT + TF + 1.1*vW`, with of_vw_weight=1.1, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 17_OF_CO_Energy
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT with very strict convergence criterion (of_tole = 2e-8 Ry), symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 18_OF_CO_Potential
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT with very strict convergence criterion (of_tolp = 1e-7 a.u.), symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 19_OF_FFT_fullpw_off
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT with of_full_pw = 0, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 20_OF_FFT_fullpwdim_1
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT with of_full_pw = 1, and odd FFT dimesion (of_full_pw_dim 1), symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 21_OF_FFT_fullpwdim_2
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) in OFDFT with of_full_pw = 1, and even FFT dimesion (of_full_pw_dim 2), symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 22_OF_LibxcPBE
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) with PBE of Libxc in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 23_OF_LPS
+[----------] Test the energy, force, and stress of Wang-Teter (WT) kinetic energy functional (of_method = wt) with LPS in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 24_OF_out_elf
+[----------] Test out_elf in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  ComparePot1_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 25_OF_MD_LDA
+[----------] Test the OF-MD with WT kinetic energy functional (of_method = wt) with LDA
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 26_OF_MD_LibxcPBE
+[----------] Test the OF-MD with WT kinetic energy functional (of_method = wt) with PBE of Libxc
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 27_OF_CR_LDA
+[----------] Test the cell-relax with OFDFT with WT kinetic energy functional (of_method = wt) with LDA
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 28_OF_KE_XWM
+[----------] Test the energy and force of Xu-Wang-Ma (XWM) kinetic energy functional (of_method = xwm) in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 29_OF_XWM_para
+[----------] Test the energy and force of XWM, with of_xwm_rho_ref=0.01, of_xwm_kappa=0.1, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 30_TDOFDFT_Al
+[----------] Test case without current dependent potential in TDOFDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 31_TDOFDFT_Al_CD
+[----------] Test case with current dependent potential in TDOFDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 32_TDOFDFT_Al_mCD
+[----------] Test case with modified current dependent potential (alpha=2.0) in TDOFDFT
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 33_OF_out_chg
+[----------] Test out_chg in OFDFT, symmetry=on
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  chg.cube_pass
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ PASSED   ]  183 test cases passed.
+[PASS] 07_OFDFT — 235s
+
+--- 08_EXX (21 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_GO_S1_HSE
+[----------] HSE calculation on H2O, gamma only, nspin=1, exx_seperate_loop=true
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 02_GO_S2_HSE
+[----------] HSE calculation on H2O, gamma only, nspin=2, exx_seperate_loop=true
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 03_KP_S4_HSE
+[----------] HSE for H2O, multiple k-points, soc (nspin 4), exx_seperate_loop=true
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+
+[ RUN      ] 04_GO_S1_HSE_loop0
+[----------] HSE calculation on H2O, gamma only, nspin=1, exx_seperate_loop=false
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 05_GO_RE_HSE
+[----------] Relaxation using HSE for H2O, gamma only 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 06_KP_MD_HSE
+[----------] Molecular dynamics using HSE, multi-k points 
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 07_KP_CR_HSE
+[----------] Cell relaxation using HSE with multiple k-points, exx real number set to 1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 08_KP_HSE_symm
+[----------] HSE calculation on Si, multiple k-points, cal force and stress, exx real number, symmetry=1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 09_KP_HSE_comp
+[----------] HSE calculation on Si, multiple k-points, exx complex number
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 10_KP_HF
+[----------] Hartree-Fock calculation on Si, multiple k-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 11_KP_PBE0
+[----------] PBE0 calculation on Si, multiple k-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 12_KP_OXC
+[----------] test for output XC matrix with multipy k-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareVXC_pass
+[      OK  ]  CompareOrbXC_pass
+[      OK  ]  CompareOrbKinetic_pass
+[      OK  ]  CompareOrbVL_pass
+[      OK  ]  CompareOrbVNL_pass
+[      OK  ]  CompareOrbVHartree_pass
+
+[ RUN      ] 13_NO_KP_CAMPBEH
+[----------] CAM-PBEh calculation on Si, multiple k-points
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+
+[ RUN      ] 14_NO_TDDFT_PBE0
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  CompareCurrent_pass
+
+[ RUN      ] 51_GO_LR
+[----------] test for linear response TDDFT with gamma-only
+[      OK  ]  totexcitationenergyref
+
+[ RUN      ] 52_GO_LR_PBE
+[----------] test for linear response TDDFT with GGA XC kernel
+[      OK  ]  totexcitationenergyref
+
+[ RUN      ] 53_GO_LR_HF
+[----------] test for linear response TDHF
+[      OK  ]  totexcitationenergyref
+
+[ RUN      ] 54_GO_ULR_HF
+[----------] test for linear response TDHF using open-shell solver
+[      OK  ]  totexcitationenergyref
+
+[ RUN      ] 55_KP_LR
+[----------] test for linear response TDDFT with multiple k-points
+[      OK  ]  totexcitationenergyref
+
+[ RUN      ] 56_GO_RPA_OUTPUT
+[----------] Check molecular RPA output files (`Cs_*`, `coulomb_*`) for a gamma-only H2O case.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Etot_without_rpa
+[      OK  ]  CompareRPA_Cs_data_0_txt_pass
+[      OK  ]  CompareRPA_Cs_data_1_txt_pass
+[      OK  ]  CompareRPA_Cs_data_2_txt_pass
+[      OK  ]  CompareRPA_Cs_data_3_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_0_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_1_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_2_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_3_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_0_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_1_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_2_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_3_txt_pass
+
+[ RUN      ] 57_KP_RPA_SHRINK
+[----------] Check k-point shrink RPA output files (`shrink_sinvS_*`, `Cs_*`, `coulomb_*`) for a compact two-atom H `1x1x2` solid case.
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  Etot_without_rpa
+[      OK  ]  CompareRPA_Cs_data_0_txt_pass
+[      OK  ]  CompareRPA_Cs_data_1_txt_pass
+[      OK  ]  CompareRPA_Cs_data_2_txt_pass
+[      OK  ]  CompareRPA_Cs_data_3_txt_pass
+[      OK  ]  CompareRPA_Cs_shrinked_data_0_txt_pass
+[      OK  ]  CompareRPA_Cs_shrinked_data_1_txt_pass
+[      OK  ]  CompareRPA_Cs_shrinked_data_2_txt_pass
+[      OK  ]  CompareRPA_Cs_shrinked_data_3_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_0_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_1_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_2_txt_pass
+[      OK  ]  CompareRPA_coulomb_cut_3_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_0_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_1_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_2_txt_pass
+[      OK  ]  CompareRPA_coulomb_mat_3_txt_pass
+[      OK  ]  CompareRPA_shrink_sinvS_0_txt_pass
+[      OK  ]  CompareRPA_shrink_sinvS_1_txt_pass
+[      OK  ]  CompareRPA_shrink_sinvS_2_txt_pass
+[      OK  ]  CompareRPA_shrink_sinvS_3_txt_pass
+
+[ PASSED   ]  89 test cases passed.
+[PASS] 08_EXX — 57s
+
+--- 09_DeePKS (28 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_NO_GO_deepks_scf
+[----------] test scf calculation with deepks_scf = ture, for gamma_only CH4 molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 02_NO_KP_deepks_scf
+[----------] test scf calculation with deepks_scf = ture, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 03_NO_GO_deepks_md
+[----------] test MD calculation with deepks_scf = ture, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 04_NO_KP_deepks_md
+[----------] test MD calculation with deepks_scf = ture, for multi-k ethanol molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 05_NO_GO_deepks_nscf
+[----------] test nscf calculation with deepks_scf = ture, for gamma_only CH4 molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  totaldosref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 06_NO_KP_deepks_nscf
+[----------] test nscf calculation with deepks_scf = ture, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  totaldosref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 07_NO_GO_deepks_relax
+[----------] test relax calculation with deepks_scf = ture, for gamma_only fcc-Si crystal
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 08_NO_KP_deepks_relax
+[----------] test relax calculation with deepks_scf = ture, for multi-k fcc-Si crystal
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+
+[ RUN      ] 09_NO_GO_deepks_basic
+[----------] test force&stress label output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_f_label
+[      OK  ]  deepks_fdelta
+[      OK  ]  deepks_s_label
+[      OK  ]  deepks_sdelta
+[      OK  ]  deepks_fpre
+[      OK  ]  deepks_spre
+
+[ RUN      ] 10_NO_KP_deepks_basic
+[----------] test force&stress label output for deepks_out_labels = 1, for multi-k watertrimer
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_f_label
+[      OK  ]  deepks_fdelta
+[      OK  ]  deepks_s_label
+[      OK  ]  deepks_sdelta
+[      OK  ]  deepks_fpre
+[      OK  ]  deepks_spre
+
+[ RUN      ] 11_NO_GO_deepks_bandgap
+[----------] test bandgap label (deepks_bandgap = 1) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 12_NO_GO_deepks_bandgap_2
+[----------] test bandgap label (deepks_bandgap = 2) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 13_NO_GO_deepks_bandgap_3
+[----------] test bandgap label (deepks_bandgap = 3) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 14_NO_KP_deepks_bandgap
+[----------] test bandgap label (deepks_bandgap = 1) output for deepks_out_labels = 1, for multi-k 1D SiO2 chain
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 15_NO_KP_deepks_bandgap_2
+[----------] test bandgap label (deepks_bandgap = 2) output for deepks_out_labels = 1, for multi-k 1D SiO2 chain
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 16_NO_KP_deepks_bandgap_3
+[----------] test bandgap label (deepks_bandgap = 3) output for deepks_out_labels = 1, for multi-k 1D SiO2 chain
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_o_label
+[      OK  ]  deepks_odelta
+[      OK  ]  deepks_oprec
+
+[ RUN      ] 17_NO_GO_deepks_vdelta_1
+[----------] test hamiltonian label (deepks_v_delta = 1) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_vdp
+
+[ RUN      ] 18_NO_GO_deepks_vdelta_2
+[----------] test hamiltonian label (deepks_v_delta = 2) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_phialpha
+[      OK  ]  deepks_gevdm
+
+[ RUN      ] 19_NO_KP_deepks_vdelta_1
+[----------] test hamiltonian label (deepks_v_delta = 1) output for deepks_out_labels = 1, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_vdp
+
+[ RUN      ] 20_NO_KP_deepks_vdelta_2
+[----------] test hamiltonian label (deepks_v_delta = 2) output for deepks_out_labels = 1, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_phialpha
+[      OK  ]  deepks_gevdm
+
+[ RUN      ] 21_NO_GO_deepks_vdelta_r_1
+[----------] test hamiltonian label (deepks_v_delta = -1) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_hr_label_pass
+[      OK  ]  deepks_vdelta_r_pass
+[      OK  ]  deepks_vdrp
+
+[ RUN      ] 22_NO_GO_deepks_vdelta_r_2
+[----------] test hamiltonian label (deepks_v_delta = -2) output for deepks_out_labels = 1, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_hr_label_pass
+[      OK  ]  deepks_vdelta_r_pass
+[      OK  ]  deepks_phialpha_r
+[      OK  ]  deepks_gevdm
+
+[ RUN      ] 23_NO_KP_deepks_vdelta_r_1
+[----------] test hamiltonian label (deepks_v_delta = -1) output for deepks_out_labels = 1, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_hr_label_pass
+[      OK  ]  deepks_vdelta_r_pass
+[      OK  ]  deepks_vdrp
+
+[ RUN      ] 24_NO_KP_deepks_vdelta_r_2
+[----------] test hamiltonian label (deepks_v_delta = -2) output for deepks_out_labels = 1, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  deepks_desc
+[      OK  ]  deepks_dm_eig
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_hr_label_pass
+[      OK  ]  deepks_vdelta_r_pass
+[      OK  ]  deepks_phialpha_r
+[      OK  ]  deepks_gevdm
+
+[ RUN      ] 25_NO_GO_deepks_out_freq_elec
+[----------] test output for deepks_out_freq_elec > 0, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_vdp
+[      OK  ]  deepks_f_label
+[      OK  ]  deepks_fdelta
+[      OK  ]  deepks_s_label
+[      OK  ]  deepks_sdelta
+[      OK  ]  deepks_fpre
+[      OK  ]  deepks_spre
+[      OK  ]  deepks_e_label_elec
+[      OK  ]  deepks_edelta_elec
+[      OK  ]  deepks_h_label_elec
+[      OK  ]  deepks_vdelta_elec
+[      OK  ]  deepks_vdp_elec
+[      OK  ]  deepks_f_label_elec
+[      OK  ]  deepks_fdelta_elec
+[      OK  ]  deepks_s_label_elec
+[      OK  ]  deepks_sdelta_elec
+[      OK  ]  deepks_overlap
+[      OK  ]  deepks_overlap_elec
+
+[ RUN      ] 26_NO_KP_deepks_out_freq_elec
+[----------] test output for deepks_out_freq_elec > 0, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_e_label
+[      OK  ]  deepks_edelta
+[      OK  ]  deepks_h_label
+[      OK  ]  deepks_vdelta
+[      OK  ]  deepks_vdp
+[      OK  ]  deepks_f_label
+[      OK  ]  deepks_fdelta
+[      OK  ]  deepks_s_label
+[      OK  ]  deepks_sdelta
+[      OK  ]  deepks_fpre
+[      OK  ]  deepks_spre
+[      OK  ]  deepks_e_label_elec
+[      OK  ]  deepks_edelta_elec
+[      OK  ]  deepks_h_label_elec
+[      OK  ]  deepks_vdelta_elec
+[      OK  ]  deepks_vdp_elec
+[      OK  ]  deepks_f_label_elec
+[      OK  ]  deepks_fdelta_elec
+[      OK  ]  deepks_s_label_elec
+[      OK  ]  deepks_sdelta_elec
+[      OK  ]  deepks_overlap
+[      OK  ]  deepks_overlap_elec
+
+[ RUN      ] 27_NO_GO_deepks_out_2
+[----------] test output for deepks_out_labels = 2, for gamma_only H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_atom
+[      OK  ]  deepks_box
+[      OK  ]  deepks_energy
+[      OK  ]  deepks_force
+[      OK  ]  deepks_stress
+[      OK  ]  deepks_orbital
+[      OK  ]  deepks_hamiltonian
+[      OK  ]  deepks_overlap
+
+[ RUN      ] 28_NO_KP_deepks_out_2
+[----------] test output for deepks_out_labels = 2, for multi-k H2O molecule
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  totalforceref
+[      OK  ]  totalstressref
+[      OK  ]  deepks_atom
+[      OK  ]  deepks_box
+[      OK  ]  deepks_energy
+[      OK  ]  deepks_force
+[      OK  ]  deepks_stress
+[      OK  ]  deepks_orbital
+[      OK  ]  deepks_hamiltonian
+[      OK  ]  deepks_overlap
+
+[ PASSED   ]  284 test cases passed.
+[PASS] 09_DeePKS — 49s
+
+--- 10_others (4 cases) ---
+-----AUTO TESTS OF ABACUS ------
+ABACUS path: abacus
+Number of processes: 4
+Number of threads: 5
+Test accuracy totenergy: 0.0000001 eV
+Test accuracy force: 0.0001
+Test accuracy stress: 0.001
+Check accuaracy: 8
+Test cases file: CASES_CPU.txt
+Test cases regex: ^[^#].*_.*$
+Generate reference: 
+--------------------------------
+
+[ RUN      ] 01_NP_KP_sp
+[----------] test LCAO in PW for hcp Be
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 02_NP_KP_spd
+[----------] test LCAO in PW
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+
+[ RUN      ] 04_RDMFT_Si2
+[----------] Test the various energies obtained when using rdmft to calculate solid Si, KPT is 221
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  pointgroupref
+[      OK  ]  spacegroupref
+[      OK  ]  nksibzref
+[      OK  ]  The
+[      OK  ]  E_TV_RDMFT_ref
+[      OK  ]  E_hartree_RDMFT_ref
+[      OK  ]  Exc_cwp22_RDMFT_ref
+[      OK  ]  E_Ewald_ref
+[      OK  ]  E_entropy_ref
+[      OK  ]  E_descf_ref
+[      OK  ]  Etotal_RDMFT_ref
+[      OK  ]  Exc_ksdft_ref
+[      OK  ]  E_exx_ksdft_ref
+
+[ RUN      ] 05_Alllog_filename
+All log filenames contain 'running_md_' - validation passed
+[----------] Test if the log filenames are set correctly when out_alllog=1
+[      OK  ]  etotref
+[      OK  ]  etotperatomref
+[      OK  ]  log_filename_validation
+
+[ PASSED   ]  28 test cases passed.
+[PASS] 10_others — 8s
+
+================================================================
+  Summary
+================================================================
+  Total:     10
+  Passed:    10
+  Failed:    0
+  Skipped:   0
+  Time:      1243s
+================================================================

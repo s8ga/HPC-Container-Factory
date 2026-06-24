@@ -1,0 +1,57 @@
+--- a/source/source_hsolver/test/diago_pexsi_test.cpp	2026-06-23 19:41:45.091398410 +0800
++++ b/source/source_hsolver/test/diago_pexsi_test.cpp	2026-06-23 19:48:03.047470013 +0800
+@@ -10,6 +10,7 @@
+ #include "source_hsolver/module_pexsi/pexsi_solver.h"
+ #include "source_hsolver/test/diago_elpa_utils.h"
+ 
++#include "source_base/module_external/scalapack_connector.h"
+ #include <fstream>
+ #include <gmock/gmock.h>
+ #include <gtest/gtest.h>
+@@ -63,6 +64,46 @@
+         MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+     }
+ 
++    // Required by GoogleTest TestWithParam: PexsiPrepare must be copyable.
++    // Parallel_Orbitals (inheriting from Parallel_2D) is move-only, so the
++    // implicit copy constructor is deleted. We provide a custom one that copies
++    // all scalar/vector members and leaves po default-constructed (it is
++    // initialized during produce_HS(), not during construction).
++    PexsiPrepare(const PexsiPrepare& other)
++        : dsize(other.dsize), myrank(other.myrank)
++        , nlocal(other.nlocal), nbands(other.nbands), nb2d(other.nb2d)
++        , sparsity(other.sparsity), nprows(other.nprows), npcols(other.npcols)
++        , myprow(other.myprow), mypcol(other.mypcol)
++        , nrow(other.nrow), ncol(other.ncol)
++        , hsolver_time(other.hsolver_time)
++        , sfname(other.sfname), hfname(other.hfname), dmname(other.dmname)
++        , h(other.h), s(other.s), h_local(other.h_local), s_local(other.s_local)
++        , abc(other.abc), icontxt(other.icontxt), mu(other.mu)
++        , dm_local(other.dm_local), edm_local(other.edm_local), dm(other.dm)
++        , hmtest(other.hmtest), psi(other.psi)
++        , dh(nullptr)
++    {
++    }
++
++    PexsiPrepare& operator=(const PexsiPrepare& other)
++    {
++        if (this != &other) {
++            dsize = other.dsize; myrank = other.myrank;
++            nlocal = other.nlocal; nbands = other.nbands; nb2d = other.nb2d;
++            sparsity = other.sparsity; nprows = other.nprows; npcols = other.npcols;
++            myprow = other.myprow; mypcol = other.mypcol;
++            nrow = other.nrow; ncol = other.ncol;
++            hsolver_time = other.hsolver_time;
++            sfname = other.sfname; hfname = other.hfname; dmname = other.dmname;
++            h = other.h; s = other.s; h_local = other.h_local; s_local = other.s_local;
++            abc = other.abc; icontxt = other.icontxt; mu = other.mu;
++            dm_local = other.dm_local; edm_local = other.edm_local; dm = other.dm;
++            hmtest = other.hmtest; psi = other.psi;
++            dh = nullptr;
++        }
++        return *this;
++    }
++
+     int dsize, myrank;
+     int nlocal, nbands, nb2d, sparsity;
+     int nprows, npcols, myprow, mypcol;

@@ -1,0 +1,14 @@
+--- a/source/module_esolver/test/CMakeLists.txt	2026-06-24 01:42:13.823803368 +0800
++++ b/source/module_esolver/test/CMakeLists.txt	2026-06-24 01:42:15.143803358 +0800
+@@ -3,8 +3,10 @@
+ 
+ install(DIRECTORY support DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+ 
++if(DEFINED DeePMD_DIR)
+ AddTest(
+   TARGET esolver_dp_test
+-  LIBS parameter ${math_libs} base device 
++  LIBS parameter ${math_libs} base device DeePMD::deepmd_c
+   SOURCES esolver_dp_test.cpp ../esolver_dp.cpp ../../module_io/cif_io.cpp
+ )
++endif()
