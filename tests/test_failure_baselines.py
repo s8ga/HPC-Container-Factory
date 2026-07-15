@@ -1,4 +1,4 @@
-"""P0 failure baselines for confirmed hpc_cf framework defects.
+"""Failure baselines for confirmed hpc_cf framework defects.
 
 These tests document desired post-fix behavior. They are expected to fail
 against the current implementation; Stream A–D repairs should turn them green.

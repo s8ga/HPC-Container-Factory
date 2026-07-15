@@ -1,4 +1,4 @@
-"""P5 merge guardrails: synthetic fixtures for A–D contracts.
+"""Merge guardrails: synthetic fixtures for A–D contracts.
 
 Covers scope / mirror / phase / StrictUndefined, plus the optional
 ``spack_image_repos`` partial — without touching shipped application envs.
