@@ -225,7 +225,9 @@ class EnvironmentSpec:
     spack: SpackConfig = field(
         default_factory=lambda: SpackConfig(
             version=DEFAULT_SPACK_VERSION,
-            env_name="cp2k-env",
+            # Programmatic construction must set env_name; YAML parse requires
+            # it for method=spack (no implicit "cp2k-env" default).
+            env_name="",
         )
     )
     mirror_builder: MirrorBuilderConfig = field(default_factory=MirrorBuilderConfig)
@@ -505,16 +507,38 @@ def _parse_images(raw: Any) -> ImageConfig:
     )
 
 
-def _parse_spack(raw: Any) -> SpackConfig:
+def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
+    """Parse the ``spack:`` block.
+
+    For ``method: spack``, ``env_name`` is mandatory (no implicit
+    ``cp2k-env``). For ``method: no_spack``, a missing ``spack:`` section
+    yields an empty placeholder config; if present, ``env_name`` is still
+    optional.
+    """
+    require_env_name = method is BuildMethod.SPACK
     if raw is None:
+        if require_env_name:
+            raise ValueError(
+                "spack.env_name is required when method is spack "
+                "(declare it explicitly; no longer defaults to cp2k-env)"
+            )
         return SpackConfig(
             version=DEFAULT_SPACK_VERSION,
-            env_name="cp2k-env",
+            env_name="",
         )
     data = _require_mapping(raw, path="spack")
     _reject_unknown_keys(data, _SPACK_KEYS, path="spack")
     version = data.get("version", DEFAULT_SPACK_VERSION)
-    env_name = data.get("env_name", "cp2k-env")
+    raw_env_name = data.get("env_name")
+    if raw_env_name is None or raw_env_name == "":
+        if require_env_name:
+            raise ValueError(
+                "spack.env_name is required when method is spack "
+                "(declare it explicitly; no longer defaults to cp2k-env)"
+            )
+        env_name = ""
+    else:
+        env_name = _require_str(raw_env_name, path="spack.env_name")
     assets_default = SpackPhasePolicy(
         update_builtin=True, repo_scope=RepoScope.ENV
     )
@@ -523,7 +547,7 @@ def _parse_spack(raw: Any) -> SpackConfig:
     )
     return SpackConfig(
         version=_require_str(version, path="spack.version"),
-        env_name=_require_str(env_name, path="spack.env_name"),
+        env_name=env_name,
         custom_repos=_parse_custom_repos(data.get("custom_repos")),
         assets=_parse_phase_policy(
             data.get("assets"), default=assets_default, label="assets",
@@ -637,7 +661,7 @@ def parse_environment_spec(
         schema_version=schema_version,
         method=method,
         images=_parse_images(data.get("images")),
-        spack=_parse_spack(data.get("spack")),
+        spack=_parse_spack(data.get("spack"), method=method),
         mirror_builder=_parse_mirror_builder(data.get("mirror_builder")),
         manual_packages=_parse_manual_packages(data.get("manual_packages")),
         runtime=_parse_runtime(data.get("runtime")),

@@ -308,12 +308,23 @@ def collect_spack_assets(
 
 
 def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
+    """CP2K-only: parametrized ``cp2k_branch`` must match Dockerfile clones.
+
+    Non-CP2K envs (no ``cp2k_branch`` template var and no cp2k git clone)
+    are skipped entirely so VASP/ABACUS do not run CP2K-centric checks.
+    """
     findings: list[ValidationFinding] = []
     dockerfile = env_dir / "Dockerfile.j2"
     if not dockerfile.exists():
         return findings
     text = dockerfile.read_text(encoding="utf-8")
     uses_var = "{{ cp2k_branch }}" in text
+    joined = text.replace("\\\n", " ")
+    clone_lines = [
+        line
+        for line in joined.splitlines()
+        if "git clone" in line and "cp2k" in line and "-b " in line
+    ]
 
     tv: dict[str, Any] = {}
     env_yaml_path: Path | None = None
@@ -323,6 +334,9 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
         tv = spec.template_vars
     except (FileNotFoundError, ValueError):
         pass
+
+    if not uses_var and not clone_lines and "cp2k_branch" not in tv:
+        return findings
 
     if uses_var and "cp2k_branch" not in tv:
         where = f" ({env_yaml_path})" if env_yaml_path else ""
@@ -339,22 +353,20 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
             )
         )
 
-    joined = text.replace("\\\n", " ")
-    for line in joined.splitlines():
-        if "git clone" in line and "cp2k" in line and "-b " in line:
-            if "{{ cp2k_branch }}" not in line:
-                findings.append(
-                    ValidationFinding(
-                        code="branch.hardcoded",
-                        severity=ValidationSeverity.ERROR,
-                        message=(
-                            "cp2k git clone hardcodes a branch instead of "
-                            "{{ cp2k_branch }}"
-                        ),
-                        path=str(dockerfile),
-                        fix_hint=f"Use -b {{{{ cp2k_branch }}}}: {line.strip()}",
-                    )
+    for line in clone_lines:
+        if "{{ cp2k_branch }}" not in line:
+            findings.append(
+                ValidationFinding(
+                    code="branch.hardcoded",
+                    severity=ValidationSeverity.ERROR,
+                    message=(
+                        "cp2k git clone hardcodes a branch instead of "
+                        "{{ cp2k_branch }}"
+                    ),
+                    path=str(dockerfile),
+                    fix_hint=f"Use -b {{{{ cp2k_branch }}}}: {line.strip()}",
                 )
+            )
     return findings
 
 

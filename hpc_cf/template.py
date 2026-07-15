@@ -425,7 +425,13 @@ def build_context(
         context.update(plan_context(build_spack_environment_plan(spec)))
         context["allow_reconcretize"] = allow_reconcretize
     elif method is BuildMethod.SPACK:
-        context.setdefault("spack_env_name", "cp2k-env")
+        # Legacy templates without env.yaml: do NOT invent a cp2k-env name.
+        # Templates that need {{ spack_env_name }} will fail under StrictUndefined.
+        if "spack_env_name" not in context:
+            logger.warning(
+                "Compatibility mode without EnvironmentSpec: spack_env_name "
+                "is unset (explicit env.yaml spack.env_name required)"
+            )
         context.setdefault("spack_update_builtin", True)
         context.setdefault("spack_repo_scope", "site")
         context.setdefault("spack_repo_scope_kind", "site")

@@ -25,6 +25,7 @@ def test_validate_manual_packages_sha256_mismatch(tmp_path: Path, monkeypatch: p
     with pytest.raises(ValueError, match="sha256 mismatch"):
         validate_manual_packages(
             {
+                "method": "no_spack",
                 "manual_packages": [
                     {
                         "file": "manual.tgz",
@@ -47,7 +48,25 @@ def test_validate_spack_assets_missing_tarball(
     )
 
     with pytest.raises(FileNotFoundError, match="Spack tarball"):
-        validate_spack_assets({"method": "spack", "spack": {"version": "9.9.9"}})
+        validate_spack_assets(
+            {"method": "spack", "spack": {"version": "9.9.9", "env_name": "e"}}
+        )
+
+
+def test_validate_branch_consistency_skips_non_cp2k(tmp_path: Path) -> None:
+    """VASP/ABACUS-style envs must not trip CP2K branch checks."""
+    env_dir = tmp_path / "env"
+    env_dir.mkdir()
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\n"
+        "spack:\n  version: '1.1.1'\n  env_name: vasp-env\n",
+        encoding="utf-8",
+    )
+    (env_dir / "Dockerfile.j2").write_text(
+        "FROM debian:trixie\nRUN echo no-cp2k-clone\n",
+        encoding="utf-8",
+    )
+    validate_branch_consistency(env_dir)  # no raise
 
 
 def test_validate_branch_consistency_rejects_hardcoded_clone(tmp_path: Path) -> None:

@@ -193,6 +193,64 @@ def test_as_dict_roundtrip_keys() -> None:
     assert d["manual_packages"][0]["file"] == "f.tgz"
 
 
+def test_spack_method_requires_explicit_env_name() -> None:
+    with pytest.raises(ValueError, match="spack.env_name is required"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "method": "spack",
+                "spack": {"version": "1.1.1"},
+            }
+        )
+    with pytest.raises(ValueError, match="spack.env_name is required"):
+        parse_environment_spec({"schema_version": 1, "method": "spack"})
+
+
+def test_no_spack_allows_missing_env_name() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "method": "no_spack",
+            "script": "echo ok",
+        }
+    )
+    assert spec.method is BuildMethod.NO_SPACK
+    assert spec.spack.env_name == ""
+
+
+def test_empty_env_name_rejected_for_spack() -> None:
+    with pytest.raises(ValueError, match="spack.env_name is required"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "method": "spack",
+                "spack": {"version": "1.1.1", "env_name": ""},
+            }
+        )
+
+
+def test_shipped_envs_declare_explicit_env_name() -> None:
+    root = Path(__file__).resolve().parent.parent / "spack-envs"
+    env_dirs = [
+        d
+        for d in sorted(root.iterdir())
+        if d.is_dir()
+        and (
+            (d / "spack-env-file" / "env.yaml").exists()
+            or (d / "env.yaml").exists()
+        )
+    ]
+    assert env_dirs, "expected at least one env with env.yaml"
+    for env_dir in env_dirs:
+        loaded = load_environment_spec(env_dir)
+        assert loaded.spack.env_name, f"{env_dir.name}: empty env_name"
+        assert loaded.spack.env_name != "cp2k-env" or "cp2k" in env_dir.name, (
+            f"{env_dir.name}: unexpected cp2k-env name"
+        )
+        text = loaded.source_path.read_text(encoding="utf-8")
+        assert "env_name:" in text, env_dir.name
+
+
 def test_shipped_envs_declare_schema_version_1() -> None:
     root = Path(__file__).resolve().parent.parent / "spack-envs"
     env_dirs = [
