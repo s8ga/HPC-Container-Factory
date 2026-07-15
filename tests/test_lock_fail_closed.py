@@ -310,3 +310,32 @@ def test_dockerfile_cli_wires_allow_reconcretize() -> None:
     req = build_request_from_args(args, use_mirror=True, render_only=True)
     assert req.render_only is True
     assert req.allow_reconcretize is True
+
+
+def test_run_verify_fails_on_empty_lock(tmp_path: Path) -> None:
+    from hpc_cf.assets import run_verify
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_host = tmp_path / "spack-envs" / "demo" / "spack-env-file"
+    env_host.mkdir(parents=True)
+    (env_host / "spack.yaml").write_text("spack: {}\n", encoding="utf-8")
+    (env_host / "spack.lock").write_text("", encoding="utf-8")
+    (env_host / "env.yaml").write_text(
+        "schema_version: 1\nspack:\n  version: '1.1.1'\n  env_name: demo-env\n",
+        encoding="utf-8",
+    )
+
+    ops = MagicMock()
+    ops.env.spack.version = "1.1.1"
+
+    with (
+        patch("hpc_cf.assets._make_spack_ops", return_value=(ops.env, ops)),
+        patch(
+            "hpc_cf.assets.resolve_env_paths",
+            return_value=(env_host, Path("/work/spack-envs/demo/spack-env-file")),
+        ),
+        pytest.raises(FileNotFoundError, match="empty|spack.lock"),
+    ):
+        run_verify(MagicMock(), "demo", layout=layout)
+
+    ops.run_verify_pipeline.assert_not_called()

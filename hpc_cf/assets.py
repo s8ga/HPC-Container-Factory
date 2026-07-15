@@ -27,6 +27,7 @@ from hpc_cf.spack_ops import (
     resolve_env_paths,
 )
 from hpc_cf.template import detect_non_host_network
+from hpc_cf.validation import is_nonempty_spack_lock
 from hpc_cf.workflows import AssetsRequest
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,7 @@ def run_mirror(
     mirror_dir = layout.container_mirror_dir()
     store = SharedMirrorStore(layout)
     lock_path = host_dir / "spack.lock"
-    has_lock = lock_path.is_file() and lock_path.stat().st_size > 0
+    has_lock = is_nonempty_spack_lock(lock_path)
 
     with store.exclusive_write():
         run = store.begin_run(env_name)
@@ -213,8 +214,12 @@ def run_verify(
     layout = layout or ProjectLayout.default()
     host_dir, container_dir = resolve_env_paths(env_name, layout=layout)
 
-    if not (host_dir / "spack.lock").exists():
-        raise FileNotFoundError("spack.lock not found — run concretize or mirror first")
+    lock_path = host_dir / "spack.lock"
+    if not is_nonempty_spack_lock(lock_path):
+        raise FileNotFoundError(
+            f"spack.lock not found or empty under {host_dir}; "
+            "run concretize or mirror first"
+        )
 
     mirror_dir = layout.container_mirror_dir()
     env_config, ops = _make_spack_ops(env_name, ctr, layout=layout)
