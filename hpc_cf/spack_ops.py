@@ -1,6 +1,7 @@
 """Spack operations — bootstrap, concretize, mirror, verify.
 
-All operations are executed inside Podman containers via :class:`Container`.
+All operations are executed via a :class:`~hpc_cf.execution.RunnerPort`
+(typically Podman :class:`~hpc_cf.container.Container`).
 Replaces the Spack-specific portions of:
   - ``scripts/spack-common.sh`` (streamline_parse_env, step_*, spack_bootstrap,
     mirror_create, mirror_verify, streamline_dispatch)
@@ -14,138 +15,56 @@ from __future__ import annotations
 import logging
 import re
 import shlex
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from hpc_cf.config import DEFAULT_SPACK_VERSION, SPACK_ENVS_DIR
-from hpc_cf.container import Container
-
-try:
-    import yaml
-except ImportError as exc:  # pragma: no cover - exercised when pyyaml missing
-    raise ImportError(f"Required package not installed: {exc}. Install: pip install pyyaml") from exc
+from hpc_cf.environment import (
+    CustomRepo as CustomRepo,
+    EnvironmentSpec,
+    MirrorBuilderConfig as MirrorBuilderConfig,
+    RepoScope,
+    SpackConfig as SpackConfig,
+    load_environment_spec,
+)
+from hpc_cf.execution import ProjectLayout, RunnerPort
+from hpc_cf.spack_plan import (
+    SpackEnvironmentPlan,
+    build_spack_environment_plan,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ── Data classes ──────────────────────────────────────────────────────────
+# ── Compatibility aliases (prefer EnvironmentSpec / load_environment_spec) ─
 
 
-@dataclass
-class CustomRepo:
-    type: Literal["git", "local"]
-    namespace: str
-    # git only
-    url: str | None = None
-    branch: str | None = None
-    sparse_path: str | None = None
-    # local only
-    path: str | None = None
-
-
-@dataclass
-class SpackConfig:
-    version: str
-    env_name: str
-    custom_repos: list[CustomRepo] = field(default_factory=list)
-
-
-@dataclass
-class MirrorBuilderConfig:
-    system_pkgs: list[str] = field(default_factory=list)
-    pkg_mirror_setup: str = ""
-    pkg_install_cmd: str = ""
-
-
-@dataclass
-class EnvConfig:
-    """Complete env.yaml representation."""
-    spack: SpackConfig
-    mirror_builder: MirrorBuilderConfig = field(default_factory=MirrorBuilderConfig)
-    template_vars: dict = field(default_factory=dict)
-
-    @property
-    def spack_user_dir_name(self) -> str:
-        return f".spack-v{self.spack.version}"
-
-    @property
-    def spack_user_dir_in_container(self) -> str:
-        return f"/work/assets/{self.spack_user_dir_name}"
-
-    @property
-    def bootstrap_dir_name(self) -> str:
-        return f"bootstrap-{self.spack.version}"
-
-    @property
-    def bootstrap_dir_in_container(self) -> str:
-        return f"/work/assets/{self.bootstrap_dir_name}"
-
-
-# ── env.yaml loader ──────────────────────────────────────────────────────
+# Historical name retained for tests and callers; same object as EnvironmentSpec.
+EnvConfig = EnvironmentSpec
 
 
 def load_env_config(env_dir: Path) -> EnvConfig:
-    """Parse env.yaml from an environment directory into an EnvConfig.
+    """Deprecated wrapper around :func:`load_environment_spec`.
 
-    Uses the shared :func:`hpc_cf.env.find_env_yaml` resolver so that this
-    loader and ``load_env_yaml`` agree on which file is read (previously these
-    two had REVERSED lookup orders).
+    Prefer ``load_environment_spec`` — this alias will be removed in a later
+    phase.
     """
-    from hpc_cf.env import find_env_yaml
-
-    env_yaml = find_env_yaml(env_dir)
-    with open(env_yaml) as f:
-        raw = yaml.safe_load(f)
-
-    spack_raw = raw.get("spack", {})
-    mb_raw = raw.get("mirror_builder", {})
-
-    repos: list[CustomRepo] = []
-    for r in spack_raw.get("custom_repos", []):
-        if "url" in r:
-            repos.append(CustomRepo(
-                type="git",
-                namespace=r["namespace"],
-                url=r["url"],
-                branch=r.get("branch", "main"),
-                sparse_path=r.get("sparse_path"),
-            ))
-        elif "path" in r:
-            repos.append(CustomRepo(
-                type="local",
-                namespace=r["namespace"],
-                path=r["path"],
-            ))
-
-    return EnvConfig(
-        spack=SpackConfig(
-            version=spack_raw.get("version", DEFAULT_SPACK_VERSION),
-            env_name=spack_raw.get("env_name", "cp2k-env"),
-            custom_repos=repos,
-        ),
-        mirror_builder=MirrorBuilderConfig(
-            system_pkgs=mb_raw.get("system_pkgs", []),
-            pkg_mirror_setup=mb_raw.get("pkg_mirror_setup", ""),
-            pkg_install_cmd=mb_raw.get("pkg_install_cmd", ""),
-        ),
-        template_vars=raw.get("template_vars", {}),
+    logger.warning(
+        "load_env_config is deprecated; use hpc_cf.environment.load_environment_spec"
     )
+    return load_environment_spec(env_dir)
 
 
-def resolve_env_paths(env_name: str) -> tuple[Path, Path]:
+def resolve_env_paths(
+    env_name: str,
+    *,
+    layout: ProjectLayout | None = None,
+) -> tuple[Path, Path]:
     """Return (host_env_dir, container_env_dir) for the given env name.
 
-    Handles the ``spack-env-file/`` subdirectory layout.
+    Handles the ``spack-env-file/`` subdirectory layout. Paths are resolved
+    under *layout* (or :meth:`ProjectLayout.default` when omitted).
     """
-    host_dir = SPACK_ENVS_DIR / env_name
-    container_dir = Path(f"/work/spack-envs/{env_name}")
-
-    if (host_dir / "spack-env-file" / "env.yaml").exists() or (host_dir / "spack-env-file" / "spack.yaml").exists():
-        host_dir = host_dir / "spack-env-file"
-        container_dir = container_dir / "spack-env-file"
-
-    return host_dir, container_dir
+    return (layout or ProjectLayout.default()).resolve_env_paths(env_name)
 
 
 # ── Mirror stats parsing (pure, unit-testable) ──────────────────────────
@@ -180,10 +99,11 @@ def _parse_mirror_stats_from_text(text: str) -> dict[str, int]:
 
     Pure function (no I/O) so it can be unit-tested directly. Returns the
     LAST match of each counter (spack prints progress lines; the final
-    summary is what matters). If the text has no recognizable failed-count
-    line, returns ``failed=MIRROR_STATS_UNKNOWN`` (-1) so callers can
-    distinguish "0 failures" from "couldn't tell" — never reports 0 on
-    garbage.
+    summary is what matters). Missing counters become
+    ``MIRROR_STATS_UNKNOWN`` (-1) so callers can distinguish "0" from
+    "couldn't tell" — never reports 0 on garbage. A partial summary
+    (e.g. only ``0 failed``) must be rejected by callers via
+    :meth:`SpackOps._require_complete_mirror_stats`.
     """
     present: int | None = None
     added: int | None = None
@@ -213,20 +133,47 @@ class SpackOps:
     env:
         Parsed environment configuration.
     container:
-        Container to execute commands in.
+        Object implementing :class:`~hpc_cf.execution.RunnerPort`
+        (typically :class:`~hpc_cf.container.Container`).
     """
 
-    def __init__(self, env: EnvConfig, container: Container) -> None:
+    def __init__(
+        self,
+        env: EnvConfig,
+        container: RunnerPort,
+        *,
+        layout: ProjectLayout | None = None,
+    ) -> None:
         self.env = env
         self.ctr = container
+        # Lazily resolved when None so tests can monkeypatch config.PROJECT_ROOT
+        # before calling bootstrap_mirror without reconstructing SpackOps.
+        self._layout = layout
         self.spack_ver = env.spack.version
         self.spack_root = f"/opt/spack-{self.spack_ver}"
         self.user_dir = env.spack_user_dir_in_container
         self.user_cache = f"{self.user_dir}/cache"
+        self.plan: SpackEnvironmentPlan = build_spack_environment_plan(env)
+
+    @property
+    def layout(self) -> ProjectLayout:
+        return self._layout or ProjectLayout.default()
+
+    def _assets_repos(self) -> list[CustomRepo]:
+        """CustomRepos from env.yaml that apply to the assets workflow."""
+        return [
+            r for r in self.env.spack.custom_repos if r.phases.applies_to("assets")
+        ]
 
     def _setup_env_vars(self) -> str:
-        """Common environment setup for all Spack commands."""
+        """Common environment setup for all Spack commands.
+
+        Uses ``set -e`` + ``pipefail`` so mid-script failures and ``cmd | tee``
+        pipelines exit non-zero. Deliberately omits ``set -u``: Spack's
+        ``setup-env.sh`` may reference unset variables under nounset.
+        """
         return f"""
+set -e
 set -o pipefail
 mkdir -p {self.user_dir} {self.user_cache}
 export SPACK_USER_CONFIG_PATH="{self.user_dir}"
@@ -255,11 +202,13 @@ fi
 """
         bootstrap_dir = self.env.bootstrap_dir_in_container
         bootstrap_block = f"""
-# Configure local bootstrap mirror as highest-priority trusted source
+# Configure local bootstrap mirror as highest-priority trusted source.
+# Idempotent ``bootstrap add`` may fail when already registered — tolerate that.
+# ``bootstrap now`` failures must propagate (set -e); never swallow with || true.
 if [[ -d "{bootstrap_dir}/metadata/sources" ]]; then
     spack bootstrap add --trust local-sources "{bootstrap_dir}/metadata/sources" 2>/dev/null || true
     spack bootstrap add --trust local-binaries "{bootstrap_dir}/metadata/binaries" 2>/dev/null || true
-    spack bootstrap now 2>/dev/null || true
+    spack bootstrap now
 else
     echo "No local bootstrap mirror found — falling back to Spack defaults (github-actions, spack-install)"
 fi
@@ -277,12 +226,10 @@ fi
 
         Replaces ``prepare-bootstrap-cache.sh`` (~318 lines).
 
-        Returns the local bootstrap directory path.
+        Returns the local bootstrap directory path under the injected layout.
         """
-        from hpc_cf.config import PROJECT_ROOT as root
-
         bootstrap_dir_name = self.env.bootstrap_dir_name
-        local_dir = root / "assets" / bootstrap_dir_name
+        local_dir = self.layout.assets_dir / bootstrap_dir_name
         container_dir = self.env.bootstrap_dir_in_container
 
         # Check if already complete
@@ -394,15 +341,15 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
 
     def prepare_repos(self, env_dir_in_container: str) -> None:
         """Fetch git repos and validate local repos before environment creation."""
-        repos = self.env.spack.custom_repos
+        repos = self._assets_repos()
         if not repos:
-            logger.info("No custom repos configured — skipping")
+            logger.info("No custom repos configured for assets — skipping")
             return
 
         self.ctr.exec(self._build_prepare_repos_script(env_dir_in_container))
 
     def _build_prepare_repos_script(self, env_dir_in_container: str) -> str:
-        repos = self.env.spack.custom_repos
+        repos = self._assets_repos()
         parts = [self._source_spack()]
         for repo in repos:
             if repo.type == "git":
@@ -492,18 +439,26 @@ echo "Prepared {repo.namespace} (local)"
         self,
         env_dir_container: str,
     ) -> str:
-        env_name = self.env.spack.env_name
+        env_name = self.plan.env_name
         env_q = shlex.quote(env_name)
-        scope_q = shlex.quote(f"env:{env_name}")
+        scope = self.plan.assets.scope_flag()
+        scope_q = shlex.quote(scope)
         parts: list[str] = []
-        for repo in self.env.spack.custom_repos:
+        for repo in self._assets_repos():
             repo_path_q = shlex.quote(
                 self._custom_repo_path(repo, env_dir_container)
             )
+            # ENV scope registration requires -e; SITE does not.
+            if self.plan.assets.repo_scope is RepoScope.ENV:
+                add_cmd = (
+                    f"spack -e {env_q} repo add --scope {scope_q} {repo_path_q}"
+                )
+            else:
+                add_cmd = f"spack repo add --scope {scope_q} {repo_path_q}"
             parts.append(
-                f"# Register {repo.namespace} in environment scope\n"
-                f"spack -e {env_q} repo add --scope {scope_q} {repo_path_q}\n"
-                f'echo "Registered {repo.namespace} in {scope_q}"'
+                f"# Register {repo.namespace} ({scope})\n"
+                f"{add_cmd}\n"
+                f'echo "Registered {repo.namespace} in {scope}"'
             )
         return "\n".join(parts)
 
@@ -513,7 +468,7 @@ echo "Prepared {repo.namespace} (local)"
         *,
         import_lock: bool,
     ) -> str:
-        env_name = self.env.spack.env_name
+        env_name = self.plan.env_name
         env_q = shlex.quote(env_name)
         spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
         lock_src = shlex.quote(f"{env_dir_container}/spack.lock")
@@ -534,6 +489,13 @@ cp {lock_src} {env_root}/spack.lock
         register_block = self._build_environment_repo_registration(
             env_dir_container
         )
+        update_block = ""
+        if self.plan.assets.update_builtin:
+            update_block = (
+                "# Update the pinned builtin before adding higher-priority "
+                "custom repos.\n"
+                f"spack -e {env_q} repo update builtin\n"
+            )
         return f"""{self._source_spack()}
 # Create one named environment shared by concretize, mirror, and verify.
 work_env="/tmp/spack-env-$(date +%s)"
@@ -541,9 +503,7 @@ mkdir -p "${{work_env}}"
 cp {spack_yaml} "${{work_env}}/spack.yaml"
 spack env create {env_q} "${{work_env}}/spack.yaml"
 {lock_block}
-# Update the pinned builtin before adding higher-priority custom repos.
-spack -e {env_q} repo update builtin
-{register_block}
+{update_block}{register_block}
 spack -e {env_q} repo list
 """
 
@@ -565,9 +525,19 @@ spack compiler find
         """Run spack concretize and write spack.lock back to host.
 
         Replaces ``step_concretize`` in spack-common.sh.
+
+        After the container script finishes, verifies that *env_dir_host*
+        actually contains a non-empty ``spack.lock`` (bind-mount write-back
+        must not be assumed solely from the container path).
         """
         self.ctr.exec(self._build_concretize_script(env_dir_container))
-        logger.info("Concretize complete")
+        lock_host = env_dir_host / "spack.lock"
+        if not lock_host.is_file() or lock_host.stat().st_size == 0:
+            raise RuntimeError(
+                f"Concretize did not write a non-empty spack.lock to host: "
+                f"{lock_host}"
+            )
+        logger.info("Concretize complete — host lock: %s", lock_host)
 
     def _build_concretize_script(self, env_dir_container: str) -> str:
         spack_env_name = self.env.spack.env_name
@@ -606,43 +576,54 @@ fi
     def mirror_create(
         self,
         mirror_dir_container: str,
+        *,
+        create_log: str | None = None,
     ) -> dict[str, int]:
         """Create Spack mirror. Returns stats dict with present/added/failed counts."""
-        self.ctr.exec(self._build_mirror_create_script(mirror_dir_container))
+        log_path = create_log or MIRROR_CREATE_LOG
+        self.ctr.exec(
+            self._build_mirror_create_script(
+                mirror_dir_container, create_log=log_path,
+            )
+        )
 
         # Parse stats from this run's log only (never concatenate verify log).
-        stats = self._parse_mirror_stats(MIRROR_CREATE_LOG)
+        stats = self._parse_mirror_stats(log_path)
         logger.info(
             "Mirror creation complete — present: %d, added: %d, failed: %d",
             stats["present"], stats["added"], stats["failed"],
         )
-
-        if stats["failed"] < 0:
-            raise RuntimeError(
-                "Could not determine mirror status — stats log unreadable or "
-                "unparseable. Treat the mirror as untrusted."
-            )
-        if stats["failed"] > 0:
-            raise RuntimeError(f"{stats['failed']} package(s) failed to fetch!")
-
+        self._require_complete_mirror_stats(stats, action="fetch")
         return stats
 
-    def _build_mirror_create_script(self, mirror_dir_container: str) -> str:
+    def _build_mirror_create_script(
+        self,
+        mirror_dir_container: str,
+        *,
+        create_log: str | None = None,
+    ) -> str:
         env_q = shlex.quote(self.env.spack.env_name)
         mirror_dir = shlex.quote(mirror_dir_container)
-        log_q = shlex.quote(MIRROR_CREATE_LOG)
+        log_q = shlex.quote(create_log or MIRROR_CREATE_LOG)
         return f"""{self._source_spack()}
 mkdir -p {mirror_dir}
+mkdir -p "$(dirname {log_q})"
 : > {log_q}
 echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {log_q}
 """
 
-    def _build_mirror_verify_script(self, mirror_dir_container: str) -> str:
+    def _build_mirror_verify_script(
+        self,
+        mirror_dir_container: str,
+        *,
+        verify_log: str | None = None,
+    ) -> str:
         env_q = shlex.quote(self.env.spack.env_name)
         mirror_dir = shlex.quote(mirror_dir_container)
-        log_q = shlex.quote(MIRROR_VERIFY_LOG)
+        log_q = shlex.quote(verify_log or MIRROR_VERIFY_LOG)
         return f"""{self._source_spack()}
+mkdir -p "$(dirname {log_q})"
 : > {log_q}
 echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {log_q}
@@ -653,24 +634,23 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
     def mirror_verify(
         self,
         mirror_dir_container: str,
+        *,
+        verify_log: str | None = None,
     ) -> dict[str, int]:
         """Verify mirror completeness by re-running mirror create."""
-        self.ctr.exec(self._build_mirror_verify_script(mirror_dir_container))
+        log_path = verify_log or MIRROR_VERIFY_LOG
+        self.ctr.exec(
+            self._build_mirror_verify_script(
+                mirror_dir_container, verify_log=log_path,
+            )
+        )
 
-        stats = self._parse_mirror_stats(MIRROR_VERIFY_LOG)
+        stats = self._parse_mirror_stats(log_path)
         logger.info(
             "Verification — present: %d, added: %d, failed: %d",
             stats["present"], stats["added"], stats["failed"],
         )
-
-        if stats["failed"] < 0:
-            raise RuntimeError(
-                "Could not determine mirror status — stats log unreadable or "
-                "unparseable. Treat the mirror as untrusted."
-            )
-        if stats["failed"] > 0:
-            raise RuntimeError(f"{stats['failed']} package(s) still missing!")
-
+        self._require_complete_mirror_stats(stats, action="verify")
         return stats
 
     # ── Pipeline dispatch ─────────────────────────────────────────────────
@@ -686,21 +666,29 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
         self.prepare_environment(env_dir_container, import_lock=False)
         self.concretize(env_dir_host, env_dir_container)
 
-    def run_mirror_pipeline(self, env_dir_container: str, mirror_dir_container: str) -> None:
+    def run_mirror_pipeline(
+        self,
+        env_dir_container: str,
+        mirror_dir_container: str,
+        *,
+        create_log: str | None = None,
+    ) -> dict[str, int]:
         """Prepare a named environment from an existing lock, then mirror it."""
         logger.info("MODE: mirror — Env: %s", self.env.spack.env_name)
 
         self.clean_stale_state()
         self.prepare_repos(env_dir_container)
         self.prepare_environment(env_dir_container, import_lock=True)
-        self.mirror_create(mirror_dir_container)
+        return self.mirror_create(mirror_dir_container, create_log=create_log)
 
     def run_all_pipeline(
         self,
         env_dir_host: Path,
         env_dir_container: str,
         mirror_dir_container: str,
-    ) -> None:
+        *,
+        create_log: str | None = None,
+    ) -> dict[str, int]:
         """Prepare one named environment, concretize it, then create its mirror."""
         logger.info("MODE: all (concretize + mirror) — Env: %s", self.env.spack.env_name)
 
@@ -710,18 +698,49 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
         self.compiler_find()
         self.prepare_environment(env_dir_container, import_lock=False)
         self.concretize(env_dir_host, env_dir_container)
-        self.mirror_create(mirror_dir_container)
+        return self.mirror_create(mirror_dir_container, create_log=create_log)
 
-    def run_verify_pipeline(self, env_dir_container: str, mirror_dir_container: str) -> None:
+    def run_verify_pipeline(
+        self,
+        env_dir_container: str,
+        mirror_dir_container: str,
+        *,
+        verify_log: str | None = None,
+    ) -> dict[str, int]:
         """Prepare a named environment from an existing lock, then verify its mirror."""
         logger.info("MODE: verify — Env: %s", self.env.spack.env_name)
 
         self.clean_stale_state()
         self.prepare_repos(env_dir_container)
         self.prepare_environment(env_dir_container, import_lock=True)
-        self.mirror_verify(mirror_dir_container)
+        return self.mirror_verify(mirror_dir_container, verify_log=verify_log)
 
     # ── Internal helpers ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _require_complete_mirror_stats(
+        stats: dict[str, int],
+        *,
+        action: Literal["fetch", "verify"],
+    ) -> None:
+        """Raise unless present/added/failed are all known and failed == 0.
+
+        A partial summary (e.g. only ``0 failed``) must not be treated as
+        success — previously only ``failed`` was gated.
+        """
+        if any(stats[k] < 0 for k in ("present", "added", "failed")):
+            raise RuntimeError(
+                "Could not determine mirror status — stats log unreadable or "
+                "unparseable. Treat the mirror as untrusted."
+            )
+        if stats["failed"] > 0:
+            if action == "fetch":
+                raise RuntimeError(
+                    f"{stats['failed']} package(s) failed to fetch!"
+                )
+            raise RuntimeError(
+                f"{stats['failed']} package(s) still missing!"
+            )
 
     def _parse_mirror_stats(self, log_path: str) -> dict[str, int]:
         """Read one mirror ops log from the container and parse stats.

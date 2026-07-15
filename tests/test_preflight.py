@@ -26,9 +26,10 @@ def _ops(ctr=None) -> SpackOps:
 # ── Broken-symlink sentinel ─────────────────────────────────────────────
 
 
-def test_verify_host_side_treats_minus_one_as_check_failure(
+def test_verify_host_side_treats_minus_one_as_warning_not_failure(
     tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Probe failure (-1) is a warning: do not raise, do not claim broken links."""
     mirror = tmp_path / "spack-mirror"
     mirror.mkdir()
     with (
@@ -36,21 +37,23 @@ def test_verify_host_side_treats_minus_one_as_check_failure(
         patch("hpc_cf.assets.find_bootstrap_dir", return_value=None),
         caplog.at_level("WARNING"),
     ):
-        _verify_host_side(mirror_dir_host=mirror)
+        _verify_host_side(mirror_dir_host=mirror)  # must not raise
 
     assert "Broken symlinks found" not in caplog.text
     assert "check failed" in caplog.text.lower() or "could not" in caplog.text.lower()
 
 
-def test_verify_host_side_reports_positive_broken_count(
+def test_verify_host_side_raises_on_positive_broken_count(
     tmp_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """broken > 0 is a hard failure — must not exit 0 / return silently."""
     mirror = tmp_path / "spack-mirror"
     mirror.mkdir()
     with (
         patch("hpc_cf.container._count_broken_symlinks", return_value=3),
         patch("hpc_cf.assets.find_bootstrap_dir", return_value=None),
         caplog.at_level("ERROR"),
+        pytest.raises(RuntimeError, match="Broken symlink"),
     ):
         _verify_host_side(mirror_dir_host=mirror)
 
@@ -116,9 +119,13 @@ def test_mirror_create_parses_create_log_only() -> None:
 
 
 def test_validate_spack_assets_skips_no_spack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    monkeypatch.setattr("hpc_cf.config.ASSETS_DIR", assets)
+    from hpc_cf.execution import ProjectLayout
+
+    (tmp_path / "assets").mkdir()
+    monkeypatch.setattr(
+        "hpc_cf.env.ProjectLayout.default",
+        classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
+    )
     # Missing tarball would raise if gated incorrectly.
     validate_spack_assets({"method": "no_spack", "spack": {"version": "1.1.1"}})
 
@@ -126,9 +133,13 @@ def test_validate_spack_assets_skips_no_spack(tmp_path: Path, monkeypatch: pytes
 def test_validate_spack_assets_requires_tarball_for_spack(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    monkeypatch.setattr("hpc_cf.config.ASSETS_DIR", assets)
+    from hpc_cf.execution import ProjectLayout
+
+    (tmp_path / "assets").mkdir()
+    monkeypatch.setattr(
+        "hpc_cf.env.ProjectLayout.default",
+        classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
+    )
     with pytest.raises(FileNotFoundError, match="Spack tarball"):
         validate_spack_assets({"method": "spack", "spack": {"version": "1.1.1"}})
 
@@ -157,36 +168,80 @@ def test_cli_accepts_env_alias_for_app_version() -> None:
     assert args.app_version == "cp2k_opensource-2026.1-force-avx512"
 
 
-def test_find_bootstrap_dir_prefers_version_match(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_find_bootstrap_dir_prefers_version_match(tmp_path: Path) -> None:
+    from hpc_cf.execution import ProjectLayout
+
     assets = tmp_path / "assets"
     assets.mkdir()
     (assets / "bootstrap-1.0.0").mkdir()
     preferred = assets / "bootstrap-1.2.0"
     preferred.mkdir()
-    monkeypatch.setattr("hpc_cf.assets.PROJECT_ROOT", tmp_path)
+    layout = ProjectLayout(project_root=tmp_path)
 
-    assert find_bootstrap_dir("1.2.0") == preferred
+    assert find_bootstrap_dir("1.2.0", layout=layout) == preferred
     # Without a version, first sorted match wins.
-    assert find_bootstrap_dir() == assets / "bootstrap-1.0.0"
+    assert find_bootstrap_dir(layout=layout) == assets / "bootstrap-1.0.0"
 
 
-def test_run_static_checks_calls_all_validators(tmp_path: Path) -> None:
+def test_run_static_checks_build_input_includes_assets(tmp_path: Path) -> None:
+    from hpc_cf.execution import ProjectLayout
+    from hpc_cf.validation import ValidationProfile
+
     env_dir = tmp_path / "env"
     env_dir.mkdir()
-    (env_dir / "env.yaml").write_text("method: no_spack\n")
-    (env_dir / "Dockerfile.j2").write_text("FROM x\n")
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '9.9.9'\n  env_name: e\n",
+        encoding="utf-8",
+    )
+    (env_dir / "Dockerfile.j2").write_text("FROM x\n", encoding="utf-8")
+    (env_dir / "spack.yaml").write_text(
+        "spack:\n  specs: [pkgconf]\n",
+        encoding="utf-8",
+    )
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
 
-    with (
-        patch("hpc_cf.env.validate_manual_packages") as v_mp,
-        patch("hpc_cf.env.validate_spack_assets") as v_sa,
-        patch("hpc_cf.env.validate_branch_consistency") as v_br,
-        patch("hpc_cf.env.validate_spack_yaml") as v_sy,
-    ):
-        run_static_checks(env_dir, {"method": "no_spack"})
+    with pytest.raises(FileNotFoundError, match="Spack tarball"):
+        run_static_checks(
+            env_dir,
+            {
+                "schema_version": 1,
+                "method": "spack",
+                "spack": {"version": "9.9.9", "env_name": "e"},
+            },
+            profile=ValidationProfile.BUILD_INPUT,
+            layout=layout,
+        )
 
-    v_mp.assert_called_once()
-    v_sa.assert_called_once()
-    v_br.assert_called_once_with(env_dir)
-    v_sy.assert_called_once_with(env_dir)
+
+def test_run_static_checks_config_ignores_missing_assets(tmp_path: Path) -> None:
+    from hpc_cf.execution import ProjectLayout
+    from hpc_cf.validation import ValidationProfile
+
+    env_dir = tmp_path / "env"
+    env_dir.mkdir()
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '9.9.9'\n  env_name: e\n",
+        encoding="utf-8",
+    )
+    (env_dir / "Dockerfile.j2").write_text("FROM x\n", encoding="utf-8")
+    (env_dir / "spack.yaml").write_text(
+        "spack:\n  specs: [pkgconf]\n",
+        encoding="utf-8",
+    )
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+
+    # Must not raise — config profile does not require the tarball.
+    run_static_checks(
+        env_dir,
+        {
+            "schema_version": 1,
+            "method": "spack",
+            "spack": {"version": "9.9.9", "env_name": "e"},
+        },
+        profile=ValidationProfile.CONFIG,
+        layout=layout,
+    )

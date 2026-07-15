@@ -61,6 +61,23 @@ def test_never_reports_zero_failures_on_garbage(text: str) -> None:
     assert stats["failed"] != 0, f"garbage must not parse as failed=0: {text!r}"
 
 
+def test_partial_summary_only_failed_is_incomplete() -> None:
+    """A lone '0 failed' line must NOT look like a complete success summary."""
+    stats = _parse_mirror_stats_from_text("==> 0 failed\n")
+    assert stats["failed"] == 0
+    assert stats["present"] < 0
+    assert stats["added"] < 0
+
+
+def test_partial_summary_missing_added_is_incomplete() -> None:
+    stats = _parse_mirror_stats_from_text(
+        "==> 12 already present\n==> 0 failed\n"
+    )
+    assert stats["present"] == 12
+    assert stats["failed"] == 0
+    assert stats["added"] < 0
+
+
 class _CapturingContainer:
     """Minimal stand-in: records exec scripts, returns fixed stdout for capture."""
 
@@ -98,3 +115,19 @@ def test_mirror_verify_raises_on_unparseable_stats() -> None:
 def test_mirror_verify_raises_on_positive_failures() -> None:
     with pytest.raises(RuntimeError, match="still missing"):
         _ops(GOOD_WITH_FAILURES).mirror_verify("/work/mirror")
+
+
+def test_mirror_create_raises_on_partial_summary() -> None:
+    """failed=0 alone must not pass — present/added must also be known."""
+    with pytest.raises(RuntimeError, match="Could not determine mirror status"):
+        _ops("==> 0 failed\n").mirror_create("/work/mirror")
+
+
+def test_mirror_verify_raises_on_partial_summary() -> None:
+    with pytest.raises(RuntimeError, match="Could not determine mirror status"):
+        _ops("==> 3 already present\n==> 0 failed\n").mirror_verify("/work/mirror")
+
+
+def test_mirror_create_accepts_complete_zero_failure_summary() -> None:
+    stats = _ops(GOOD).mirror_create("/work/mirror")
+    assert stats == {"present": 12, "added": 34, "failed": 0}

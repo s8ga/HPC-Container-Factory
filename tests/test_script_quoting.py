@@ -9,6 +9,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from hpc_cf.container import Container
 from hpc_cf.spack_ops import CustomRepo, EnvConfig, SpackConfig, SpackOps
 
@@ -50,10 +52,11 @@ def test_prepare_environment_quotes_paths_with_spaces() -> None:
     assert '"/work/has space/dir/spack.yaml"' not in script
 
 
-def test_concretize_quotes_lock_destination_with_spaces() -> None:
+def test_concretize_quotes_lock_destination_with_spaces(tmp_path: Path) -> None:
     ctr, ops = _make_ops()
+    (tmp_path / "spack.lock").write_text("{}\n")
     ops.concretize(
-        env_dir_host=Path("/host"),
+        env_dir_host=tmp_path,
         env_dir_container="/work/has space/dir",
     )
     assert "'/work/has space/dir/spack.lock'" in ctr.scripts[-1]
@@ -74,6 +77,26 @@ def test_prepare_environment_quotes_env_name_with_spaces() -> None:
     )
     assert "'cp2k env'" in script
     assert "'env:cp2k env'" in script
+
+
+def test_concretize_raises_when_host_lock_missing(tmp_path: Path) -> None:
+    """Container exec success must not hide a missing host-side spack.lock."""
+    _, ops = _make_ops()
+    with pytest.raises(RuntimeError, match="spack.lock"):
+        ops.concretize(env_dir_host=tmp_path, env_dir_container="/work/env")
+
+
+def test_concretize_raises_when_host_lock_empty(tmp_path: Path) -> None:
+    (tmp_path / "spack.lock").write_text("")
+    _, ops = _make_ops()
+    with pytest.raises(RuntimeError, match="spack.lock"):
+        ops.concretize(env_dir_host=tmp_path, env_dir_container="/work/env")
+
+
+def test_concretize_accepts_nonempty_host_lock(tmp_path: Path) -> None:
+    (tmp_path / "spack.lock").write_text("{}\n")
+    _, ops = _make_ops()
+    ops.concretize(env_dir_host=tmp_path, env_dir_container="/work/env")
 
 
 def test_mirror_create_quotes_paths_with_spaces() -> None:

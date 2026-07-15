@@ -56,11 +56,8 @@ def test_build_compiler_find_script() -> None:
     assert "spack compiler find" in s
 
 
-def test_all_scripts_have_pipefail() -> None:
-    """Every _build_*_script must include 'set -o pipefail' so that
-    ``cmd | tee`` pipelines correctly propagate spack's exit code."""
-    ops = _ops()
-    scripts = [
+def _all_build_scripts(ops: SpackOps) -> list[str]:
+    return [
         ops._build_compiler_find_script(),
         ops._build_clean_stale_state_script(),
         ops._build_bootstrap_mirror_script("/opt/bootstrap", binary_packages=True),
@@ -70,8 +67,46 @@ def test_all_scripts_have_pipefail() -> None:
         ops._build_mirror_create_script("/work/mirror"),
         ops._build_mirror_verify_script("/work/mirror"),
     ]
-    for s in scripts:
+
+
+def test_all_scripts_have_pipefail() -> None:
+    """Every _build_*_script must include 'set -o pipefail' so that
+    ``cmd | tee`` pipelines correctly propagate spack's exit code."""
+    for s in _all_build_scripts(_ops()):
         assert "set -o pipefail" in s, f"pipefail missing in script:\n{s[:200]}"
+
+
+def test_all_scripts_have_errexit_not_nounset() -> None:
+    """Scripts must use set -e for mid-script failure, but not blind set -u
+    (Spack setup-env may reference unset variables)."""
+    for s in _all_build_scripts(_ops()):
+        assert "set -e" in s, f"errexit missing in script:\n{s[:200]}"
+        assert "set -u" not in s, f"nounset must not be enabled:\n{s[:200]}"
+        assert "set -euo" not in s, f"set -euo must not be used:\n{s[:200]}"
+
+
+def test_setup_env_propagates_intermediate_failure(tmp_path: Path) -> None:
+    """With production shell options, a failing mid-script command must exit
+    non-zero and skip later commands (silent-success regression guard)."""
+    ops = SpackOps(
+        EnvConfig(spack=SpackConfig(version="1.1.1", env_name="cp2k-env")),
+        CapturingContainer(),
+    )
+    # Redirect user dirs into tmp so mkdir in _setup_env_vars is host-safe.
+    ops.user_dir = str(tmp_path / "user")
+    ops.user_cache = str(tmp_path / "cache")
+    probe = f"""{ops._setup_env_vars()}
+false
+echo SHOULD_NOT_PRINT
+"""
+    result = subprocess.run(
+        ["bash", "-c", probe],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "SHOULD_NOT_PRINT" not in result.stdout
 
 
 def test_build_clean_stale_state_script() -> None:
@@ -93,6 +128,17 @@ def test_build_bootstrap_mirror_binary_flag() -> None:
     for s in (binary, plain):
         assert 'rm -f "${SPACK_USER_CONFIG_PATH}/repos.yaml"' in s
         assert "spack bootstrap mirror" in s
+
+
+def test_source_spack_propagates_bootstrap_now_failure() -> None:
+    """Idempotent bootstrap add may tolerate failure; bootstrap now must not."""
+    s = _ops()._source_spack()
+    assert "spack bootstrap now" in s
+    for line in s.splitlines():
+        if "spack bootstrap add" in line:
+            assert "|| true" in line
+        if "spack bootstrap now" in line:
+            assert "|| true" not in line
 
 
 def test_bootstrap_mirror_binary_only_no_fallback(tmp_path, monkeypatch) -> None:
@@ -201,12 +247,13 @@ def test_build_prepare_environment_imports_lock_when_required() -> None:
     assert "var/spack/environments/cp2k-env/spack.lock" in s
 
 
-def test_concretize_pipeline_prepares_environment_before_use() -> None:
+def test_concretize_pipeline_prepares_environment_before_use(tmp_path: Path) -> None:
     ops = _ops_with_repos()
     ctr = ops.ctr
     assert isinstance(ctr, CapturingContainer)
 
-    ops.run_concretize_pipeline(Path("/host/env"), "/work/env")
+    (tmp_path / "spack.lock").write_text("{}\n")
+    ops.run_concretize_pipeline(tmp_path, "/work/env")
 
     def first_index(needle: str) -> int:
         for i, s in enumerate(ctr.scripts):
