@@ -1,18 +1,21 @@
-"""L4: mirror-stat parsing must NOT silently report success on failure.
+"""Mirror-stat parsing and raise-on-unknown/failure behaviour.
 
-The bug (spack_ops._parse_mirror_stats): ``except Exception: pass`` returned
-``failed=0`` for ANY parse problem, while callers only raised when ``failed>0``.
-Result: a broken/incomplete mirror was reported as success.
-
-A3 extracts a pure ``_parse_mirror_stats_from_text`` and makes it return
-``failed=-1`` (sentinel for "could not determine") when it cannot parse,
-so callers can distinguish "0 failures" from "couldn't tell".
+``_parse_mirror_stats_from_text`` returns ``failed=-1`` when it cannot parse,
+so callers can distinguish "0 failures" from "couldn't tell". ``mirror_create``
+/ ``mirror_verify`` must raise on ``failed < 0`` and ``failed > 0``.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
-from hpc_cf.spack_ops import _parse_mirror_stats_from_text
+from hpc_cf.spack_ops import (
+    EnvConfig,
+    SpackConfig,
+    SpackOps,
+    _parse_mirror_stats_from_text,
+)
 
 GOOD = """
 ==> Warning: something
@@ -39,7 +42,7 @@ def test_parses_failures() -> None:
 
 
 def test_empty_text_is_unknown_not_success() -> None:
-    """The core regression: empty/garbage must NOT read as failed=0."""
+    """Empty/garbage must NOT read as failed=0."""
     stats = _parse_mirror_stats_from_text("")
     assert stats["failed"] < 0  # sentinel: "could not determine"
 
@@ -56,3 +59,42 @@ def test_garbage_text_is_unknown_not_success() -> None:
 def test_never_reports_zero_failures_on_garbage(text: str) -> None:
     stats = _parse_mirror_stats_from_text(text)
     assert stats["failed"] != 0, f"garbage must not parse as failed=0: {text!r}"
+
+
+class _CapturingContainer:
+    """Minimal stand-in: records exec scripts, returns fixed stdout for capture."""
+
+    def __init__(self, stats_stdout: str) -> None:
+        self.stats_stdout = stats_stdout
+        self.scripts: list[str] = []
+
+    def exec(self, script: str, *, capture: bool = False, check: bool = True):
+        self.scripts.append(script)
+        if capture:
+            return SimpleNamespace(stdout=self.stats_stdout, returncode=0)
+        return SimpleNamespace(stdout="", returncode=0)
+
+
+def _ops(stats_stdout: str) -> SpackOps:
+    env = EnvConfig(spack=SpackConfig(version="1.1.1", env_name="cp2k-env"))
+    return SpackOps(env, _CapturingContainer(stats_stdout))  # type: ignore[arg-type]
+
+
+def test_mirror_create_raises_on_unparseable_stats() -> None:
+    with pytest.raises(RuntimeError, match="Could not determine mirror status"):
+        _ops("garbage noise without stats\n").mirror_create("/work/mirror")
+
+
+def test_mirror_create_raises_on_positive_failures() -> None:
+    with pytest.raises(RuntimeError, match="failed to fetch"):
+        _ops(GOOD_WITH_FAILURES).mirror_create("/work/mirror")
+
+
+def test_mirror_verify_raises_on_unparseable_stats() -> None:
+    with pytest.raises(RuntimeError, match="Could not determine mirror status"):
+        _ops("").mirror_verify("/work/mirror")
+
+
+def test_mirror_verify_raises_on_positive_failures() -> None:
+    with pytest.raises(RuntimeError, match="still missing"):
+        _ops(GOOD_WITH_FAILURES).mirror_verify("/work/mirror")

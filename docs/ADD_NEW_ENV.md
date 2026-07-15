@@ -126,14 +126,14 @@ python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dock
 
 ### 模板查找顺序
 
-`select_template(app, app_version, explicit_template)`:
+`select_template(app_version, explicit_template=None, *, app="")`:
 
 1. 如果传了 `--template` → 直接使用
-2. `spack-envs/<app-version>/Dockerfile.j2` → **优先**
-3. `spack-envs/<app>-<app-version>/Dockerfile.j2` → 拼接尝试
+2. `spack-envs/<app-version>/Dockerfile.j2` → **优先**（通常传完整目录名）
+3. `spack-envs/<app>_<app-version>/Dockerfile.j2` → 仅当显式传了 legacy `app` 时
 4. `templates/Dockerfile-<app>-<app-version>.j2` → legacy 回退
 
-`--app-version` 直接传 `spack-envs/` 下的目录名即可。
+`--app-version` / `--env` 直接传 `spack-envs/` 下的目录名即可。
 
 ### 镜像名 / Tag 推断
 
@@ -171,7 +171,9 @@ images:
 
 `_extract_available_versions()`:
 
-扫描 `spack-envs/*/Dockerfile.j2`，所有包含 `Dockerfile.j2` 的目录名即为可用环境。
+基于 `list_available_envs()`（有 `env.yaml` 的 `spack-envs/` 目录），并追加 legacy
+`templates/Dockerfile-*.j2` 的 stem。与仅扫描 `Dockerfile.j2` 不同：包含无 per-env
+Dockerfile 的 `no_spack` 环境。
 
 ---
 
@@ -222,6 +224,11 @@ spack:
       namespace: cp2k-env
 ```
 
+`hpc_cf assets` 会先获取这些 repo，再创建 named environment、更新 pinned
+builtin，最后按列表顺序将 custom repos 注册到该 environment scope。这样后注册的
+local repo 才能稳定覆盖 git repo 和 `repos.builtin.commit` 指定的 builtin。
+Dockerfile 中的手工 `spack repo add` 必须使用相同的 environment scope。
+
 ### 5. 删除 spack.lock
 
 ```bash
@@ -245,7 +252,7 @@ python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2-force-avx512 --
 | **spack.lock 不可复用** | lock 包含具体平台/编译器约束，必须重新 concretize |
 | **env.yaml 驱动** | 差异完全由 `env.yaml` 驱动，代码路径统一 |
 | **Dockerfile.j2 路径引用** | 如果 Dockerfile 中硬编码了环境路径，需要同步修改 |
-| **local repo 优先级** | `env.yaml` 中 `custom_repos` 的 local repo 注册在 git repo 之后，优先级更高（可覆盖 builtin 和 git repo 的 package.py） |
+| **custom repo 优先级** | custom repos 必须在 `repo update builtin` 后注册到 environment scope；同一 scope 内后注册的 local repo 优先，可覆盖 pinned builtin 和 git repo |
 | **patch sha256** | Spack `patch()` 会在 concretize 时记录 patch 文件的 sha256。修改 patch 后需要 `spack concretize -f` |
 | **容器 HOME 隔离** | 容器运行时 `HOME=/tmp/home`，Spack 用户配置不会跨 env 污染 |
 | **通用镜像** | `hpc-mirror-builder` 是所有 env 共用的通用 Spack-only 镜像，新环境不需要单独构建 mirror builder |

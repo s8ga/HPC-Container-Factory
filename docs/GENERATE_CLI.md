@@ -12,6 +12,7 @@ python -m hpc_cf <command> [options]
 |--------|------|
 | `dockerfile` | 只生成 Dockerfile |
 | `build` | 生成 Dockerfile 并构建镜像 |
+| `validate` | 静态预检（manual_packages / assets / branch / spack.yaml） |
 | `build-sif` | 从 OCI 镜像构建 Apptainer SIF |
 | `pack-apptainer` | 打包本地 apptainer 为 makeself 自解压包 |
 | `assets` | 准备离线资源 (bootstrap + source mirror) |
@@ -55,9 +56,22 @@ python -m hpc_cf build \
 
 | 环境类型 | 镜像名 | tag 示例 |
 |----------|--------|---------|
-| `cp2k-opensource-*` | `cp2k-opensource` | `2025.2`、`2025.2-force-avx512` |
-| `cp2k-mkl-*` | `cp2k-mkl` | `2025.2-experimental` |
-| `cp2k-rocm-*` | `cp2k-rocm` | `2026.1-gfx942` |
+| `cp2k_opensource-*` | `cp2k_opensource` | `2025.2`、`2025.2-force-avx512` |
+| `cp2k_mkl-*` | `cp2k_mkl` | `2025.2-experimental` |
+| `cp2k_rocm-*` | `cp2k_rocm` | `2026.1-gfx942` |
+
+## validate
+
+```bash
+python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512
+# --env 是 --app-version 的别名
+python -m hpc_cf validate --env cp2k_opensource-2026.1-force-avx512
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--app-version` / `--env` | 环境名（`spack-envs/<name>/`）。不传值列出可用环境 |
+| `--template <path>` | 显式 env 目录/模板路径（覆盖自动解析） |
 
 ## build-sif
 
@@ -68,7 +82,7 @@ python -m hpc_cf build \
 python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
 
 # 显式指定镜像
-python -m hpc_cf build-sif --docker-image cp2k-opensource --docker-tag 2025.2
+python -m hpc_cf build-sif --docker-image cp2k_opensource --docker-tag 2025.2
 
 # 仅安装 apptainer
 python -m hpc_cf build-sif --install-apptainer-only

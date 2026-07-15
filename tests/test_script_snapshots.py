@@ -8,6 +8,7 @@ on a SpackOps wired to a CapturingContainer.
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 from hpc_cf.container import Container
@@ -32,6 +33,24 @@ def _ops() -> SpackOps:
     return SpackOps(EnvConfig(spack=SpackConfig(version="1.1.1", env_name="cp2k-env")), CapturingContainer())
 
 
+def _ops_with_repos() -> SpackOps:
+    env = EnvConfig(spack=SpackConfig(
+        version="1.2.0",
+        env_name="cp2k-env",
+        custom_repos=[
+            CustomRepo(
+                type="git",
+                namespace="cp2k_dev",
+                url="https://github.com/cp2k/cp2k.git",
+                branch="support/v2026.2",
+                sparse_path="tools/spack/spack_repo/cp2k_dev",
+            ),
+            CustomRepo(type="local", namespace="cp2k-env", path="repos"),
+        ],
+    ))
+    return SpackOps(env, CapturingContainer())
+
+
 def test_build_compiler_find_script() -> None:
     s = _ops()._build_compiler_find_script()
     assert "spack compiler find" in s
@@ -45,9 +64,11 @@ def test_all_scripts_have_pipefail() -> None:
         ops._build_compiler_find_script(),
         ops._build_clean_stale_state_script(),
         ops._build_bootstrap_mirror_script("/opt/bootstrap", binary_packages=True),
+        ops._build_prepare_repos_script("/work/env"),
+        ops._build_prepare_environment_script("/work/env", import_lock=False),
         ops._build_concretize_script("/work/env"),
-        ops._build_mirror_create_script("/work/env", "/work/mirror"),
-        ops._build_mirror_verify_script("/work/env", "/work/mirror"),
+        ops._build_mirror_create_script("/work/mirror"),
+        ops._build_mirror_verify_script("/work/mirror"),
     ]
     for s in scripts:
         assert "set -o pipefail" in s, f"pipefail missing in script:\n{s[:200]}"
@@ -121,43 +142,85 @@ def test_bootstrap_mirror_always_binary(tmp_path, monkeypatch) -> None:
 
 def test_build_concretize_script() -> None:
     s = _ops()._build_concretize_script("/work/env")
-    assert "spack env create" in s
     assert "concretize -f" in s
     assert "spack.lock" in s
-    assert "repo update builtin" in s
+    assert "spack env create" not in s
+    assert "repo update builtin" not in s
+    assert "spack repo add" not in s
     # env name from config is present
     assert "cp2k-env" in s
 
 
 def test_build_mirror_create_script() -> None:
-    s = _ops()._build_mirror_create_script("/work/env", "/work/mirror")
-    assert "spack -e . mirror create -d" in s
+    s = _ops()._build_mirror_create_script("/work/mirror")
+    assert "spack -e cp2k-env mirror create -d" in s
     assert "--all -D --private" in s
     assert "/tmp/mirror-output.log" in s
-    assert 'spack.lock not found' in s  # guard branch present
+    assert "spack env activate ." not in s
+    assert "repo update builtin" not in s
 
 
 def test_build_mirror_verify_script() -> None:
-    s = _ops()._build_mirror_verify_script("/work/env", "/work/mirror")
-    assert "spack -e . mirror create -d" in s
+    s = _ops()._build_mirror_verify_script("/work/mirror")
+    assert "spack -e cp2k-env mirror create -d" in s
     assert "/tmp/verify-output.log" in s
+    assert "spack env activate ." not in s
+    assert "repo update builtin" not in s
 
 
-def test_build_register_repos_script_git_and_local() -> None:
-    env = EnvConfig(spack=SpackConfig(
-        version="1.1.1",
-        env_name="cp2k-env",
-        custom_repos=[
-            CustomRepo(type="git", namespace="cp2k_dev_repo", url="https://github.com/cp2k/cp2k.git",
-                       branch="support/v2026.1", sparse_path="tools/spack/cp2k_dev_repo"),
-            CustomRepo(type="local", namespace="cp2k-env", path="repos"),
-        ],
-    ))
-    ops = SpackOps(env, CapturingContainer())
-    s = ops._build_register_repos_script("/work/env")
-    # git repo: clone + register
+def test_build_prepare_repos_script_fetches_without_registering() -> None:
+    s = _ops_with_repos()._build_prepare_repos_script("/work/env")
     assert "git clone" in s
-    assert "-b support/v2026.1" in s
-    assert "spack repo add" in s
-    # local repo: registered against env dir
+    assert "-b support/v2026.2" in s
     assert "/work/env/repos" in s
+    assert "spack repo add" not in s
+
+
+def test_build_prepare_environment_registers_repos_after_builtin() -> None:
+    s = _ops_with_repos()._build_prepare_environment_script(
+        "/work/env", import_lock=False,
+    )
+    create = s.index("spack env create")
+    update = s.index("repo update builtin")
+    git_add = s.index("/tmp/spack-repos/spack_repo/cp2k_dev")
+    local_add = s.index("/work/env/repos")
+    concretize = s.find("concretize -f")
+
+    assert create < update < git_add < local_add
+    assert concretize == -1
+    assert s.count("--scope env:cp2k-env") == 2
+    assert "spack -e cp2k-env repo list" in s
+
+
+def test_build_prepare_environment_imports_lock_when_required() -> None:
+    s = _ops_with_repos()._build_prepare_environment_script(
+        "/work/has space/env", import_lock=True,
+    )
+    assert "spack.lock not found" in s
+    assert "'/work/has space/env/spack.lock'" in s
+    assert "var/spack/environments/cp2k-env/spack.lock" in s
+
+
+def test_concretize_pipeline_prepares_environment_before_use() -> None:
+    ops = _ops_with_repos()
+    ctr = ops.ctr
+    assert isinstance(ctr, CapturingContainer)
+
+    ops.run_concretize_pipeline(Path("/host/env"), "/work/env")
+
+    def first_index(needle: str) -> int:
+        for i, s in enumerate(ctr.scripts):
+            if needle in s:
+                return i
+        raise AssertionError(f"no script containing {needle!r}: {ctr.scripts!r}")
+
+    # Semantic order (not brittle positional indices): clean → fetch repos →
+    # compiler find → prepare env (create + env-scope repos) → concretize.
+    i_clean = first_index("rm -f")
+    i_repos = first_index("git clone")
+    i_compiler = first_index("spack compiler find")
+    i_env = first_index("spack env create")
+    i_concretize = first_index("concretize -f")
+
+    assert i_clean < i_repos < i_compiler < i_env < i_concretize
+    assert "--scope env:cp2k-env" in ctr.scripts[i_env]

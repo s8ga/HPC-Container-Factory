@@ -55,15 +55,21 @@ def _make_spack_ops(env_name: str, container: Container) -> tuple[EnvConfig, Spa
     return env_config, ops
 
 
-def find_bootstrap_dir() -> Path | None:
-    """Return the first ``assets/bootstrap-*`` directory, or None.
+def find_bootstrap_dir(spack_version: str | None = None) -> Path | None:
+    """Return an ``assets/bootstrap-*`` directory, or None.
 
-    Single resolver for both status reporting and host-side verification
-    (previously the loop was duplicated in _verify_host_side and run_status).
+    When *spack_version* is given, prefer the exact match
+    ``assets/bootstrap-{spack_version}``. Otherwise (or if that path is
+    missing) fall back to the first sorted ``bootstrap-*`` directory so
+    status/verify still report something when multiple caches exist.
     """
     assets = PROJECT_ROOT / "assets"
     if not assets.is_dir():
         return None
+    if spack_version:
+        exact = assets / f"bootstrap-{spack_version}"
+        if exact.is_dir():
+            return exact
     for d in sorted(assets.iterdir()):
         if d.is_dir() and d.name.startswith("bootstrap-"):
             return d
@@ -132,27 +138,40 @@ def run_verify(ctr: Container, env_name: str) -> None:
     ops.run_verify_pipeline(str(container_dir), mirror_dir)
 
     # Layer 2: host-side structure verification
-    _verify_host_side(mirror_dir_host=PROJECT_ROOT / "assets" / "spack-mirror")
+    _verify_host_side(
+        mirror_dir_host=PROJECT_ROOT / "assets" / "spack-mirror",
+        spack_version=env_config.spack.version,
+    )
 
     logger.info("Verification complete")
 
 
-def _verify_host_side(*, mirror_dir_host: Path) -> None:
+def _verify_host_side(
+    *,
+    mirror_dir_host: Path,
+    spack_version: str | None = None,
+) -> None:
     """Host-side structure checks after container-side verify."""
     from hpc_cf.container import _count_broken_symlinks
 
     layer2_ok = True
 
-    # Broken symlinks
+    # Broken symlinks (-1 = check itself failed; do not treat as "has broken links")
     broken = _count_broken_symlinks(mirror_dir_host) if mirror_dir_host.exists() else 0
-    if broken:
+    if broken < 0:
+        logger.warning(
+            "Broken-symlink check failed for %s — could not determine status",
+            mirror_dir_host,
+        )
+        layer2_ok = False
+    elif broken > 0:
         logger.error("Broken symlinks found in mirror")
         layer2_ok = False
     else:
         logger.info("No broken symlinks in mirror")
 
-    # Bootstrap metadata
-    bootstrap_dir = find_bootstrap_dir()
+    # Bootstrap metadata (prefer version declared in env.yaml)
+    bootstrap_dir = find_bootstrap_dir(spack_version)
 
     if bootstrap_dir:
         metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
@@ -181,7 +200,7 @@ def _verify_host_side(*, mirror_dir_host: Path) -> None:
 def run_status(ctr: Container, env_name: str) -> None:
     """Print comprehensive status report."""
     host_dir, _ = resolve_env_paths(env_name)
-    bootstrap_dir = find_bootstrap_dir()
+    bootstrap_dir = find_bootstrap_dir(spack_version_for_env(env_name))
 
     ctr.status(
         bootstrap_dir=bootstrap_dir,
@@ -205,9 +224,10 @@ def run_assets(args: argparse.Namespace) -> None:
     # no_spack envs don't use spack assets at all.
     if args.env and args.env != "__LIST__":
         try:
-            from hpc_cf.template import select_template
-            tpl = select_template("cp2k", args.env, None)
             from hpc_cf.env import load_env_yaml
+            from hpc_cf.template import select_template
+
+            tpl = select_template(args.env, None)
             if load_env_yaml(tpl).get("method") == "no_spack":
                 print(f"Env '{args.env}' is method=no_spack — no spack assets needed.")
                 return

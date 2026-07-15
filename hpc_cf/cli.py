@@ -11,11 +11,10 @@ dispatches to domain modules:
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
-import logging
-
-from hpc_cf.env import validate_manual_packages, validate_spack_assets
+from hpc_cf.env import run_static_checks
 from hpc_cf.sif import (
     build_apptainer,
     build_docker_like,
@@ -46,12 +45,14 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--app-version",
+        "--env",
+        dest="app_version",
         default=None,
         nargs="?",
         const="__LIST__",
-        help="Application version used for template auto-selection. "
-             "If omitted, defaults to the first available env under spack-envs/. "
-             "Pass without value to list available versions.",
+        help="Environment name under spack-envs/ (full directory name). "
+             "Pass without value to list available environments. "
+             "--env is an alias for --app-version.",
     )
     parser.add_argument(
         "--output",
@@ -160,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
+            "  python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512\n"
             "  python -m hpc_cf dockerfile --app-version cp2k_rocm-2026.1-gfx942\n"
             "  python -m hpc_cf build --app-version cp2k_rocm-2026.1-gfx942\n"
             "  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942\n"
@@ -188,12 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser_cmd.add_argument(
         "--image",
         default=None,
-        help="Output image name (default auto: opensource->cp2k_opensource, rocm->cp2k_rocm)",
+        help="Output image name (default auto from env directory name)",
     )
     build_parser_cmd.add_argument(
         "--tag",
         default=None,
-        help="Output image tag (default auto: opensource->version, rocm->version-gpu)",
+        help="Output image tag (default auto from env directory name)",
     )
     build_parser_cmd.add_argument(
         "--network-host",
@@ -245,12 +247,12 @@ def build_parser() -> argparse.ArgumentParser:
     build_sif_parser.add_argument(
         "--docker-image",
         default=None,
-        help="OCI image name (default: auto-detect from --app-version)",
+        help="OCI image name (default: auto-detect from --app-version/--env)",
     )
     build_sif_parser.add_argument(
         "--docker-tag",
         default=None,
-        help="OCI image tag (default: auto-detect from --app-version)",
+        help="OCI image tag (default: auto-detect from --app-version/--env)",
     )
     build_sif_parser.add_argument(
         "--output", "-o",
@@ -260,10 +262,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_sif_parser.add_argument(
         "--app-version",
+        "--env",
+        dest="app_version",
         default=None,
         nargs="?",
         const="__LIST__",
-        help="Application version for auto image/tag detection",
+        help="Environment name for auto image/tag detection (--env is an alias)",
     )
     build_sif_parser.add_argument(
         "--mksquashfs-args",
@@ -289,16 +293,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_parser.add_argument(
         "--app-version",
+        "--env",
+        dest="app_version",
         default=None,
         nargs="?",
         const="__LIST__",
-        help="Environment name under spack-envs/ (pass without value to list).",
+        help="Environment name under spack-envs/ (pass without value to list; "
+             "--env is an alias).",
     )
     validate_parser.add_argument(
         "--template",
         type=Path,
         default=None,
-        help="Explicit env directory (overrides --app-version resolution).",
+        help="Explicit Dockerfile.j2 path (overrides --app-version resolution).",
     )
 
     return parser
@@ -312,7 +319,8 @@ def run_new_cli(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     if args.verbose:
-        logger.setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("hpc_cf").setLevel(logging.DEBUG)
 
     # ── pack-apptainer ──
     if args.command == "pack-apptainer":
@@ -326,7 +334,7 @@ def run_new_cli(argv: list[str]) -> int:
     if args.command == "build-sif":
         if getattr(args, "app_version", None) == "__LIST__":
             available_versions = _extract_available_versions()
-            print("Available --app-version values:")
+            print("Available --app-version/--env values:")
             for v in available_versions:
                 print(f"  {v}")
             return 0
@@ -343,11 +351,11 @@ def run_new_cli(argv: list[str]) -> int:
             if not getattr(args, "app_version", None):
                 logger.error(
                     "Specify --docker-image and --docker-tag, "
-                    "or --app-version for auto-detection."
+                    "or --app-version/--env for auto-detection."
                 )
                 return 1
             try:
-                resolved_template = select_template("cp2k", args.app_version, None)
+                resolved_template = select_template(args.app_version, None)
             except FileNotFoundError:
                 resolved_template = None
             from hpc_cf.template import resolve_output_image_tag
@@ -368,8 +376,6 @@ def run_new_cli(argv: list[str]) -> int:
 
     # ── validate ──
     if args.command == "validate":
-        from hpc_cf.env import validate_branch_consistency, validate_spack_yaml
-
         if args.app_version == "__LIST__":
             for v in _extract_available_versions():
                 print(v)
@@ -379,39 +385,47 @@ def run_new_cli(argv: list[str]) -> int:
             resolved = args.template
         else:
             if not args.app_version:
-                logger.error("validate requires --app-version <env> or --template <dir>.")
+                logger.error(
+                    "validate requires --app-version/--env <env> or --template <path>."
+                )
                 return 1
-            resolved = select_template(getattr(args, "app", "cp2k"), args.app_version, None)
+            resolved = select_template(args.app_version, None)
 
         env_config = load_env_yaml(resolved)
         env_dir = resolved.parent
-        validate_manual_packages(env_config)
-        validate_spack_assets(env_config)
-        validate_branch_consistency(env_dir)
-        validate_spack_yaml(env_dir)
+        run_static_checks(env_dir, env_config)
         logger.info("✅ %s: all static checks passed", env_dir.name)
         return 0
 
-    # ── Handle --app-version without value → list available versions ──
+    # ── assets ──
+    # Before the dockerfile/build --app-version gate: assets uses its own --env.
+    if args.command == "assets":
+        from hpc_cf.assets import run_assets
+        run_assets(args)
+        logger.info("Done")
+        return 0
+
+    # ── Handle --app-version/--env without value → list available versions ──
     if getattr(args, "app_version", None) == "__LIST__":
         available_versions = _extract_available_versions()
-        print("Available --app-version values:")
+        print("Available --app-version/--env values:")
         for v in available_versions:
             print(f"  {v}")
         return 0
 
-    # Default app-version when not specified at all.
-    # Pick the first available env dynamically instead of hardcoding a version
-    # that goes stale every release.
+    # Require an explicit env. Do NOT silently pick the first alphabetical
+    # entry (that currently defaults to abacus and surprises users).
     if not getattr(args, "app_version", None):
-        available = _extract_available_versions()
-        if available:
-            args.app_version = available[0]
+        if getattr(args, "template", None):
+            args.app_version = Path(args.template).parent.name
         else:
+            available = _extract_available_versions()
             logger.error(
-                "No --app-version specified and no envs found under spack-envs/. "
-                "Pass --app-version explicitly."
+                "Specify --app-version/--env <env> (or --template <path>). "
+                "Available:"
             )
+            for v in available:
+                print(f"  {v}")
             return 1
 
     # Mirror priority: --no-mirror > --mirror > default true
@@ -425,7 +439,6 @@ def run_new_cli(argv: list[str]) -> int:
     if args.command == "dockerfile":
         generate_dockerfile(
             template=args.template,
-            app="cp2k",
             app_version=args.app_version,
             output=args.output,
             use_mirror=use_mirror,
@@ -438,25 +451,22 @@ def run_new_cli(argv: list[str]) -> int:
         resolved_image, resolved_tag = resolve_image_and_tag(
             app_version=args.app_version,
             template=args.template,
-            app="cp2k",
             image_arg=args.image,
             tag_arg=args.tag,
         )
 
+        # Full static checks before the expensive generate+build (same suite
+        # as ``validate``).
+        _resolved_template = select_template(args.app_version, args.template)
+        run_static_checks(_resolved_template.parent, load_env_yaml(_resolved_template))
+
         dockerfile = generate_dockerfile(
             template=args.template,
-            app="cp2k",
             app_version=args.app_version,
             output=args.output,
             use_mirror=use_mirror,
             build_only=args.build_only,
         )
-
-        # Validate manual_packages before starting the (expensive) build
-        _resolved_template = select_template("cp2k", args.app_version, args.template)
-        _env_config = load_env_yaml(_resolved_template)
-        validate_manual_packages(_env_config)
-        validate_spack_assets(_env_config)
 
         if args.engine == "apptainer":
             logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
@@ -472,12 +482,6 @@ def run_new_cli(argv: list[str]) -> int:
                 build_args=args.build_arg,
                 build_opts=args.build_opt,
             )
-        logger.info("Done")
-        return 0
-
-    if args.command == "assets":
-        from hpc_cf.assets import run_assets
-        run_assets(args)
         logger.info("Done")
         return 0
 

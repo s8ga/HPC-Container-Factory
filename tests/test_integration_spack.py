@@ -65,19 +65,23 @@ spack -e {ENV_DIR} config add concretizer:unify:true
 
 def _run_mirror(ops: SpackOps) -> dict:
     """Helper: clean, run mirror create, return parsed stats."""
+    from hpc_cf.spack_ops import MIRROR_CREATE_LOG
+
     ops.clean_stale_state()
-    ops.ctr.exec(ops._build_mirror_create_script(ENV_DIR, MIRROR_DIR))
-    return ops._parse_mirror_stats()
+    ops.prepare_environment(ENV_DIR, import_lock=True)
+    ops.ctr.exec(ops._build_mirror_create_script(MIRROR_DIR))
+    return ops._parse_mirror_stats(MIRROR_CREATE_LOG)
 
 
 @pytest.mark.integration
 class TestSpackScriptsIntegration:
     """Validate _build_*_script methods against real spack inside a container."""
 
-    def test_phase1_concretize_creates_lock(self, spack_ops: SpackOps):
+    def test_concretize_creates_lock(self, spack_ops: SpackOps):
         """_build_concretize_script is accepted by spack and produces spack.lock."""
         ops = spack_ops
         ops.clean_stale_state()
+        ops.prepare_environment(ENV_DIR, import_lock=False)
         ops.ctr.exec(ops._build_concretize_script(ENV_DIR))
         result = ops.ctr.exec(
             f"test -f {ENV_DIR}/spack.lock && echo LOCK_OK || echo LOCK_MISSING",
@@ -85,7 +89,7 @@ class TestSpackScriptsIntegration:
         )
         assert "LOCK_OK" in (result.stdout or "")
 
-    def test_phase1b_repo_update_builtin(self, spack_ops: SpackOps):
+    def test_repo_update_builtin(self, spack_ops: SpackOps):
         """spack repo update builtin works (idempotent after concretize)."""
         ops = spack_ops
         result = ops.ctr.exec(
@@ -96,8 +100,8 @@ class TestSpackScriptsIntegration:
         assert "up to date" in output.lower() or "updated" in output.lower(), \
             f"repo update didn't report success: {output[-300:]}"
 
-    def test_phase1c_register_local_repo(self, spack_ops: SpackOps):
-        """_build_register_repos_script can register a local repo."""
+    def test_register_local_repo(self, spack_ops: SpackOps):
+        """Spack can register a local repo."""
         ops = spack_ops
         # Create a minimal local repo inside the container.
         ops.ctr.exec("""
@@ -139,8 +143,11 @@ EOF
         """_build_mirror_verify_script works and stats parse correctly."""
         ops = spack_ops
         ops.clean_stale_state()
-        ops.ctr.exec(ops._build_mirror_verify_script(ENV_DIR, MIRROR_DIR))
-        stats = ops._parse_mirror_stats()
+        ops.prepare_environment(ENV_DIR, import_lock=True)
+        from hpc_cf.spack_ops import MIRROR_VERIFY_LOG
+
+        ops.ctr.exec(ops._build_mirror_verify_script(MIRROR_DIR))
+        stats = ops._parse_mirror_stats(MIRROR_VERIFY_LOG)
         assert stats["failed"] != -1, f"verify regex didn't match: {stats}"
         assert stats["failed"] == 0
         assert stats["present"] >= 1

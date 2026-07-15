@@ -283,7 +283,7 @@ def build_sif(
     resolved_template = None
     if app_version:
         try:
-            resolved_template = select_template("cp2k", app_version, None)
+            resolved_template = select_template(app_version, None)
         except FileNotFoundError:
             pass
     default_image_name, default_image_tag = resolve_output_image_tag(resolved_template)

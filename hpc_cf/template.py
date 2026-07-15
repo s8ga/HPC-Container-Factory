@@ -12,7 +12,7 @@ except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install jinja2") from exc
 
 from hpc_cf.config import DEFAULT_SPACK_VERSION, TEMPLATES_DIR, SPACK_ENVS_DIR
-from hpc_cf.env import load_env_yaml
+from hpc_cf.env import list_available_envs, load_env_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -89,20 +89,18 @@ def resolve_output_image_tag(template_path: Path | None) -> tuple[str, str]:
 
 
 def _extract_available_versions() -> list[str]:
-    """Scan spack-envs/ and templates/ for available Dockerfile templates."""
-    versions: list[str] = []
-    seen: set[str] = set()
+    """List selectable ``--app-version`` / ``--env`` values.
 
-    # Prefer spack-envs/*/Dockerfile.j2 (current layout)
-    if SPACK_ENVS_DIR.exists():
-        for env_dir in sorted(SPACK_ENVS_DIR.iterdir()):
-            if env_dir.is_dir() and (env_dir / "Dockerfile.j2").exists():
-                name = env_dir.name
-                if name not in seen:
-                    versions.append(name)
-                    seen.add(name)
+    Uses :func:`list_available_envs` (env.yaml-backed dirs under spack-envs/)
+    so CLI listing matches ``assets --env``. Differs from a raw Dockerfile.j2
+    scan: includes no_spack envs that lack a per-env Dockerfile.j2, and
+    omits dirs that have only a template with no env.yaml.
 
-    # Fallback: scan templates/ (legacy layout)
+    Also appends legacy ``templates/Dockerfile-*.j2`` stems not already listed.
+    """
+    versions = list(list_available_envs())
+    seen = set(versions)
+
     for f in sorted(TEMPLATES_DIR.glob("Dockerfile-*.j2")):
         if f.name == "Dockerfile-base.j2":
             continue
@@ -114,24 +112,37 @@ def _extract_available_versions() -> list[str]:
     return versions
 
 
-def select_template(app: str, app_version: str, explicit_template: Path | None) -> Path:
-    """Locate the Jinja2 Dockerfile template for the given app/version."""
+def select_template(
+    app_version: str,
+    explicit_template: Path | None = None,
+    *,
+    app: str = "",
+) -> Path:
+    """Locate the Jinja2 Dockerfile template for the given env / version.
+
+    *app_version* is normally the full ``spack-envs/<name>/`` directory name
+    (e.g. ``cp2k_opensource-2026.1-force-avx512``). The optional *app* prefix
+    is only used for legacy ``<app>_<version>`` / ``Dockerfile-<app>-...``
+    fallbacks; callers should not hardcode an app name when using full dir
+    names.
+    """
     if explicit_template:
         if not explicit_template.exists():
             raise FileNotFoundError(f"Specified template not found: {explicit_template}")
         return explicit_template
 
-    # Prefer: spack-envs/<app-version>/Dockerfile.j2 (current layout; app_version is the full dir name)
+    # Prefer: spack-envs/<app-version>/Dockerfile.j2 (current layout)
     env_dir = SPACK_ENVS_DIR / app_version
     env_template = env_dir / "Dockerfile.j2"
     if env_template.exists():
         return env_template
 
-    # Fallback: spack-envs/<app>_<app-version>/Dockerfile.j2
-    env_dir = SPACK_ENVS_DIR / f"{app}_{app_version}"
-    env_template = env_dir / "Dockerfile.j2"
-    if env_template.exists():
-        return env_template
+    # Fallback: spack-envs/<app>_<app-version>/Dockerfile.j2 (legacy short versions)
+    if app:
+        env_dir = SPACK_ENVS_DIR / f"{app}_{app_version}"
+        env_template = env_dir / "Dockerfile.j2"
+        if env_template.exists():
+            return env_template
 
     # Support user passing the template filename directly as app-version
     raw = app_version
@@ -141,10 +152,11 @@ def select_template(app: str, app_version: str, explicit_template: Path | None) 
             return candidate
 
     # Fallback: templates/Dockerfile-<app>-<app-version>.j2 (legacy)
-    template_name = f"Dockerfile-{app}-{app_version}.j2"
-    template_path = TEMPLATES_DIR / template_name
-    if template_path.exists():
-        return template_path
+    if app:
+        template_name = f"Dockerfile-{app}-{app_version}.j2"
+        template_path = TEMPLATES_DIR / template_name
+        if template_path.exists():
+            return template_path
 
     available_versions = _extract_available_versions()
     available_list = "\n  ".join(available_versions)
@@ -236,30 +248,26 @@ def write_output(content: str, output_path: Path) -> None:
 def generate_dockerfile(
     *,
     template: Path | None,
-    app: str,
     app_version: str,
     output: Path,
     use_mirror: bool,
     build_only: bool,
 ) -> Path:
-    # Resolve template path. For no_spack envs without a per-env Dockerfile.j2,
-    # fall back to the shared templates/Dockerfile.nospack.j2. build_context
-    # uses template_path.parent to locate env.yaml, so we pass the per-env path
-    # (even if the Dockerfile.j2 doesn't exist) to keep env.yaml resolution working.
+    # Prefer select_template (per-env Dockerfile.j2 or explicit --template).
+    # no_spack envs may omit Dockerfile.j2 and use templates/Dockerfile.nospack.j2;
+    # build_context still needs template_path.parent for env.yaml, so we keep a
+    # synthetic per-env path when falling through to the shared nospack template.
     nospack_tpl = TEMPLATES_DIR / "Dockerfile.nospack.j2"
     per_env_tpl = SPACK_ENVS_DIR / app_version / "Dockerfile.j2"
 
-    if per_env_tpl.exists():
-        template_path = per_env_tpl
-    elif template and template.exists():
-        template_path = template
-    elif nospack_tpl.exists():
-        template_path = per_env_tpl  # doesn't exist, but .parent resolves env.yaml
-    else:
-        raise FileNotFoundError(
-            f"No Dockerfile.j2 for '{app_version}' and no shared no_spack template. "
-            f"Looked for: {per_env_tpl}, {nospack_tpl}"
-        )
+    try:
+        template_path = select_template(app_version, template)
+        render_path = template_path
+    except FileNotFoundError:
+        if not nospack_tpl.exists():
+            raise
+        template_path = per_env_tpl  # .parent resolves env.yaml
+        render_path = nospack_tpl
 
     context = build_context(
         use_mirror=use_mirror,
@@ -268,11 +276,11 @@ def generate_dockerfile(
         template_path=template_path,
     )
 
-    # For no_spack envs, render from the shared template.
+    # Shared nospack template when the env has no per-env Dockerfile.j2.
     if context.get("method") == "no_spack" and not per_env_tpl.exists() and nospack_tpl.exists():
-        template_path = nospack_tpl
+        render_path = nospack_tpl
 
-    content = render_template(template_path, context)
+    content = render_template(render_path, context)
     write_output(content, output)
     return output
 
@@ -281,11 +289,10 @@ def resolve_image_and_tag(
     *,
     app_version: str,
     template: Path | None,
-    app: str,
     image_arg: str | None,
     tag_arg: str | None,
 ) -> tuple[str, str]:
-    resolved_template = select_template(app, app_version, template)
+    resolved_template = select_template(app_version, template)
     default_image, default_tag = resolve_output_image_tag(resolved_template)
     image = image_arg if image_arg else default_image
     tag = tag_arg if tag_arg else default_tag

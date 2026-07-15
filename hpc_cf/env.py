@@ -75,7 +75,12 @@ def spack_version_for_env(env_name: str | None) -> str:
     if not env_name:
         return DEFAULT_SPACK_VERSION
     env_dir = SPACK_ENVS_DIR / env_name
-    env_config = load_env_yaml(env_dir / "Dockerfile.j2") if (env_dir / "Dockerfile.j2").exists() else {}
+    try:
+        env_yaml = find_env_yaml(env_dir)
+    except FileNotFoundError:
+        return DEFAULT_SPACK_VERSION
+    with env_yaml.open("r", encoding="utf-8") as f:
+        env_config = yaml.safe_load(f) or {}
     return env_config.get("spack", {}).get("version", DEFAULT_SPACK_VERSION)
 
 
@@ -125,10 +130,13 @@ def validate_spack_assets(env_config: dict) -> None:
 
     The Dockerfile ``COPY assets/spack-v<ver>.tar.gz`` and
     ``COPY assets/bootstrap-<ver>`` fail the build if these are missing; this
-    check surfaces the problem early. Currently applies to all envs
-    (all are Spack-based); gate on ``method == 'spack'`` once the no_spack
-    path lands.
+    check surfaces the problem early. Skipped when ``method != 'spack'``
+    (e.g. ``no_spack`` builds do not COPY these assets).
     """
+    method = env_config.get("method", "spack")
+    if method != "spack":
+        return
+
     spack_version = env_config.get("spack", {}).get("version")
     if not spack_version:
         # Nothing to validate (and no spack build to drive); skip silently.
@@ -225,3 +233,19 @@ def validate_spack_yaml(env_dir: Path) -> None:
             "concretization (prevents builtin recipe drift between builds).",
             spack_yaml,
         )
+
+
+def run_static_checks(env_dir: Path, env_config: dict | None = None) -> None:
+    """Run the full pre-build static validation suite.
+
+    Shared by ``validate`` and ``build`` so expensive builds cannot skip
+    checks that ``validate`` would catch.
+    """
+    if env_config is None:
+        env_yaml = find_env_yaml(env_dir)
+        env_config = yaml.safe_load(env_yaml.read_text(encoding="utf-8")) or {}
+
+    validate_manual_packages(env_config)
+    validate_spack_assets(env_config)
+    validate_branch_consistency(env_dir)
+    validate_spack_yaml(env_dir)

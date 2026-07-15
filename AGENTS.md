@@ -59,6 +59,7 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `{{ cp2k_branch }}` parametrized in all Dockerfile.j2 (declared once in env.yaml template_vars)
 - `{{ cp2k_dev_repo_path }}` parametrized — cp2k's spack repo path (changes between versions: `tools/spack/cp2k_dev_repo` → `tools/spack/spack_repo/cp2k_dev`)
 - `spack repo update builtin` runs in every pipeline — ensures builtin repo clone matches env config (`repos.builtin.commit` or default branch). Required because `RemoteRepoDescriptor.initialize()` reuses existing clones without checking commit match.
+- Custom repos are fetched before environment creation, then registered in `env:<name>` scope after builtin update. Environment scope is required so overrides take priority over `repos.builtin.commit`; list order remains git repos first, local repo last.
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `config: deprecated: true` in spack.yaml — allows deprecated package versions (e.g. py-torch@2.4.1). Spack v1.2.0 enforces the check at concretize time; this setting bypasses it.
