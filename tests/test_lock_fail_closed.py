@@ -110,6 +110,8 @@ def test_env_create_partial_allows_reconcretize_escape(tmp_path: Path) -> None:
 
 
 def test_run_mirror_fails_closed_without_lock(tmp_path: Path) -> None:
+    import json
+
     from hpc_cf.assets import run_mirror
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -136,6 +138,12 @@ def test_run_mirror_fails_closed_without_lock(tmp_path: Path) -> None:
 
     ops.run_all_pipeline.assert_not_called()
     ops.run_mirror_pipeline.assert_not_called()
+    manifests = list(
+        (layout.spack_mirror_dir / ".hpc_cf" / "runs").glob("*/manifest.json")
+    )
+    assert manifests, "missing lock should still write a failed manifest"
+    payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
 
 
 def test_run_mirror_allow_concretize_uses_all_pipeline(tmp_path: Path) -> None:
@@ -174,3 +182,60 @@ def test_run_mirror_allow_concretize_uses_all_pipeline(tmp_path: Path) -> None:
 
     assert out == stats
     ops.run_all_pipeline.assert_called_once()
+
+
+def test_run_mirror_pipeline_failure_writes_failed_manifest(tmp_path: Path) -> None:
+    import json
+
+    from hpc_cf.assets import run_mirror
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_host = tmp_path / "spack-envs" / "demo" / "spack-env-file"
+    env_host.mkdir(parents=True)
+    (env_host / "spack.yaml").write_text("spack: {}\n", encoding="utf-8")
+    (env_host / "spack.lock").write_text('{"hash":"x"}', encoding="utf-8")
+    (env_host / "env.yaml").write_text(
+        "schema_version: 1\nspack:\n  version: '1.1.1'\n  env_name: demo-env\n",
+        encoding="utf-8",
+    )
+
+    ops = MagicMock()
+    ops.env.spack.version = "1.1.1"
+    ops.run_mirror_pipeline.side_effect = RuntimeError("mirror boom")
+
+    with (
+        patch("hpc_cf.assets._make_spack_ops", return_value=(ops.env, ops)),
+        patch(
+            "hpc_cf.assets.resolve_env_paths",
+            return_value=(env_host, Path("/work/spack-envs/demo/spack-env-file")),
+        ),
+        pytest.raises(RuntimeError, match="mirror boom"),
+    ):
+        run_mirror(MagicMock(), "demo", layout=layout)
+
+    manifests = list(
+        (layout.spack_mirror_dir / ".hpc_cf" / "runs").glob("*/manifest.json")
+    )
+    assert len(manifests) == 1
+    payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert "mirror boom" in payload.get("error", "")
+
+
+def test_assets_service_aborts_when_env_yaml_missing(tmp_path: Path) -> None:
+    from hpc_cf.workflows import AssetsRequest, AssetsService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_host = tmp_path / "spack-envs" / "demo" / "spack-env-file"
+    env_host.mkdir(parents=True)
+    # No env.yaml — preflight must abort before run_assets.
+    with (
+        patch(
+            "hpc_cf.spack_ops.resolve_env_paths",
+            return_value=(env_host, Path("/work/x")),
+        ),
+        patch("hpc_cf.assets.run_assets") as mock_run,
+        pytest.raises(FileNotFoundError, match="preflight aborted"),
+    ):
+        AssetsService(layout=layout).run(AssetsRequest(env="demo", status=True))
+    mock_run.assert_not_called()

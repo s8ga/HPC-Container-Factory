@@ -138,9 +138,11 @@ class AssetsService:
             host_dir, _ = resolve_env_paths(request.env, layout=self.layout)
             try:
                 spec = load_environment_spec(host_dir)
-            except FileNotFoundError:
-                spec = None
-            if spec is not None and spec.method.requires_spack_assets:
+            except FileNotFoundError as exc:
+                raise FileNotFoundError(
+                    f"assets preflight aborted for {request.env!r}: {exc}"
+                ) from exc
+            if spec.method.requires_spack_assets:
                 profile = profile_for_assets_action(request)
                 run_static_checks(
                     host_dir,

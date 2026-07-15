@@ -69,10 +69,10 @@ def find_bootstrap_dir(
 ) -> Path | None:
     """Return an ``assets/bootstrap-*`` directory, or None.
 
-    When *spack_version* is given, prefer the exact match
-    ``assets/bootstrap-{spack_version}``. Otherwise (or if that path is
-    missing) fall back to the first sorted ``bootstrap-*`` directory so
-    status/verify still report something when multiple caches exist.
+    When *spack_version* is given, only the exact
+    ``assets/bootstrap-{spack_version}`` path is accepted (no silent
+    fallback to another version). Without a version, fall back to the
+    first sorted ``bootstrap-*`` directory for status display.
     """
     return (layout or ProjectLayout.default()).find_bootstrap_dir(spack_version)
 
@@ -143,38 +143,56 @@ def run_mirror(
 
     with store.exclusive_write():
         run = store.begin_run(env_name)
-        if has_lock:
-            stats = ops.run_mirror_pipeline(
-                str(container_dir),
-                mirror_dir,
-                create_log=run.create_log_container,
-            )
-        elif allow_concretize:
-            logger.warning(
-                "spack.lock missing — --allow-concretize: running "
-                "concretize + mirror"
-            )
-            stats = ops.run_all_pipeline(
-                host_dir,
-                str(container_dir),
-                mirror_dir,
-                create_log=run.create_log_container,
-            )
-        else:
-            raise FileNotFoundError(
-                f"spack.lock not found or empty under {host_dir}; "
-                "run assets with --allow-concretize to produce a lock, "
-                "or place a non-empty spack.lock before --download-mirror"
-            )
+        stats: dict[str, int] = {"present": -1, "added": -1, "failed": -1}
+        try:
+            if has_lock:
+                stats = ops.run_mirror_pipeline(
+                    str(container_dir),
+                    mirror_dir,
+                    create_log=run.create_log_container,
+                )
+            elif allow_concretize:
+                logger.warning(
+                    "spack.lock missing — --allow-concretize: running "
+                    "concretize + mirror"
+                )
+                stats = ops.run_all_pipeline(
+                    host_dir,
+                    str(container_dir),
+                    mirror_dir,
+                    create_log=run.create_log_container,
+                )
+            else:
+                raise FileNotFoundError(
+                    f"spack.lock not found or empty under {host_dir}; "
+                    "run assets with --allow-concretize to produce a lock, "
+                    "or place a non-empty spack.lock before --download-mirror"
+                )
 
-        store.write_manifest(
-            run,
-            env_name=env_name,
-            spack_version=env_config.spack.version,
-            lock_path=lock_path,
-            stats=stats,
-            status="success",
-        )
+            store.write_manifest(
+                run,
+                env_name=env_name,
+                spack_version=env_config.spack.version,
+                lock_path=lock_path,
+                stats=stats,
+                status="success",
+            )
+        except Exception as exc:
+            try:
+                store.write_manifest(
+                    run,
+                    env_name=env_name,
+                    spack_version=env_config.spack.version,
+                    lock_path=lock_path if has_lock else None,
+                    stats=stats,
+                    status="failed",
+                    error=str(exc),
+                )
+            except Exception as write_exc:
+                logger.warning(
+                    "Failed to write mirror failure manifest: %s", write_exc
+                )
+            raise
 
     logger.info("Source mirror generated (run %s)", run.run_id)
     return stats
@@ -255,25 +273,23 @@ def _verify_host_side(
 
     Result semantics for broken-symlink probing:
       - ``broken > 0`` → hard failure (``RuntimeError``)
-      - ``broken == -1`` → warning only (probe failed; status unknown)
+      - ``broken < 0`` → hard failure (probe inconclusive; refuse success)
       - ``broken == 0`` → pass
     """
     from hpc_cf.container import _count_broken_symlinks
 
-    # Broken symlinks (-1 = check itself failed; do not treat as "has broken links")
     broken = _count_broken_symlinks(mirror_dir_host) if mirror_dir_host.exists() else 0
     if broken < 0:
-        logger.warning(
-            "Broken-symlink check failed for %s — could not determine status",
-            mirror_dir_host,
+        raise RuntimeError(
+            f"Broken-symlink check failed for {mirror_dir_host} "
+            "(could not determine status; treating as verify failure)"
         )
-    elif broken > 0:
+    if broken > 0:
         logger.error("Broken symlinks found in mirror")
         raise RuntimeError(
             f"Broken symlinks found in mirror ({broken}): {mirror_dir_host}"
         )
-    else:
-        logger.info("No broken symlinks in mirror")
+    logger.info("No broken symlinks in mirror")
 
     # Bootstrap metadata (prefer version declared in env.yaml)
     bootstrap_dir = find_bootstrap_dir(spack_version, layout=layout)
@@ -292,14 +308,16 @@ def _verify_host_side(
             f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
             if not f.exists() or f.stat().st_size == 0:
                 logger.debug("Missing optional binary metadata: %s", f)
-
-    if broken < 0:
+    elif spack_version:
         logger.warning(
-            "Host-side verify finished with warnings (symlink probe inconclusive)"
+            "Bootstrap cache missing for requested version %s "
+            "(assets/bootstrap-%s); status/verify will not pretend another "
+            "version matches",
+            spack_version,
+            spack_version,
         )
-    else:
-        logger.info("All verification layers passed ✓")
 
+    logger.info("All verification layers passed ✓")
 
 # ── Status ──────────────────────────────────────────────────────────────
 

@@ -110,16 +110,17 @@ class ProjectLayout:
     def find_bootstrap_dir(self, spack_version: str | None = None) -> Path | None:
         """Return an ``assets/bootstrap-*`` directory, or None.
 
-        When *spack_version* is given, prefer the exact match; otherwise (or if
-        that path is missing) fall back to the first sorted ``bootstrap-*`` dir.
+        When *spack_version* is given, only the exact ``bootstrap-<version>``
+        directory is accepted — never silently fall back to another version.
+        Without a version, return the first sorted ``bootstrap-*`` dir (status
+        display convenience).
         """
         assets = self.assets_dir
         if not assets.is_dir():
             return None
         if spack_version:
             exact = self.bootstrap_dir(spack_version)
-            if exact.is_dir():
-                return exact
+            return exact if exact.is_dir() else None
         for d in sorted(assets.iterdir()):
             if d.is_dir() and d.name.startswith("bootstrap-"):
                 return d

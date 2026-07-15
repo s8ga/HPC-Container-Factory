@@ -26,21 +26,18 @@ def _ops(ctr=None) -> SpackOps:
 # ── Broken-symlink sentinel ─────────────────────────────────────────────
 
 
-def test_verify_host_side_treats_minus_one_as_warning_not_failure(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+def test_verify_host_side_raises_on_probe_failure(
+    tmp_path: Path,
 ) -> None:
-    """Probe failure (-1) is a warning: do not raise, do not claim broken links."""
+    """Probe failure (-1) must fail verify — never report success."""
     mirror = tmp_path / "spack-mirror"
     mirror.mkdir()
     with (
         patch("hpc_cf.container._count_broken_symlinks", return_value=-1),
         patch("hpc_cf.assets.find_bootstrap_dir", return_value=None),
-        caplog.at_level("WARNING"),
+        pytest.raises(RuntimeError, match="could not determine status"),
     ):
-        _verify_host_side(mirror_dir_host=mirror)  # must not raise
-
-    assert "Broken symlinks found" not in caplog.text
-    assert "check failed" in caplog.text.lower() or "could not" in caplog.text.lower()
+        _verify_host_side(mirror_dir_host=mirror)
 
 
 def test_verify_host_side_raises_on_positive_broken_count(
@@ -180,6 +177,19 @@ def test_find_bootstrap_dir_prefers_version_match(tmp_path: Path) -> None:
 
     assert find_bootstrap_dir("1.2.0", layout=layout) == preferred
     # Without a version, first sorted match wins.
+    assert find_bootstrap_dir(layout=layout) == assets / "bootstrap-1.0.0"
+
+
+def test_find_bootstrap_dir_no_cross_version_fallback(tmp_path: Path) -> None:
+    """Exact version missing must not silently return another bootstrap-* tree."""
+    from hpc_cf.execution import ProjectLayout
+
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "bootstrap-1.0.0").mkdir()
+    layout = ProjectLayout(project_root=tmp_path)
+
+    assert find_bootstrap_dir("1.2.0", layout=layout) is None
     assert find_bootstrap_dir(layout=layout) == assets / "bootstrap-1.0.0"
 
 
