@@ -22,9 +22,14 @@ cp -r spack-envs/cp2k_opensource-2025.2 spack-envs/<new-env-name>
 
 ### Step 2: 修改 `spack-env-file/env.yaml`
 
-`env.yaml` 是 single source of truth，修改以下段落：
+`env.yaml` 是 single source of truth，由 `EnvironmentSpec` 解析（`schema_version: 1`）。
+未知顶层键、非法类型、未知 `phases` / `repo_scope` 会 **fail-closed**；
+缺失 `schema_version` 时兼容按 v1 读取并警告迁移。修改以下段落：
 
 ```yaml
+schema_version: 1
+method: spack                  # 或 no_spack
+
 # ── Container Images ──
 images:
   builder: debian:trixie        # 构建阶段基础镜像
@@ -38,20 +43,23 @@ mirror_builder:
 
 # ── Spack Environment ──
 spack:
-  env_name: cp2k-env            # Spack 环境名（通常不需要改）
-  custom_repos: [...]           # 自定义 Spack 仓库
+  version: "1.1.1"
+  env_name: cp2k-env            # 注入模板 {{ spack_env_name }}，勿在 Dockerfile 硬编码
+  custom_repos: [...]           # 自定义 Spack 仓库（可设 phases: assets|image|both）
 
 # ── Template Variables ──
-template_vars: {}               # 注入 Dockerfile.j2 的额外变量
+template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺变量即失败）
 ```
 
 **关键点**：
-- `images.builder` 和 `images.runtime` → 传入 `Dockerfile.j2` 的 `{{ builder_base_image }}` / `{{ runtime_base_image }}`
-- `mirror_builder.system_pkgs` → 容器运行时安装的系统包（不是 bake 进镜像）
-- `template_vars` → 传给 Jinja2 的自定义变量（如 `amdgpu_targets: gfx942`）
-- `custom_repos` 支持两种类型：
-  - **git**: 有 `url` 字段 → sparse clone + register
-  - **local**: 有 `path` 字段 → 直接 register（path 相对于 `spack-env-file/`，注册优先级高于 git repo）
+- `images.builder` / `images.runtime` → `{{ builder_base_image }}` / `{{ runtime_base_image }}`
+- `spack.env_name` → `SpackEnvironmentPlan` → 模板与 assets 共用
+- `mirror_builder.system_pkgs` → 容器运行时安装（不是 bake 进镜像）
+- `template_vars` → 如 `cp2k_branch`、`amdgpu_targets`
+- `custom_repos`：
+  - **git**: 有 `url` → sparse clone + register
+  - **local**: 有 `path` → 直接 register（相对 `spack-env-file/`）
+  - **phases**: `both`（默认）/ `assets` / `image`（例如仅镜像构建用的 AVX512 override）
 
 ### Step 3: 修改 `spack-env-file/spack.yaml`
 
@@ -59,12 +67,17 @@ template_vars: {}               # 注入 Dockerfile.j2 的额外变量
 
 ### Step 4: 修改 `Dockerfile.j2`
 
-Dockerfile.j2 在 `spack-envs/<env>/Dockerfile.j2`。通常需要修改：
+Dockerfile.j2 在 `spack-envs/<env>/Dockerfile.j2`。公共 Spack 步骤应通过
+`templates/partials/` include，不要复制粘贴完整 bootstrap 块。通常需要修改：
 
-- 顶部的注释中的路径引用
-- 如果引入了新的 `template_vars`，在模板中使用 `{{ var_name }}`
+- 顶部注释中的路径引用
+- 应用层构建 / regtest / ROCm 等 per-env 特有步骤
+- 若引入了新的 `template_vars`，在模板中使用 `{{ var_name }}`
 
-如果新环境与源环境的构建流程完全一致，可以不修改 `Dockerfile.j2`。
+**禁止**在模板中硬编码 `spack env create cp2k-env`（或其它固定名）——始终使用
+`{{ spack_env_name }}`（由 plan 注入）。
+
+如果新环境与源环境的构建流程完全一致，可以只改 `env.yaml` / `spack.yaml`。
 
 ### Step 5: 删除 `spack.lock`
 
@@ -109,15 +122,16 @@ git diff spack-envs/<original-env>/
 # 激活环境
 source activate.sh
 
-# 查看新环境是否被自动发现
-python -m hpc_cf assets --env
+# config 校验（不要求大体积资产）+ 渲染
+python -m hpc_cf validate --app-version <new-env-name> --profile config
+python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
 
-# concretize + 下载 mirror（在容器内）
+# build-input 校验（需要 assets tarball / manual_packages）
+python -m hpc_cf validate --app-version <new-env-name> --format text
+
+# concretize + 下载 mirror（在容器内；持共享 mirror 锁并写 manifest）
 python -m hpc_cf assets --env <new-env-name> --create-container
 python -m hpc_cf assets --env <new-env-name> --download-mirror
-
-# 生成 Dockerfile 验证
-python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
 ```
 
 ---
@@ -162,10 +176,14 @@ images:
 
 ### env.yaml 加载
 
-`load_env_yaml(template_path)`:
+优先使用 `load_environment_spec` / `EnvironmentSpec`（`schema_version: 1`）。
 
-1. `spack-envs/<env>/spack-env-file/env.yaml` → **优先**（当前布局）
+查找顺序（`find_env_yaml`）：
+
+1. `spack-envs/<env>/spack-env-file/env.yaml` → **优先**
 2. `spack-envs/<env>/env.yaml` → 回退
+
+遗留的 `load_env_yaml()` 仍返回 dict，但会打弃用日志。
 
 ### Assets 发现
 

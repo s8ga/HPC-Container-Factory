@@ -11,12 +11,17 @@ to Apptainer SIF.
 ## Architecture
 
 ```
-cli.py          → argparse dispatch (dockerfile/build/assets/build-sif)
-template.py     → Jinja2 Dockerfile rendering + env.yaml → context
+cli.py          → argparse → request → workflows services
+workflows.py    → BuildRequest/AssetsRequest + BuildService/AssetsService
+environment.py  → EnvironmentSpec v1 (authoritative env.yaml model)
+spack_plan.py   → SpackEnvironmentPlan (assets + Dockerfile contract)
+template.py     → Jinja2 Dockerfile rendering (StrictUndefined + partials)
 spack_ops.py    → Spack operations: _build_*_script (pure) + exec (container)
-container.py    → Podman container lifecycle (create/exec/destroy)
-assets.py       → Asset workflow: bootstrap + mirror + verify orchestration
-env.py          → env.yaml parsing + validators (find_env_yaml, validate_*)
+execution.py    → RunnerPort, ProjectLayout, SharedMirrorStore
+container.py    → Podman RunnerPort implementation
+assets.py       → Asset workflow (no argparse); bootstrap + mirror + verify
+env.py          → env.yaml discovery + legacy validate_* wrappers
+validation.py   → ValidationFinding/Report + config/build-input/assets profiles
 sif.py          → SIF/apptainer building + packing
 config.py       → Path constants + DEFAULT_SPACK_VERSION
 ```
@@ -79,12 +84,17 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 
 ## Test Layering
 
-| Layer | Location | Default? | External deps | Count |
-|---|---|---|---|---|
-| **Unit** | `tests/test_*.py` (excl. integration) | ✅ runs always | None | 53 |
-| **Integration** | `tests/test_integration_spack.py` | ❌ `--run-integration` | podman + image + assets | 7 |
+| Layer | Location | Default? | External deps |
+|---|---|---|---|
+| **Unit + contract** | `tests/test_*.py` (excl. integration) | ✅ runs always | None |
+| **Integration matrix** | `tests/test_integration_spack.py` | ❌ `--run-integration` | podman + image + assets |
+| **E2E skeleton** | `tests/test_integration_spack.py` (`@pytest.mark.e2e`) | ❌ `--run-integration` | podman optional; render+plan |
 
-Integration tests create a persistent container, set up a minimal spack env via CLI, and exercise `_build_*_script` methods against real spack 1.1.1.
+Integration tests create a persistent container, set up a minimal spack env via
+CLI, and exercise `_build_*_script` methods against real Spack (matrix:
+1.1.1 / 1.2.0 when assets are present). Missing asset cells are skipped.
+Environment inventory is discovered via `EnvironmentSpec` / `list_available_envs()`
+— do not hardcode test counts.
 
 ## no_spack Build Mode
 

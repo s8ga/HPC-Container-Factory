@@ -6,25 +6,30 @@ assets 负责把构建中最耗时、最依赖网络的部分前置到本地。
 
 ```
 assets/
-  ├── spack-v1.1.0.tar.gz         ← Spack 源码包
-  ├── bootstrap/                  ← Spack bootstrap 元数据与缓存
-  └── spack-mirror/               ← Spack 源码镜像（所有依赖的源码 tarball）
+  ├── spack-v1.1.1.tar.gz         ← Spack 源码包（版本随 env.yaml）
+  ├── bootstrap-1.1.1/            ← Spack bootstrap 元数据与缓存
+  └── spack-mirror/               ← 共享累积式源码镜像（所有 env 共用）
+      └── .hpc_cf/                ← 编排元数据（不改变包树布局）
+          ├── mirror.lock         ← 进程级写锁（fcntl）
+          └── runs/<run-id>/      ← 每次下载的日志 + manifest.json
 ```
 
 ## 容器化缓存流程（推荐）
 
-统一使用 `python -m hpc_cf assets` 入口，底层由 `hpc_cf/` Python 包驱动。
+统一使用 `python -m hpc_cf assets` 入口。CLI 组装 `AssetsRequest`，
+`AssetsService` / `hpc_cf.assets` 编排域逻辑。
 
 ### 前置条件
 
 - Podman rootless 已安装
 - 网络可访问 APT 源和 GitHub
-- 已在 `spack-envs/<env>/spack-env-file/` 下准备好 `spack.yaml`
+- 已在 `spack-envs/<env>/spack-env-file/` 下准备好 `env.yaml` + `spack.yaml`
+- `assets/spack-v<ver>.tar.gz` 已就位（`assets` profile 会校验）
 
 ### 使用
 
 ```bash
-# 一键完整流程
+# 一键完整流程（会先跑 assets 校验 profile）
 python -m hpc_cf assets --env cp2k_opensource-2025.2
 
 # 分步
@@ -35,57 +40,69 @@ python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
 python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 ```
 
-```bash
-# 也可通过 CLI 参数直接调用
-python -m hpc_cf assets --create-container
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --download-mirror
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
-```
-
 ### 模块架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│  hpc_cf/cli.py + hpc_cf/assets.py               │
-│  CLI 调度 + 工作流编排                           │
-└───────────────┬─────────────────────────────────┘
-                │ Container.exec() / run_ephemeral()
-                ▼
-┌─────────────────────────────────────────────────┐
-│  hpc_cf/container.py                            │
-│  容器生命周期管理 (Podman)                       │
-└───────────────┬─────────────────────────────────┘
-                │ bash -lc <script>
-                ▼
-┌─────────────────────────────────────────────────┐
-│  hpc_cf/spack_ops.py                            │
-│  Spack 操作函数库 — 所有环境共享                 │
-│  提供: bootstrap_mirror(),                       │
-│        install_system_pkgs(),                    │
-│        register_repos(), compiler_find(),        │
-│        concretize(), mirror_create(),            │
-│        mirror_verify()                           │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  hpc_cf/cli.py → AssetsRequest → AssetsService            │
+│  （CLI 不把 argparse.Namespace 传给 assets.py）             │
+└────────────────────────┬─────────────────────────────────┘
+                         │ RunnerPort.exec / run_ephemeral
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│  hpc_cf/container.py (Podman RunnerPort)                  │
+│  hpc_cf/execution.py (ProjectLayout, SharedMirrorStore)   │
+└────────────────────────┬─────────────────────────────────┘
+                         │ bash -lc <script>
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│  hpc_cf/spack_ops.py  ← 消费 SpackEnvironmentPlan          │
+│  bootstrap / repos / concretize / mirror create+verify    │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **设计原则**：
-- `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像，不含系统包或 pipeline 逻辑
-- 系统包在运行时由 `hpc_cf/spack_ops.py` 从 `env.yaml` 读取后安装
-- 每个 env 的差异完全由 `env.yaml` 驱动，代码路径统一
+- `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像
+- 系统包在运行时由 `spack_ops` 从 `EnvironmentSpec` 读取后安装
+- 共享 `assets/spack-mirror` 保持累积布局；并发写通过 `SharedMirrorStore.exclusive_write` 串行化
+- 每次成功 mirror 会在 `.hpc_cf/runs/<id>/manifest.json` 记录 env、spack 版本、lock hash、统计
+
+### 校验 profile（按动作选择）
+
+`AssetsService` 在调用域逻辑前做**唯一**一次 preflight（`run_assets` 不再重复校验）。
+
+| 命令 / 标志 | Profile | 是否要求大体积资产 |
+|-------------|---------|-------------------|
+| `dockerfile` / `validate --profile config` | config | 否 |
+| `build` / `validate`（默认） | build-input | 是（tarball + manual_packages） |
+| `assets --status` | **config** | 否（缺大资产不因此失败） |
+| `assets --prepare-bootstrap` | assets | 是（bootstrap 输入） |
+| `assets --download-mirror` | assets | 是（tarball；缺输入必失败） |
+| `assets --verify-mirror` | assets | 是（lock + mirror） |
+| `assets`（默认一键流程） | assets | 是 |
+
+```bash
+python -m hpc_cf validate --app-version <env> --profile assets --format json
+python -m hpc_cf assets --env <env> --status          # config only
+python -m hpc_cf assets --env <env> --download-mirror # assets inputs required
+```
+
+Mirror 注册 scope（`spack_mirror_scope`，默认 `site`）与自定义 repo 的
+`repo_scope` **解耦**——image 侧 `repo_scope: env` 不会泄漏到
+`spack mirror add --scope`。verify 事务在同一 mirror lock 下完成：
+container verify → host symlink → 原子写 manifest；失败时写入
+`status=failed` 摘要，不留下成功态 manifest。
 
 ### 子命令/动作标志说明
-
-通过 `python -m hpc_cf assets` 使用，支持以下标志组合：
 
 | 标志 | 需要 `--env` | 说明 |
 |------|-------------|------|
 | （无标志） | **是** | 一键完整流程：构建镜像 → 创建容器 → bootstrap → mirror → verify |
 | `--create-container` | 否 | 构建镜像并创建/启动 reusable mirror worker container |
-| `--prepare-bootstrap` | 否 | 生成 Spack bootstrap mirror |
-| `--download-mirror` | **是** | 下载源码 mirror |
-| `--verify-mirror` | **是** | 校验 mirror 完整性 |
-| `--status` | **是** | 显示镜像、bootstrap、mirror、环境的状态 |
+| `--prepare-bootstrap` | 否 | 生成 Spack bootstrap mirror（失败必须传播，不吞错） |
+| `--download-mirror` | **是** | 下载源码 mirror（持锁 + 写 manifest） |
+| `--verify-mirror` | **是** | 校验 mirror 完整性（与 download 同属 assets profile） |
+| `--status` | **是** | 显示镜像、bootstrap、mirror、环境状态（config profile） |
 
 ### HOME 隔离
 
@@ -103,4 +120,3 @@ python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 | `--force-bootstrap` | false | 强制重新生成 bootstrap |
 | `--skip-create-container` | false | 默认流程中跳过创建容器 |
 | `--skip-verify` | false | 默认流程中跳过验证 |
-| `EXTRA_PODMAN_OPTS` | （空） | 额外 podman run 选项 |

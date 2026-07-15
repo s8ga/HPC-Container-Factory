@@ -2,6 +2,19 @@
 
 入口: `python -m hpc_cf`
 
+架构边界：`cli.py`（argparse）→ `BuildRequest` / `AssetsRequest` →
+`BuildService` / `AssetsService`。领域模块不接收 `argparse.Namespace`。
+
+解析结果统一为 `ResolvedBuildInput`（配置目录与渲染模板路径可分离）：
+
+```text
+ResolvedBuildInput
+├── environment_spec
+├── environment_dir      # env.yaml / spack.yaml 所在目录
+├── render_template      # 实际渲染的 Dockerfile.j2（可为共享模板）
+└── compatibility_mode   # 无相邻 env.yaml 的 legacy 模板
+```
+
 ## 命令总览
 
 ```bash
@@ -10,158 +23,142 @@ python -m hpc_cf <command> [options]
 
 | 子命令 | 用途 |
 |--------|------|
-| `dockerfile` | 只生成 Dockerfile |
-| `build` | 生成 Dockerfile 并构建镜像 |
-| `validate` | 静态预检（manual_packages / assets / branch / spack.yaml） |
+| `dockerfile` | 只生成 Dockerfile（config/template 校验） |
+| `build` | 生成 Dockerfile 并构建 OCI 镜像（podman/docker） |
+| `validate` | 静态预检；可用 `--profile` 选择深度 |
 | `build-sif` | 从 OCI 镜像构建 Apptainer SIF |
 | `pack-apptainer` | 打包本地 apptainer 为 makeself 自解压包 |
-| `assets` | 准备离线资源 (bootstrap + source mirror) |
+| `assets` | 准备离线资源（bootstrap + source mirror） |
 
 ## dockerfile
 
 ```bash
 python -m hpc_cf dockerfile \
-  --app-version cp2k_opensource-2025.2 \
+  --app-version <env-name> \
   --output Dockerfile
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `--app-version <name>` | 环境名（对应 `spack-envs/<name>/`）。不传值列出可用环境 |
-| `--template <path>` | 显式模板路径（覆盖 `--app-version` 自动选择） |
+| `--app-version <name>` | 环境名（对应 `spack-envs/<name>/`）。不传值列出可用环境；`--env` 为别名 |
+| `--template <path>` | 显式模板路径（覆盖自动选择；须存在） |
 | `--output <path>` | 输出 Dockerfile 路径 |
-| `--mirror` | 模板上下文启用离线 mirror |
-| `--no-mirror` | 禁用 mirror |
-| `--build-only` | 只渲染 builder 阶段 |
+| `--mirror` / `--no-mirror` | 启用 / 禁用离线 mirror 上下文 |
+| `--build-only` | 只渲染 builder 阶段（模板支持时） |
+
+`method: no_spack` 且无 per-env `Dockerfile.j2` 时，自动使用共享
+`templates/Dockerfile.nospack.j2`。
 
 ## build
 
 ```bash
 python -m hpc_cf build \
-  --app-version cp2k_rocm-2026.1-gfx942 \
+  --app-version <env-name> \
   --engine podman \
   --network-host
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `--engine <engine>` | `podman` / `docker` / `apptainer` |
-| `--image <name>` | 输出镜像名（默认自动推断） |
-| `--tag <tag>` | 输出镜像 tag（默认自动推断） |
+| `--engine <engine>` | **仅** `podman` / `docker`。Apptainer SIF 请用 `build-sif` |
+| `--image <name>` | 输出镜像名（默认由环境目录名推断） |
+| `--tag <tag>` | 输出镜像 tag（默认由环境目录名推断） |
 | `--network-host` | 构建时加 `--network host` |
 | `--build-arg KEY=VAL` | 传递 `--build-arg`（可重复） |
 | `--build-opt OPT` | 额外 build 选项（可重复） |
 
-自动命名规则（未传 `--image`/`--tag` 时生效）：
-
-| 环境类型 | 镜像名 | tag 示例 |
-|----------|--------|---------|
-| `cp2k_opensource-*` | `cp2k_opensource` | `2025.2`、`2025.2-force-avx512` |
-| `cp2k_mkl-*` | `cp2k_mkl` | `2025.2-experimental` |
-| `cp2k_rocm-*` | `cp2k_rocm` | `2026.1-gfx942` |
+命名规则（未传 `--image`/`--tag`）：从 `spack-envs/<name>/` 目录名按
+`<app>_<variant>-<version>[-suffix]` 约定推断；`env.yaml` 中
+`images.output_name` / `images.output_tag` 可覆盖。
 
 ## validate
 
 ```bash
-python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512
-# --env 是 --app-version 的别名
-python -m hpc_cf validate --env cp2k_opensource-2026.1-force-avx512
+python -m hpc_cf validate --app-version <env-name>
+python -m hpc_cf validate --env <env-name> --profile config --format json
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `--app-version` / `--env` | 环境名（`spack-envs/<name>/`）。不传值列出可用环境 |
-| `--template <path>` | 显式 env 目录/模板路径（覆盖自动解析） |
+| `--app-version` / `--env` | 环境名。不传值列出可用环境 |
+| `--template <path>` | 显式模板/目录；**不存在则失败**（含 StrictUndefined 渲染探测） |
+| `--profile` | `config` / `template`（同 config）、`build-input`（默认）、`assets` |
+| `--format` | `text`（默认）或 `json`（解析错误也保证合法 JSON findings） |
+
+### Validation profile 与命令的对应关系
+
+| 动作 | Profile | 大体积资产 |
+|------|---------|-----------|
+| `dockerfile` | config | 否 |
+| `build` | build-input | 是（tarball + manual_packages 等） |
+| `validate`（默认） | build-input | 是 |
+| `validate --profile config` | config | 否 |
+| `assets --status` | config | 否 |
+| `assets --prepare-bootstrap` | assets | 是（bootstrap 输入） |
+| `assets --download-mirror` | assets | 是 |
+| `assets --verify-mirror` | assets | 是（lock + mirror） |
+
+`EnvironmentSpec`（`schema_version: 1`）对未知键、非法类型、未知
+`phases` / `repo_scope` **fail-closed**；`template_vars` 保持开放 mapping。
+Jinja 渲染使用 `StrictUndefined`——模板引用未声明变量即失败。
 
 ## build-sif
 
-将本地 OCI 镜像转换为 Apptainer SIF，支持交互式 MOTD。
+将本地 OCI 镜像转换为 Apptainer SIF。相对 `--output` 路径在启动子进程前
+解析为绝对路径（相对进程 cwd）。
 
 ```bash
-# 从已构建的 OCI 镜像构建 SIF
-python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
-
-# 显式指定镜像
-python -m hpc_cf build-sif --docker-image cp2k_opensource --docker-tag 2025.2
-
-# 仅安装 apptainer
+python -m hpc_cf build-sif --app-version <env-name>
+python -m hpc_cf build-sif --docker-image <name> --docker-tag <tag>
 python -m hpc_cf build-sif --install-apptainer-only
 ```
 
 | 参数 | 说明 |
 |------|------|
-| `--app-version <name>` | 环境名，自动推断镜像名/tag。不传值列出可用环境 |
-| `--docker-image <name>` | 显式指定 OCI 镜像名 |
-| `--docker-tag <tag>` | 显式指定 OCI 镜像 tag |
-| `-o, --output <path>` | 输出 SIF 路径（默认 `artifacts/<image>_<tag>.sif`） |
-| `--install-apptainer-only` | 仅安装 apptainer，不构建 SIF |
+| `--app-version <name>` | 环境名，自动推断镜像名/tag |
+| `--docker-image` / `--docker-tag` | 显式 OCI 镜像 |
+| `-o, --output <path>` | 输出 SIF（默认 `artifacts/<image>_<tag>.sif`） |
+| `--install-apptainer-only` | 仅安装 apptainer |
 
-详细说明见 [BUILD_SIF.md](BUILD_SIF.md)。
+详见 [BUILD_SIF.md](BUILD_SIF.md)。
 
 ## pack-apptainer
 
-将本地 apptainer 打包为 makeself 自解压包（gzip 压缩，最大兼容性），便于分发到目标机器。
+将本地 apptainer 打包为 makeself 自解压包。
 
 ```bash
-# 打包（默认最大压缩）
 python -m hpc_cf pack-apptainer
-
-# 指定输出路径
-python -m hpc_cf pack-apptainer -o /path/to/apptainer.run
-
-# 跳过 SHA256 校验（更快）
-python -m hpc_cf pack-apptainer --no-sha256
-```
-
-| 参数 | 说明 |
-|------|------|
-| `-o, --output <path>` | 输出 `.run` 文件路径（默认 `artifacts/apptainer-<ver>-<arch>.run`） |
-| `--no-sha256` | 跳过 SHA256 校验（打包更快） |
-
-**目标机器上使用：**
-
-```bash
-mkdir ~/apptainer && cd ~/apptainer
-bash apptainer-1.4.5-3.el8-x86_64.run     # 解压到当前目录
-source apptainer-bundle/activate-apptainer.sh  # 激活
-apptainer shell /path/to/image.sif        # 使用
+python -m hpc_cf pack-apptainer -o /path/to/apptainer.run --no-sha256
 ```
 
 ## assets
 
+统一入口：`python -m hpc_cf assets`。CLI 组装 `AssetsRequest`，
+`AssetsService` / `hpc_cf.assets` 编排域逻辑（**无 argparse**）。
+
 ```bash
 # 一键完整流程
-python -m hpc_cf assets --env cp2k_opensource-2025.2
+python -m hpc_cf assets --env <env-name>
 
-# 分步执行
+# 分步
 python -m hpc_cf assets --create-container
 python -m hpc_cf assets --prepare-bootstrap
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --download-mirror
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --verify-mirror
-python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
+python -m hpc_cf assets --env <env-name> --download-mirror
+python -m hpc_cf assets --env <env-name> --verify-mirror
+python -m hpc_cf assets --env <env-name> --status
 ```
 
-| 参数 | 说明 |
-|------|------|
-| `--env <name>` | 环境名。不传值列出可用环境 |
-| `--mirror-image <name>` | mirror builder 镜像名 |
-| `--container-name <name>` | worker container 名称 |
-| `--skip-image-build` | 跳过自动构建 mirror builder 镜像 |
-| `--force-bootstrap` | 强制重建 bootstrap |
-| `--podman-opt OPT` | 额外 podman 选项（可重复） |
+详述与校验 profile 见 [ASSETS_GUIDE.md](ASSETS_GUIDE.md)。
 
 ## 自动发现机制
 
-`hpc_cf` 通过以下顺序查找模板：
+`resolve_build_input` / `select_template` 顺序：
 
-1. `spack-envs/<app-version>/Dockerfile.j2`（新布局，优先）
-2. `spack-envs/<app>-<app-version>/Dockerfile.j2`（拼接尝试）
-3. `templates/Dockerfile-<app>-<app-version>.j2`（legacy 回退）
-
-`--app-version` 直接传 `spack-envs/` 下的目录名即可：
+1. `spack-envs/<app-version>/Dockerfile.j2`（优先）
+2. 若有 env.yaml 且 method 声明共享模板（如 no_spack）→ `templates/<default>`
+3. `spack-envs/<app>_<app-version>/Dockerfile.j2`（拼接尝试）
+4. `templates/Dockerfile-<...>.j2`（legacy；无 env.yaml → compatibility mode + warning）
 
 ```bash
-python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2
-python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2-force-avx512
-python -m hpc_cf dockerfile --app-version cp2k_rocm-2026.1-gfx942
+python -m hpc_cf dockerfile --app-version <env-name>
 ```
