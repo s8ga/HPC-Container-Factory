@@ -13,3 +13,8 @@ Dockerfile
 .spack/**
 
 tools/**
+
+.headroom/**
+.tokensave/**
+.opencode/**
+.serena/**
