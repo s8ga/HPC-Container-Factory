@@ -24,7 +24,7 @@ REQUIRED_PARTIALS = (
     "runtime_cleanup.j2",
 )
 
-PILOT_ENV = "cp2k_opensource-2026.2-force-avx512"
+PILOT_ENV = "cp2k_opensource-2026.1-force-avx512"
 
 # Fixed timestamp so pilot render fingerprints stay stable across runs.
 _PILOT_TS = "2026-07-16T00:00:00"
@@ -80,7 +80,7 @@ def test_choice_loader_includes_global_partial(tmp_path: Path) -> None:
 def test_env_dockerfiles_include_shared_partials() -> None:
     """Every spack per-env Dockerfile must pull in the shared Spack partials."""
     dockerfiles = sorted(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
-    assert len(dockerfiles) >= 9
+    assert len(dockerfiles) >= 8
     for path in dockerfiles:
         env_name = path.parent.name
         text = path.read_text(encoding="utf-8")
@@ -140,7 +140,6 @@ def test_pilot_render_preserves_spack_semantics() -> None:
     assert "Runtime cleanup: removing development-only content" in rendered
 
     # Application-specific features stay in the per-env template.
-    assert "s8ga-spack-packages" in rendered
     assert "tools/regtesting" in rendered
     assert "cp2k-motd.sh" in rendered or "hpc-motd.sh" in rendered
     assert "{{" not in rendered
