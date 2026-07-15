@@ -1,11 +1,9 @@
 """CLI definitions and command dispatch for the HPC Container Factory.
 
-This module is intentionally *thin*: it defines argparse parsers and
-dispatches to domain modules:
+This module is intentionally *thin*: argparse → request objects → services.
 
-- ``hpc_cf.assets`` — assets/bootstrap/mirror workflows
-- ``hpc_cf.template`` — Dockerfile rendering
-- ``hpc_cf.sif`` — SIF building & apptainer management
+- ``hpc_cf.workflows`` — BuildRequest / AssetsRequest + services
+- ``hpc_cf.sif`` — SIF building & apptainer management (still CLI-dispatched)
 """
 
 from __future__ import annotations
@@ -14,20 +12,30 @@ import argparse
 import logging
 from pathlib import Path
 
-from hpc_cf.env import run_static_checks
 from hpc_cf.sif import (
-    build_apptainer,
-    build_docker_like,
     build_sif,
     ensure_apptainer,
     pack_apptainer,
 )
 from hpc_cf.template import (
     _extract_available_versions,
-    generate_dockerfile,
-    load_env_yaml,
-    resolve_image_and_tag,
+    build_context,
+    render_template,
+    resolve_build_input,
     select_template,
+)
+from hpc_cf.validation import (
+    ValidationFinding,
+    ValidationProfile,
+    ValidationReport,
+    ValidationSeverity,
+    validate_environment,
+)
+from hpc_cf.workflows import (
+    AssetsService,
+    BuildService,
+    assets_request_from_args,
+    build_request_from_args,
 )
 
 logger = logging.getLogger(__name__)
@@ -183,9 +191,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_template_options(build_parser_cmd)
     build_parser_cmd.add_argument(
         "--engine",
-        choices=["podman", "docker", "apptainer"],
+        choices=["podman", "docker"],
         default="podman",
-        help="Build engine",
+        help="Build engine (podman/docker). For Apptainer SIF use build-sif.",
     )
     build_parser_cmd.add_argument(
         "--image",
@@ -288,8 +296,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_parser = subparsers.add_parser(
         "validate",
-        help="Static pre-build checks for an env (manual_packages, spack assets, "
-             "branch consistency, spack.yaml sanity)",
+        help="Static checks for an env (profiles: config, build-input, assets)",
     )
     validate_parser.add_argument(
         "--app-version",
@@ -306,6 +313,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Explicit Dockerfile.j2 path (overrides --app-version resolution).",
+    )
+    validate_parser.add_argument(
+        "--profile",
+        choices=["config", "build-input", "assets", "template"],
+        default="build-input",
+        help=(
+            "Validation profile: config/template (render), build-input (build), "
+            "assets (assets workflow). Default: build-input."
+        ),
+    )
+    validate_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the validation report (default: text).",
     )
 
     return parser
@@ -381,27 +403,91 @@ def run_new_cli(argv: list[str]) -> int:
                 print(v)
             return 0
 
-        if args.template:
-            resolved = args.template
-        else:
-            if not args.app_version:
-                logger.error(
-                    "validate requires --app-version/--env <env> or --template <path>."
-                )
-                return 1
-            resolved = select_template(args.app_version, None)
+        profile = ValidationProfile.parse(args.profile)
+        out_fmt = getattr(args, "format", "text")
 
-        env_config = load_env_yaml(resolved)
-        env_dir = resolved.parent
-        run_static_checks(env_dir, env_config)
-        logger.info("✅ %s: all static checks passed", env_dir.name)
-        return 0
+        def _emit(report: ValidationReport) -> int:
+            if out_fmt == "json":
+                print(report.format_json(), end="")
+            else:
+                print(report.format_text(), end="")
+            return 0 if report.ok else 1
+
+        try:
+            if args.template is not None:
+                resolved_input = resolve_build_input(
+                    explicit_template=args.template
+                )
+            else:
+                if not args.app_version:
+                    logger.error(
+                        "validate requires --app-version/--env <env> "
+                        "or --template <path>."
+                    )
+                    return 1
+                resolved_input = resolve_build_input(args.app_version, None)
+        except FileNotFoundError as exc:
+            report = ValidationReport(
+                profile=profile.value,
+                env_name=(
+                    Path(args.template).parent.name
+                    if args.template is not None
+                    else args.app_version
+                ),
+            )
+            report.add(
+                ValidationFinding(
+                    code="template.missing",
+                    severity=ValidationSeverity.ERROR,
+                    message=str(exc),
+                    path=str(args.template) if args.template else None,
+                    fix_hint="Provide an existing Dockerfile.j2 path.",
+                )
+            )
+            return _emit(report)
+
+        env_dir = resolved_input.environment_dir
+        report = validate_environment(
+            env_dir, profile, env_config=resolved_input.environment_spec
+        )
+
+        # StrictUndefined render probe for config/template profile when a
+        # concrete template path is available.
+        if report.ok and profile is ValidationProfile.CONFIG:
+            try:
+                ctx = build_context(
+                    use_mirror=False,
+                    build_only=True,
+                    app_version=args.app_version or env_dir.name,
+                    template_path=resolved_input.render_template,
+                    resolved=resolved_input,
+                )
+                render_template(resolved_input.render_template, ctx)
+            except (FileNotFoundError, RuntimeError) as exc:
+                report.add(
+                    ValidationFinding(
+                        code="template.render",
+                        severity=ValidationSeverity.ERROR,
+                        message=str(exc),
+                        path=str(resolved_input.render_template),
+                        fix_hint=(
+                            "Fix undefined Jinja variables or template syntax "
+                            "(StrictUndefined)."
+                        ),
+                    )
+                )
+
+        rc = _emit(report)
+        if report.ok:
+            logger.info(
+                "✅ %s: %s checks passed", env_dir.name, profile.value
+            )
+        return rc
 
     # ── assets ──
     # Before the dockerfile/build --app-version gate: assets uses its own --env.
     if args.command == "assets":
-        from hpc_cf.assets import run_assets
-        run_assets(args)
+        AssetsService().run(assets_request_from_args(args))
         logger.info("Done")
         return 0
 
@@ -437,53 +523,14 @@ def run_new_cli(argv: list[str]) -> int:
         use_mirror = True
 
     if args.command == "dockerfile":
-        generate_dockerfile(
-            template=args.template,
-            app_version=args.app_version,
-            output=args.output,
-            use_mirror=use_mirror,
-            build_only=args.build_only,
+        return BuildService().run(
+            build_request_from_args(args, use_mirror=use_mirror, render_only=True)
         )
-        logger.info("Done")
-        return 0
 
     if args.command == "build":
-        resolved_image, resolved_tag = resolve_image_and_tag(
-            app_version=args.app_version,
-            template=args.template,
-            image_arg=args.image,
-            tag_arg=args.tag,
+        return BuildService().run(
+            build_request_from_args(args, use_mirror=use_mirror, render_only=False)
         )
-
-        # Full static checks before the expensive generate+build (same suite
-        # as ``validate``).
-        _resolved_template = select_template(args.app_version, args.template)
-        run_static_checks(_resolved_template.parent, load_env_yaml(_resolved_template))
-
-        dockerfile = generate_dockerfile(
-            template=args.template,
-            app_version=args.app_version,
-            output=args.output,
-            use_mirror=use_mirror,
-            build_only=args.build_only,
-        )
-
-        if args.engine == "apptainer":
-            logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
-            build_apptainer(definition_file=dockerfile, image=resolved_image, tag=resolved_tag)
-        else:
-            logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
-            build_docker_like(
-                dockerfile=dockerfile,
-                image=resolved_image,
-                tag=resolved_tag,
-                engine=args.engine,
-                network_host=args.network_host,
-                build_args=args.build_arg,
-                build_opts=args.build_opt,
-            )
-        logger.info("Done")
-        return 0
 
     parser.print_help()
     return 1

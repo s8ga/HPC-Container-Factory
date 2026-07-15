@@ -1,42 +1,49 @@
-"""Integration tests: _build_*_script against real spack 1.1.1.
+"""Integration matrix skeleton: Spack versions + custom-repo prototype.
 
-These tests create a persistent container, set up a minimal spack env
-(pkgconf — 0 deps) using spack CLI, and exercise the full pipeline.
-Skipped by default; run with:
-
-    pytest --run-integration
-    # or
-    python scripts/integration-test.py
+Opt-in only (``pytest --run-integration``).  Does **not** build full HPC
+images — exercises script contracts against a minimal pkgconf env and a
+synthetic local repo.  Missing assets for a matrix cell → skip that cell.
 """
 from __future__ import annotations
 
 import pytest
 
-from hpc_cf.config import ASSETS_DIR, PROJECT_ROOT
 from hpc_cf.container import Container
+from hpc_cf.execution import ProjectLayout
 from hpc_cf.spack_ops import EnvConfig, SpackConfig, SpackOps
 
-SPACK_VERSION = "1.1.1"
+# Matrix: extend when assets/spack-vX.Y.Z.tar.gz + bootstrap-X.Y.Z exist.
+SPACK_VERSIONS = ("1.1.1", "1.2.0")
 IMAGE = "hpc-mirror-builder"
 CONTAINER_NAME = "hpc-itest"
 ENV_DIR = "/tmp/itest-env"
 MIRROR_DIR = "/tmp/itest-mirror"
 
 
-@pytest.fixture(scope="class")
-def spack_ops():
+def _assets_ready(version: str, layout: ProjectLayout | None = None) -> bool:
+    assets = (layout or ProjectLayout.default()).assets_dir
+    return (assets / f"spack-v{version}.tar.gz").exists() and (
+        assets / f"bootstrap-{version}"
+    ).is_dir()
+
+
+@pytest.fixture(scope="class", params=SPACK_VERSIONS)
+def spack_ops(request):
     """Create container + SpackOps + minimal env (pkgconf) via spack CLI.
 
-    Uses spack's own CLI (env create -d, add) — no hand-written YAML.
-    Teardown destroys the container on class exit.
+    Parametrized over :data:`SPACK_VERSIONS`; cells without assets are skipped.
     """
-    if not (ASSETS_DIR / f"spack-v{SPACK_VERSION}.tar.gz").exists():
-        pytest.skip(f"assets/spack-v{SPACK_VERSION}.tar.gz not found")
-    if not (ASSETS_DIR / f"bootstrap-{SPACK_VERSION}").is_dir():
-        pytest.skip(f"assets/bootstrap-{SPACK_VERSION} not found")
+    version = request.param
+    layout = ProjectLayout.default()
+    if not _assets_ready(version, layout):
+        pytest.skip(f"assets for spack {version} not found under {layout.assets_dir}")
 
-    env_config = EnvConfig(spack=SpackConfig(version=SPACK_VERSION, env_name="itest"))
-    ctr = Container(name=CONTAINER_NAME, image=IMAGE, project_root=PROJECT_ROOT)
+    env_config = EnvConfig(spack=SpackConfig(version=version, env_name="itest"))
+    ctr = Container(
+        name=f"{CONTAINER_NAME}-{version.replace('.', '_')}",
+        image=IMAGE,
+        project_root=layout.project_root,
+    )
     ops = SpackOps(env_config, ctr)
 
     ctr.create()
@@ -45,8 +52,6 @@ def spack_ops():
         ops.clean_stale_state()
         ops.compiler_find()
 
-        # Create minimal env via spack CLI (no heredoc / manual YAML).
-        # pkgconf: 0 deps, builtin package, tiny source — ideal for fast testing.
         ops.ctr.exec(f"""\
 {ops._source_spack()}
 rm -rf {ENV_DIR}
@@ -54,7 +59,6 @@ spack env create -d {ENV_DIR}
 spack -e {ENV_DIR} add pkgconf
 spack -e {ENV_DIR} config add concretizer:unify:true
 """)
-
         yield ops
     finally:
         try:
@@ -101,9 +105,8 @@ class TestSpackScriptsIntegration:
             f"repo update didn't report success: {output[-300:]}"
 
     def test_register_local_repo(self, spack_ops: SpackOps):
-        """Spack can register a local repo."""
+        """Custom-repo prototype: Spack registers a synthetic local repo."""
         ops = spack_ops
-        # Create a minimal local repo inside the container.
         ops.ctr.exec("""
 mkdir -p /tmp/itest-local-repo/packages/fakepkg
 cat > /tmp/itest-local-repo/repo.yaml << 'EOF'
@@ -165,3 +168,54 @@ EOF
         ops.ctr.exec("rm -f /tmp/home/.bash_profile")
         assert stats["failed"] != -1, f"regex didn't match: {stats}"
         assert stats["failed"] >= 1
+
+
+@pytest.mark.integration
+@pytest.mark.e2e
+def test_e2e_boundary_skeleton_render_smoke(tmp_path):
+    """Opt-in E2E skeleton: validation → render → Dockerfile parser smoke.
+
+    Covers ``use_mirror=True`` and the current ``generate_dockerfile`` signature
+    without building a full image. Uses the newest ``cp2k_opensource-2026*``
+    env when present; skips otherwise.
+    """
+    from hpc_cf.env import list_available_envs
+    from hpc_cf.environment import load_environment_spec
+    from hpc_cf.execution import ProjectLayout
+    from hpc_cf.spack_plan import build_spack_environment_plan
+    from hpc_cf.template import generate_dockerfile
+    from hpc_cf.validation import ValidationProfile, validate_environment
+
+    layout = ProjectLayout.default()
+    candidates = [
+        e for e in list_available_envs(layout=layout) if e.startswith("cp2k_opensource-2026")
+    ]
+    if not candidates:
+        pytest.skip("no cp2k_opensource-2026* env present")
+    env_name = sorted(candidates)[-1]
+    env_dir = layout.spack_envs_dir / env_name
+
+    report = validate_environment(env_dir, ValidationProfile.CONFIG, layout=layout)
+    assert report.ok, report.format_text()
+
+    out = tmp_path / f".e2e-{env_name}.Dockerfile"
+    path = generate_dockerfile(
+        template=None,
+        app_version=env_name,
+        output=out,
+        use_mirror=True,
+        build_only=False,
+    )
+    rendered = path.read_text(encoding="utf-8")
+    plan = build_spack_environment_plan(load_environment_spec(env_dir))
+
+    # Render smoke: plan env name + mirror registration under independent site scope.
+    assert f"spack env create {plan.env_name}" in rendered
+    assert "local-mirror file:///opt/spack-mirror" in rendered
+    assert f"spack mirror add --scope {plan.mirror_scope_flag()} " in rendered
+
+    # Lightweight Dockerfile parser smoke (multi-stage / FROM lines).
+    from_lines = [ln for ln in rendered.splitlines() if ln.startswith("FROM ")]
+    assert from_lines, "rendered Dockerfile must contain FROM instructions"
+    assert "AS builder" in rendered or len(from_lines) >= 1
+    assert "{{" not in rendered and "{%" not in rendered

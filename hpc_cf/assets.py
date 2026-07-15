@@ -6,20 +6,18 @@ Orchestrates ``Container`` and ``SpackOps`` to replace:
   - ``scripts/prepare-bootstrap-cache.sh``
   - ``scripts/spack-common.sh`` (streamline_dispatch)
 
-This module is the *only* place that wires together Container + SpackOps
-into user-facing workflows.  The CLI layer (``cli.py``) calls
-:func:`run_assets` and nothing else from here.
+The CLI builds an :class:`~hpc_cf.workflows.AssetsRequest` and calls
+:class:`~hpc_cf.workflows.AssetsService`; this module owns the domain steps.
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 from pathlib import Path
 
-from hpc_cf.config import PROJECT_ROOT
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
+from hpc_cf.execution import ProjectLayout, SharedMirrorStore
 from hpc_cf.spack_ops import (
     EXPECTED_BOOTSTRAP_BINARIES,
     EnvConfig,
@@ -29,6 +27,7 @@ from hpc_cf.spack_ops import (
     resolve_env_paths,
 )
 from hpc_cf.template import detect_non_host_network
+from hpc_cf.workflows import AssetsRequest
 
 logger = logging.getLogger(__name__)
 
@@ -36,26 +35,38 @@ logger = logging.getLogger(__name__)
 # ── Internal helpers ─────────────────────────────────────────────────────
 
 
-def _make_container(args: argparse.Namespace) -> Container:
-    """Build a Container from the CLI args namespace."""
+def _make_container(
+    request: AssetsRequest,
+    layout: ProjectLayout,
+) -> Container:
+    """Build a Podman Container from an assets request + layout."""
     return Container(
-        name=args.container_name,
-        image=args.mirror_image,
-        project_root=PROJECT_ROOT,
-        podman_cmd=args.podman_cmd,
-        extra_opts=getattr(args, "podman_opt", None) or [],
+        name=request.container_name,
+        image=request.mirror_image,
+        project_root=layout.project_root,
+        podman_cmd=request.podman_cmd,
+        extra_opts=list(request.podman_opt),
     )
 
 
-def _make_spack_ops(env_name: str, container: Container) -> tuple[EnvConfig, SpackOps]:
+def _make_spack_ops(
+    env_name: str,
+    container: Container,
+    *,
+    layout: ProjectLayout | None = None,
+) -> tuple[EnvConfig, SpackOps]:
     """Load env.yaml and create a SpackOps for the given environment."""
-    host_dir, _ = resolve_env_paths(env_name)
+    host_dir, _ = resolve_env_paths(env_name, layout=layout)
     env_config = load_env_config(host_dir)
-    ops = SpackOps(env_config, container)
+    ops = SpackOps(env_config, container, layout=layout)
     return env_config, ops
 
 
-def find_bootstrap_dir(spack_version: str | None = None) -> Path | None:
+def find_bootstrap_dir(
+    spack_version: str | None = None,
+    *,
+    layout: ProjectLayout | None = None,
+) -> Path | None:
     """Return an ``assets/bootstrap-*`` directory, or None.
 
     When *spack_version* is given, prefer the exact match
@@ -63,32 +74,29 @@ def find_bootstrap_dir(spack_version: str | None = None) -> Path | None:
     missing) fall back to the first sorted ``bootstrap-*`` directory so
     status/verify still report something when multiple caches exist.
     """
-    assets = PROJECT_ROOT / "assets"
-    if not assets.is_dir():
-        return None
-    if spack_version:
-        exact = assets / f"bootstrap-{spack_version}"
-        if exact.is_dir():
-            return exact
-    for d in sorted(assets.iterdir()):
-        if d.is_dir() and d.name.startswith("bootstrap-"):
-            return d
-    return None
+    return (layout or ProjectLayout.default()).find_bootstrap_dir(spack_version)
 
 
 # ── Image & container lifecycle ──────────────────────────────────────────
 
 
-def ensure_image(ctr: Container) -> None:
+def ensure_image(ctr: Container, *, layout: ProjectLayout | None = None) -> None:
     """Build the mirror-builder image if it doesn't exist."""
-    dockerfile = PROJECT_ROOT / "containers" / "Dockerfile.mirror-builder"
+    root = layout or ProjectLayout.default()
+    dockerfile = root.mirror_builder_dockerfile()
     ctr.ensure_image(dockerfile)
 
 
 # ── Bootstrap ────────────────────────────────────────────────────────────
 
 
-def run_bootstrap(ctr: Container, *, spack_version: str, force: bool = False) -> None:
+def run_bootstrap(
+    ctr: Container,
+    *,
+    spack_version: str,
+    force: bool = False,
+    layout: ProjectLayout | None = None,
+) -> None:
     """Generate bootstrap mirror for the given Spack version.
 
     Uses a minimal EnvConfig with just the version to drive ``SpackOps.bootstrap_mirror()``.
@@ -99,62 +107,145 @@ def run_bootstrap(ctr: Container, *, spack_version: str, force: bool = False) ->
             env_name="bootstrap-env",
         )
     )
-    ops = SpackOps(env_config, ctr)
+    ops = SpackOps(env_config, ctr, layout=layout)
     ops.bootstrap_mirror(force=force)
 
 
 # ── Mirror / verify ─────────────────────────────────────────────────────
 
 
-def run_mirror(ctr: Container, env_name: str) -> None:
-    """Generate source mirror for the given environment."""
-    host_dir, container_dir = resolve_env_paths(env_name)
+def run_mirror(
+    ctr: Container,
+    env_name: str,
+    *,
+    layout: ProjectLayout | None = None,
+) -> dict[str, int]:
+    """Generate source mirror for the given environment.
+
+    Acquires the shared-mirror write lock, writes a run-scoped log directory
+    and a manifest (env, spack version, lock hash, stats).
+    """
+    layout = layout or ProjectLayout.default()
+    host_dir, container_dir = resolve_env_paths(env_name, layout=layout)
 
     if not (host_dir / "spack.yaml").exists():
         raise FileNotFoundError(f"spack.yaml not found: {host_dir}/spack.yaml")
 
-    # Determine mode: if spack.lock exists → mirror only, else → all (concretize + mirror)
-    env_config, ops = _make_spack_ops(env_name, ctr)
-    mirror_dir = "/work/assets/spack-mirror"
+    env_config, ops = _make_spack_ops(env_name, ctr, layout=layout)
+    mirror_dir = layout.container_mirror_dir()
+    store = SharedMirrorStore(layout)
 
-    if (host_dir / "spack.lock").exists():
-        ops.run_mirror_pipeline(str(container_dir), mirror_dir)
-    else:
-        logger.warning("spack.lock NOT found — switching to 'all' mode (concretize + mirror)")
-        ops.run_all_pipeline(host_dir, str(container_dir), mirror_dir)
+    with store.exclusive_write():
+        run = store.begin_run(env_name)
+        if (host_dir / "spack.lock").exists():
+            stats = ops.run_mirror_pipeline(
+                str(container_dir),
+                mirror_dir,
+                create_log=run.create_log_container,
+            )
+        else:
+            logger.warning(
+                "spack.lock NOT found — switching to 'all' mode (concretize + mirror)"
+            )
+            stats = ops.run_all_pipeline(
+                host_dir,
+                str(container_dir),
+                mirror_dir,
+                create_log=run.create_log_container,
+            )
 
-    logger.info("Source mirror generated")
+        store.write_manifest(
+            run,
+            env_name=env_name,
+            spack_version=env_config.spack.version,
+            lock_path=host_dir / "spack.lock",
+            stats=stats,
+            status="success",
+        )
+
+    logger.info("Source mirror generated (run %s)", run.run_id)
+    return stats
 
 
-def run_verify(ctr: Container, env_name: str) -> None:
-    """Verify mirror completeness for the given environment."""
-    host_dir, container_dir = resolve_env_paths(env_name)
+def run_verify(
+    ctr: Container,
+    env_name: str,
+    *,
+    layout: ProjectLayout | None = None,
+) -> dict[str, int]:
+    """Verify mirror completeness for the given environment.
+
+    The full transaction (container verify → host symlink checks → atomic
+    success/failure manifest) runs under the shared mirror write lock so
+    concurrent writers cannot race with verification.
+    """
+    layout = layout or ProjectLayout.default()
+    host_dir, container_dir = resolve_env_paths(env_name, layout=layout)
 
     if not (host_dir / "spack.lock").exists():
         raise FileNotFoundError("spack.lock not found — run concretize or mirror first")
 
-    mirror_dir = "/work/assets/spack-mirror"
-    env_config, ops = _make_spack_ops(env_name, ctr)
-    ops.run_verify_pipeline(str(container_dir), mirror_dir)
+    mirror_dir = layout.container_mirror_dir()
+    env_config, ops = _make_spack_ops(env_name, ctr, layout=layout)
+    store = SharedMirrorStore(layout)
+    stats: dict[str, int] = {"present": -1, "added": -1, "failed": -1}
 
-    # Layer 2: host-side structure verification
-    _verify_host_side(
-        mirror_dir_host=PROJECT_ROOT / "assets" / "spack-mirror",
-        spack_version=env_config.spack.version,
-    )
+    with store.exclusive_write():
+        run = store.begin_run(f"{env_name}-verify")
+        try:
+            stats = ops.run_verify_pipeline(
+                str(container_dir),
+                mirror_dir,
+                verify_log=run.verify_log_container,
+            )
+            _verify_host_side(
+                mirror_dir_host=layout.spack_mirror_dir,
+                spack_version=env_config.spack.version,
+                layout=layout,
+            )
+            store.write_manifest(
+                run,
+                env_name=env_name,
+                spack_version=env_config.spack.version,
+                lock_path=host_dir / "spack.lock",
+                stats=stats,
+                status="success",
+            )
+        except Exception as exc:
+            try:
+                store.write_manifest(
+                    run,
+                    env_name=env_name,
+                    spack_version=env_config.spack.version,
+                    lock_path=host_dir / "spack.lock",
+                    stats=stats,
+                    status="failed",
+                    error=str(exc),
+                )
+            except Exception as write_exc:
+                logger.warning(
+                    "Failed to write verify failure manifest: %s", write_exc
+                )
+            raise
 
-    logger.info("Verification complete")
+    logger.info("Verification complete (run %s)", run.run_id)
+    return stats
 
 
 def _verify_host_side(
     *,
     mirror_dir_host: Path,
     spack_version: str | None = None,
+    layout: ProjectLayout | None = None,
 ) -> None:
-    """Host-side structure checks after container-side verify."""
-    from hpc_cf.container import _count_broken_symlinks
+    """Host-side structure checks after container-side verify.
 
-    layer2_ok = True
+    Result semantics for broken-symlink probing:
+      - ``broken > 0`` → hard failure (``RuntimeError``)
+      - ``broken == -1`` → warning only (probe failed; status unknown)
+      - ``broken == 0`` → pass
+    """
+    from hpc_cf.container import _count_broken_symlinks
 
     # Broken symlinks (-1 = check itself failed; do not treat as "has broken links")
     broken = _count_broken_symlinks(mirror_dir_host) if mirror_dir_host.exists() else 0
@@ -163,15 +254,16 @@ def _verify_host_side(
             "Broken-symlink check failed for %s — could not determine status",
             mirror_dir_host,
         )
-        layer2_ok = False
     elif broken > 0:
         logger.error("Broken symlinks found in mirror")
-        layer2_ok = False
+        raise RuntimeError(
+            f"Broken symlinks found in mirror ({broken}): {mirror_dir_host}"
+        )
     else:
         logger.info("No broken symlinks in mirror")
 
     # Bootstrap metadata (prefer version declared in env.yaml)
-    bootstrap_dir = find_bootstrap_dir(spack_version)
+    bootstrap_dir = find_bootstrap_dir(spack_version, layout=layout)
 
     if bootstrap_dir:
         metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
@@ -188,23 +280,34 @@ def _verify_host_side(
             if not f.exists() or f.stat().st_size == 0:
                 logger.debug("Missing optional binary metadata: %s", f)
 
-    if layer2_ok:
-        logger.info("All verification layers passed ✓")
+    if broken < 0:
+        logger.warning(
+            "Host-side verify finished with warnings (symlink probe inconclusive)"
+        )
     else:
-        logger.warning("Some structure checks failed (mirror may still be functional)")
+        logger.info("All verification layers passed ✓")
 
 
 # ── Status ──────────────────────────────────────────────────────────────
 
 
-def run_status(ctr: Container, env_name: str) -> None:
+def run_status(
+    ctr: Container,
+    env_name: str,
+    *,
+    layout: ProjectLayout | None = None,
+) -> None:
     """Print comprehensive status report."""
-    host_dir, _ = resolve_env_paths(env_name)
-    bootstrap_dir = find_bootstrap_dir(spack_version_for_env(env_name))
+    layout = layout or ProjectLayout.default()
+    host_dir, _ = resolve_env_paths(env_name, layout=layout)
+    bootstrap_dir = find_bootstrap_dir(
+        spack_version_for_env(env_name, layout=layout),
+        layout=layout,
+    )
 
     ctr.status(
         bootstrap_dir=bootstrap_dir,
-        mirror_dir=PROJECT_ROOT / "assets" / "spack-mirror",
+        mirror_dir=layout.spack_mirror_dir,
         env_name=env_name,
         spack_env_dir=host_dir,
     )
@@ -213,28 +316,39 @@ def run_status(ctr: Container, env_name: str) -> None:
 # ── Main entry point ────────────────────────────────────────────────────
 
 
-def run_assets(args: argparse.Namespace) -> None:
-    """Top-level assets workflow — called by the CLI dispatcher.
+def run_assets(
+    request: AssetsRequest,
+    *,
+    layout: ProjectLayout | None = None,
+) -> None:
+    """Top-level assets workflow — called by :class:`~hpc_cf.workflows.AssetsService`.
 
     Handles:
-      - ``--env`` without value → list environments
+      - ``env == "__LIST__"`` → list environments
       - Default one-command workflow (image → container → bootstrap → mirror → verify)
-      - Explicit action flags (``--create-container``, ``--prepare-bootstrap``, etc.)
+      - Explicit action flags (create_container, prepare_bootstrap, etc.)
     """
-    # no_spack envs don't use spack assets at all.
-    if args.env and args.env != "__LIST__":
-        try:
-            from hpc_cf.env import load_env_yaml
-            from hpc_cf.template import select_template
+    layout = layout or ProjectLayout.default()
 
-            tpl = select_template(args.env, None)
-            if load_env_yaml(tpl).get("method") == "no_spack":
-                print(f"Env '{args.env}' is method=no_spack — no spack assets needed.")
+    # Methods that do not require Spack assets (e.g. no_spack) skip entirely.
+    # Validation preflight lives solely in AssetsService (profile by action).
+    if request.env and request.env != "__LIST__":
+        try:
+            from hpc_cf.environment import load_environment_spec
+            from hpc_cf.spack_ops import resolve_env_paths as _resolve
+
+            host_dir, _ = _resolve(request.env, layout=layout)
+            spec = load_environment_spec(host_dir)
+            if not spec.method.requires_spack_assets:
+                print(
+                    f"Env '{request.env}' is method={spec.method.value} — "
+                    f"no spack assets needed."
+                )
                 return
         except FileNotFoundError:
             pass
 
-    non_host_mode = detect_non_host_network(getattr(args, "podman_opt", None))
+    non_host_mode = detect_non_host_network(list(request.podman_opt) or None)
     if non_host_mode:
         logger.warning(
             "Non-host network mode '%s' may prevent proxy access; prefer --network=host.",
@@ -242,8 +356,8 @@ def run_assets(args: argparse.Namespace) -> None:
         )
 
     # --env without value → list available environments
-    if args.env == "__LIST__":
-        envs = list_available_envs()
+    if request.env == "__LIST__":
+        envs = list_available_envs(layout=layout)
         if envs:
             print("Available environments (--env <name>):")
             for e in envs:
@@ -252,70 +366,80 @@ def run_assets(args: argparse.Namespace) -> None:
             print("No environments found under spack-envs/.")
         return
 
-    ctr = _make_container(args)
+    ctr = _make_container(request, layout)
     image_ready = False
 
     def ensure_image_once() -> None:
         nonlocal image_ready
-        if image_ready or args.skip_image_build:
+        if image_ready or request.skip_image_build:
             return
-        ensure_image(ctr)
+        ensure_image(ctr, layout=layout)
         image_ready = True
 
     action_flags = any(
         [
-            args.prepare_bootstrap,
-            args.download_mirror,
-            args.verify_mirror,
-            args.create_container,
-            args.status,
+            request.prepare_bootstrap,
+            request.download_mirror,
+            request.verify_mirror,
+            request.create_container,
+            request.status,
         ]
     )
 
     # ── status ──
-    if args.status:
-        if not args.env:
+    if request.status:
+        if not request.env:
             raise ValueError("--env is required for status")
-        run_status(ctr, args.env)
+        run_status(ctr, request.env, layout=layout)
         return
 
     # ── Default one-command workflow ──
     if not action_flags:
-        if not args.env:
+        if not request.env:
             raise ValueError("--env is required for default assets workflow")
 
         ensure_image_once()
 
-        if not args.skip_create_container:
+        if not request.skip_create_container:
             ctr.create()
 
-        spack_ver = spack_version_for_env(args.env)
-        run_bootstrap(ctr, spack_version=spack_ver, force=args.force_bootstrap)
+        spack_ver = spack_version_for_env(request.env, layout=layout)
+        run_bootstrap(
+            ctr,
+            spack_version=spack_ver,
+            force=request.force_bootstrap,
+            layout=layout,
+        )
 
-        run_mirror(ctr, args.env)
+        run_mirror(ctr, request.env, layout=layout)
 
-        if not args.skip_verify:
-            run_verify(ctr, args.env)
+        if not request.skip_verify:
+            run_verify(ctr, request.env, layout=layout)
         return
 
     # ── Explicit actions mode ──
-    if args.create_container:
+    if request.create_container:
         ensure_image_once()
         ctr.create()
 
-    if args.prepare_bootstrap:
+    if request.prepare_bootstrap:
         ensure_image_once()
-        spack_ver = spack_version_for_env(getattr(args, "env", None))
-        run_bootstrap(ctr, spack_version=spack_ver, force=args.force_bootstrap)
+        spack_ver = spack_version_for_env(request.env, layout=layout)
+        run_bootstrap(
+            ctr,
+            spack_version=spack_ver,
+            force=request.force_bootstrap,
+            layout=layout,
+        )
 
-    if args.download_mirror:
-        if not args.env:
+    if request.download_mirror:
+        if not request.env:
             raise ValueError("--env is required with --download-mirror")
         ensure_image_once()
-        run_mirror(ctr, args.env)
+        run_mirror(ctr, request.env, layout=layout)
 
-    if args.verify_mirror:
-        if not args.env:
+    if request.verify_mirror:
+        if not request.env:
             raise ValueError("--env is required with --verify-mirror")
         ensure_image_once()
-        run_verify(ctr, args.env)
+        run_verify(ctr, request.env, layout=layout)

@@ -13,9 +13,14 @@ from hpc_cf.env import (
 
 
 def test_validate_manual_packages_sha256_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from hpc_cf.execution import ProjectLayout
+
     pkg = tmp_path / "manual.tgz"
     pkg.write_bytes(b"content-a")
-    monkeypatch.setattr("hpc_cf.env.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "hpc_cf.env.ProjectLayout.default",
+        classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
+    )
 
     with pytest.raises(ValueError, match="sha256 mismatch"):
         validate_manual_packages(
@@ -33,9 +38,13 @@ def test_validate_manual_packages_sha256_mismatch(tmp_path: Path, monkeypatch: p
 def test_validate_spack_assets_missing_tarball(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    monkeypatch.setattr("hpc_cf.config.ASSETS_DIR", assets)
+    from hpc_cf.execution import ProjectLayout
+
+    (tmp_path / "assets").mkdir()
+    monkeypatch.setattr(
+        "hpc_cf.env.ProjectLayout.default",
+        classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
+    )
 
     with pytest.raises(FileNotFoundError, match="Spack tarball"):
         validate_spack_assets({"method": "spack", "spack": {"version": "9.9.9"}})

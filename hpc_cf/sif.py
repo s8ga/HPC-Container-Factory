@@ -12,10 +12,11 @@ from pathlib import Path
 from hpc_cf.config import (
     APPTAINER_LOCAL_PREFIX,
     APPTAINER_INSTALL_SCRIPT,
-    PROJECT_ROOT,
+    PROJECT_ROOT as _CONFIG_PROJECT_ROOT,
     SCRIPTS_DIR,
     TOOLS_DIR,
 )
+from hpc_cf.execution import ProjectLayout
 from hpc_cf.template import (
     render_template,
     resolve_output_image_tag,
@@ -23,6 +24,26 @@ from hpc_cf.template import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Module-level alias so tests can ``monkeypatch.setattr(sif, "PROJECT_ROOT", ...)``.
+# Prefer :class:`~hpc_cf.execution.ProjectLayout` for new call paths.
+PROJECT_ROOT = _CONFIG_PROJECT_ROOT
+
+
+def _layout() -> ProjectLayout:
+    return ProjectLayout(project_root=PROJECT_ROOT)
+
+
+def _resolve_output_path(output: Path) -> Path:
+    """Absolutize *output* relative to the process cwd before spawning a tool.
+
+    Callers may pass a relative path while ``apptainer build`` runs with
+    ``cwd=artifacts/``; resolving up-front keeps post-build ``stat`` correct.
+    """
+    path = output.expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
 
 
 # ── Command helpers ──────────────────────────────────────────────────────
@@ -141,9 +162,13 @@ def _human_size(n_bytes: int) -> str:
     return f"{n_bytes:.0f} TB"
 
 
-def _find_def_template(app_version: str) -> Path | None:
+def _find_def_template(
+    app_version: str,
+    *,
+    layout: ProjectLayout | None = None,
+) -> Path | None:
     """Look for a *.def.j2 in the spack-envs/<app_version>/ directory."""
-    env_dir = PROJECT_ROOT / "spack-envs" / app_version
+    env_dir = (layout or _layout()).spack_envs_dir / app_version
     candidates = sorted(env_dir.glob("*.def.j2"))
     return candidates[0] if candidates else None
 
@@ -169,10 +194,11 @@ def run_cmd(
     *,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
+    layout: ProjectLayout | None = None,
 ) -> None:
     import shlex
 
-    run_cwd = cwd or PROJECT_ROOT
+    run_cwd = cwd or (layout or _layout()).project_root
     logger.info("Running: %s", shlex.join(cmd))
     subprocess.run(cmd, cwd=run_cwd, env=env, check=True)
 
@@ -242,10 +268,12 @@ def build_sif(
     app_version: str | None = None,
     mksquashfs_args: str = "-comp zstd -Xcompression-level 22 -b 1M",
     yes: bool = False,
+    layout: ProjectLayout | None = None,
 ) -> None:
     """Build a SIF image from an existing Docker/Podman OCI image."""
     apptainer = ensure_apptainer(auto_confirm=yes)
-    artifacts_dir = PROJECT_ROOT / "artifacts"
+    root = layout or _layout()
+    artifacts_dir = root.artifacts_dir
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Export OCI image to tar
@@ -271,19 +299,21 @@ def build_sif(
         logger.info("Reusing existing OCI tar: %s", tar_path)
     else:
         logger.info("Exporting %s via %s ...", oci_ref, engine)
-        run_cmd([engine, "save", "-o", str(tar_path), oci_ref])
+        run_cmd([engine, "save", "-o", str(tar_path), oci_ref], layout=root)
 
     tar_size = _human_size(tar_path.stat().st_size)
     logger.info("OCI tar: %s (%s)", tar_path, tar_size)
 
     # Step 2: Render definition file
-    def_template = _find_def_template(app_version) if app_version else None
+    def_template = (
+        _find_def_template(app_version, layout=root) if app_version else None
+    )
 
     timestamp = datetime.now().isoformat()
     resolved_template = None
     if app_version:
         try:
-            resolved_template = select_template(app_version, None)
+            resolved_template = select_template(app_version, None, layout=root)
         except FileNotFoundError:
             pass
     default_image_name, default_image_tag = resolve_output_image_tag(resolved_template)
@@ -295,28 +325,34 @@ def build_sif(
         "timestamp": timestamp,
     }
 
+    # Resolve relative --output against process cwd *before* apptainer runs
+    # with cwd=artifacts/ (otherwise post-build Path.stat looks in the wrong place).
+    if output is not None:
+        sif_name = _resolve_output_path(output)
+        sif_name.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        sif_name = artifacts_dir / f"{flat_image}_{docker_tag}.sif"
+
     if def_template:
         logger.info("Rendering def template: %s", def_template)
-        def_content = render_template(def_template, def_context)
+        def_content = render_template(def_template, def_context, layout=root)
 
         def_file = artifacts_dir / f"{flat_image}_{docker_tag}.def"
         def_file.write_text(def_content, encoding="utf-8")
         logger.info("Definition file written: %s", def_file)
 
-        sif_name = output or artifacts_dir / f"{flat_image}_{docker_tag}.sif"
         cmd = [apptainer, "build", "--force",
                "--mksquashfs-args", mksquashfs_args,
                str(sif_name), str(def_file)]
-        run_cmd(cmd, cwd=artifacts_dir)
+        run_cmd(cmd, cwd=artifacts_dir, layout=root)
     else:
         logger.info("No def template found; building SIF directly from docker-archive")
-        sif_name = output or artifacts_dir / f"{flat_image}_{docker_tag}.sif"
         cmd = [apptainer, "build", "--force",
                "--mksquashfs-args", mksquashfs_args,
                str(sif_name), f"docker-archive://{tar_name}"]
-        run_cmd(cmd, cwd=artifacts_dir)
+        run_cmd(cmd, cwd=artifacts_dir, layout=root)
 
-    sif_size = _human_size(Path(sif_name).stat().st_size)
+    sif_size = _human_size(sif_name.stat().st_size)
     logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
 
 
@@ -324,6 +360,7 @@ def pack_apptainer(
     *,
     output: Path | None = None,
     no_sha256: bool = False,
+    layout: ProjectLayout | None = None,
 ) -> None:
     """Pack local apptainer installation into a makeself self-extracting archive."""
     if not APPTAINER_LOCAL_PREFIX.exists():
@@ -343,13 +380,18 @@ def pack_apptainer(
     if not activate_script.exists():
         raise FileNotFoundError(f"activate-apptainer.sh not found at {activate_script}")
 
-    artifacts_dir = PROJECT_ROOT / "artifacts"
+    root = layout or _layout()
+    artifacts_dir = root.artifacts_dir
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     apptainer_ver = _get_apptainer_version()
     arch = os.uname().machine
     default_name = f"apptainer-{apptainer_ver}-{arch}.run"
-    output_path = output or artifacts_dir / default_name
+    if output is not None:
+        output_path = _resolve_output_path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path = artifacts_dir / default_name
 
     staging_dir = artifacts_dir / "apptainer-bundle"
     if staging_dir.exists():
@@ -386,7 +428,7 @@ def pack_apptainer(
         ]
 
         logger.info("Running makeself (gzip -9) ...")
-        run_cmd(cmd)
+        run_cmd(cmd, layout=root)
 
         result_size = _human_size(output_path.stat().st_size)
         logger.info("✅ Packed: %s (%s, %.1fx compression)",

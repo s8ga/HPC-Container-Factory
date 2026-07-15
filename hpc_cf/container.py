@@ -1,4 +1,4 @@
-"""Container lifecycle — manages Podman containers for Spack operations.
+"""Container lifecycle — Podman implementation of :class:`~hpc_cf.execution.RunnerPort`.
 
 Replaces the container-management portions of:
   - ``scripts/build-mirror-in-container.sh`` (cmd_image, cmd_create_container,
@@ -13,13 +13,15 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from hpc_cf.config import PROJECT_ROOT
+from hpc_cf.execution import ProjectLayout
 
 logger = logging.getLogger(__name__)
 
 
 class Container:
-    """Manages a persistent or ephemeral Podman container for Spack operations.
+    """Podman-backed runner implementing ``exec`` / ``run_ephemeral``.
+
+    Satisfies :class:`~hpc_cf.execution.RunnerPort` structurally.
 
     Parameters
     ----------
@@ -29,6 +31,7 @@ class Container:
         Container image tag (e.g. ``"hpc-mirror-builder"``).
     project_root:
         Host path that is bind-mounted at ``/work`` inside the container.
+        Defaults to :meth:`ProjectLayout.default` ``.project_root``.
     podman_cmd:
         Podman executable (default ``"podman"``).
     extra_opts:
@@ -45,7 +48,7 @@ class Container:
     ) -> None:
         self.name = name
         self.image = image
-        self.project_root = project_root or PROJECT_ROOT
+        self.project_root = project_root or ProjectLayout.default().project_root
         self.podman_cmd = podman_cmd
         self.extra_opts = extra_opts or []
 
@@ -371,6 +374,15 @@ def _count_broken_symlinks(path: Path) -> int:
             ["find", "-L", str(path), "-type", "l"],
             capture_output=True, text=True, check=False,
         )
+        if result.returncode != 0:
+            err = (result.stderr or "").strip() or (result.stdout or "").strip()
+            logger.warning(
+                "broken-symlink check failed for %s (rc=%s): %s",
+                path,
+                result.returncode,
+                err or "(no stderr)",
+            )
+            return -1
         lines = [ln for ln in result.stdout.strip().splitlines() if ln]
         return len(lines)
     except Exception as exc:
