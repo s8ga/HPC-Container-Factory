@@ -87,7 +87,7 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         "--allow-reconcretize",
         action="store_true",
         help=(
-            "Permit image builds without a non-empty spack.lock "
+            "Permit build/dockerfile without a non-empty spack.lock "
             "(fail-open; installs may re-concretize). Default is fail-closed."
         ),
     )

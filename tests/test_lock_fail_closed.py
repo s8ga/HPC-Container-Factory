@@ -239,3 +239,74 @@ def test_assets_service_aborts_when_env_yaml_missing(tmp_path: Path) -> None:
     ):
         AssetsService(layout=layout).run(AssetsRequest(env="demo", status=True))
     mock_run.assert_not_called()
+
+
+def test_dockerfile_render_only_fails_without_lock(tmp_path: Path) -> None:
+    """dockerfile CLI (render_only) must fail-closed on missing lock — same as build."""
+    from hpc_cf.workflows import BuildRequest, BuildService
+
+    env_dir = tmp_path / "spack-envs" / "demo"
+    _write_spack_env(env_dir, with_lock=False)
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+
+    with (
+        patch("hpc_cf.template.generate_dockerfile") as mock_gen,
+        pytest.raises(FileNotFoundError, match="spack.lock"),
+    ):
+        BuildService(layout=layout).run(
+            BuildRequest(
+                app_version="demo",
+                render_only=True,
+                output=tmp_path / "out.Dockerfile",
+            )
+        )
+    mock_gen.assert_not_called()
+
+
+def test_dockerfile_render_only_allow_reconcretize_without_lock(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.workflows import BuildRequest, BuildService
+
+    env_dir = tmp_path / "spack-envs" / "demo"
+    _write_spack_env(env_dir, with_lock=False)
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    out = tmp_path / "out.Dockerfile"
+
+    with patch(
+        "hpc_cf.template.generate_dockerfile", return_value=out
+    ) as mock_gen:
+        rc = BuildService(layout=layout).run(
+            BuildRequest(
+                app_version="demo",
+                render_only=True,
+                allow_reconcretize=True,
+                output=out,
+                use_mirror=False,
+                build_only=True,
+            )
+        )
+    assert rc == 0
+    mock_gen.assert_called_once()
+    assert mock_gen.call_args.kwargs.get("allow_reconcretize") is True
+
+
+def test_dockerfile_cli_wires_allow_reconcretize() -> None:
+    from hpc_cf.cli import build_parser
+    from hpc_cf.workflows import build_request_from_args
+
+    args = build_parser().parse_args(
+        [
+            "dockerfile",
+            "--app-version",
+            "demo",
+            "--allow-reconcretize",
+        ]
+    )
+    req = build_request_from_args(args, use_mirror=True, render_only=True)
+    assert req.render_only is True
+    assert req.allow_reconcretize is True

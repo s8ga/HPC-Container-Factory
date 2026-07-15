@@ -172,16 +172,12 @@ class BuildService:
         resolved = resolve_build_input(
             request.app_version, request.template, layout=self.layout
         )
-        # dockerfile → config/template; build → build-input.
-        profile = (
-            ValidationProfile.CONFIG
-            if request.render_only
-            else ValidationProfile.BUILD_INPUT
-        )
+        # dockerfile and build both use build-input so missing/empty
+        # spack.lock fails closed unless --allow-reconcretize.
         run_static_checks(
             resolved.environment_dir,
             resolved.environment_spec,
-            profile=profile,
+            profile=ValidationProfile.BUILD_INPUT,
             layout=self.layout,
             allow_reconcretize=request.allow_reconcretize,
         )

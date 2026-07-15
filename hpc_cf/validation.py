@@ -1,13 +1,13 @@
 """Structured validation profiles, findings, and reports.
 
-Three profiles keep cheap render checks separate from build/asset
+Three profiles keep cheap config checks separate from build/asset
 preconditions that need large on-disk inputs:
 
 * ``config`` / ``template`` — schema, Dockerfile branch params, spack.yaml
-  sanity.  Run on every Dockerfile render.
+  sanity.  Used by ``validate --profile config`` (cheap static checks).
 * ``build-input`` — config plus manual_packages, Spack tarball, and a
   non-empty ``spack.lock`` (unless ``--allow-reconcretize``).  Run before
-  ``build``.
+  ``build`` and ``dockerfile`` (both fail closed on missing/empty lock).
 * ``assets`` — schema, spack.yaml, and Spack assets needed to prepare
   bootstrap/mirror.  Run before ``assets`` workflows that touch an env.
 """
@@ -387,6 +387,11 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
     return findings
 
 
+def is_nonempty_spack_lock(path: Path) -> bool:
+    """Return True if *path* is a present, non-empty ``spack.lock`` file."""
+    return path.is_file() and path.stat().st_size > 0
+
+
 def collect_spack_lock(
     env_dir: Path,
     *,
@@ -402,7 +407,7 @@ def collect_spack_lock(
         env_dir / "spack.lock",
     ]
     lock = next(
-        (c for c in candidates if c.is_file() and c.stat().st_size > 0),
+        (c for c in candidates if is_nonempty_spack_lock(c)),
         None,
     )
     if lock is not None:

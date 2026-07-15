@@ -206,9 +206,9 @@ def run_static_checks(
 ) -> None:
     """Run a validation profile and raise on errors.
 
-    Default is ``build-input`` (pre-build suite). Shared by ``validate`` and
-    ``build``. Use ``config`` for render-only paths that must not require
-    large assets.
+    Default is ``build-input`` (pre-build / dockerfile suite). Shared by
+    ``validate``, ``build``, and ``dockerfile``. Use ``config`` for cheap
+    static checks that must not require large assets or a lock.
     """
     assert_valid(
         env_dir,
