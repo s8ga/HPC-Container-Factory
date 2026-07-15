@@ -481,6 +481,10 @@ def render_template(
         ),
         trim_blocks=True,
         lstrip_blocks=True,
+        # Included partials often end with a final newline that separates adjacent
+        # Dockerfile RUN/COMMENT blocks. Jinja strips it unless this is enabled,
+        # which glues ``echo ...mirror`` onto the next ``# comment`` / ``RUN``.
+        keep_trailing_newline=True,
         undefined=StrictUndefined,
     )
 

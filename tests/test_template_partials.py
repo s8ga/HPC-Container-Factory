@@ -126,6 +126,20 @@ def test_duplicate_template_lines_reduced_at_least_40_percent() -> None:
     )
 
 
+def test_pilot_render_keeps_newline_between_partials() -> None:
+    """Adjacent includes must not glue Dockerfile statements onto one line.
+
+    Jinja defaults to stripping a template's trailing newline; without
+    ``keep_trailing_newline=True`` that concatenates ``echo ...mirror`` with
+    the next ``# comment`` / ``fi'`` with the next ``RUN``.
+    """
+    rendered = _render_pilot(use_mirror=True, build_only=False)
+    assert "mirror\"#" not in rendered
+    assert "mirror\"\n#" in rendered or 'mirror"\r\n#' in rendered
+    assert "fi'RUN" not in rendered
+    assert "fi'\nRUN" in rendered or "fi'\r\nRUN" in rendered
+
+
 def test_pilot_render_preserves_spack_semantics() -> None:
     """Pilot render must keep shared Spack steps and CP2K-specific features."""
     rendered = _render_pilot(use_mirror=True, build_only=False)
