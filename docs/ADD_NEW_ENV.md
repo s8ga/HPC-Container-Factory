@@ -60,6 +60,8 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
   - **git**: 有 `url` → sparse clone + register
   - **local**: 有 `path` → 直接 register（相对 `spack-env-file/`）
   - **phases**: `both`（默认）/ `assets` / `image`（例如仅镜像构建用的 AVX512 override）
+  - 若同一 git repo 的 branch/url 也出现在 `template_vars`（如 `cp2k_branch`），
+    **短期双写必须同步**；image 注册尚未统一走 `spack_image_repos` partial
 
 ### Step 3: 修改 `spack-env-file/spack.yaml`
 

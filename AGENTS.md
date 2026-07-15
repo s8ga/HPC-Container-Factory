@@ -61,11 +61,26 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 ## Key Design Decisions
 
 - `method: spack|no_spack` in env.yaml — discriminator for build mode (default: spack)
-- `{{ cp2k_branch }}` parametrized in all Dockerfile.j2 (declared once in env.yaml template_vars)
+- **SpackEnvironmentPlan**: reliable contract for **assets** (prepare/register/mirror scripts).
+  Image-side custom repos are still driven by **per-env Dockerfile.j2 + `template_vars`**
+  today; `templates/partials/spack_image_repos.j2` exists but is **not** wired into shipped
+  app templates (do not assume plan alone registers image repos).
+- `mirror_scope` is intentionally fixed to **site** in the plan (not configurable from
+  env.yaml). Custom `repo_scope` must not leak into `spack mirror add --scope`.
+- `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars)
 - `{{ cp2k_dev_repo_path }}` parametrized — cp2k's spack repo path (changes between versions: `tools/spack/cp2k_dev_repo` → `tools/spack/spack_repo/cp2k_dev`)
-- `spack repo update builtin` runs in every pipeline — ensures builtin repo clone matches env config (`repos.builtin.commit` or default branch). Required because `RemoteRepoDescriptor.initialize()` reuses existing clones without checking commit match.
-- Custom repos are fetched before environment creation, then registered in `env:<name>` scope after builtin update. Environment scope is required so overrides take priority over `repos.builtin.commit`; list order remains git repos first, local repo last.
+- `spack repo update builtin` is the **assets** default and the common image default via
+  `spack.image.update_builtin` — but not universal (e.g. VASP sets `image.update_builtin: false`
+  and `repo_scope: site`). Do not document “every pipeline / every env” as identical.
+- Custom repos for assets are fetched before environment creation, then registered per
+  `spack.assets.repo_scope` (often `env:<name>` so overrides beat `repos.builtin.commit`).
+  Image Dockerfiles still emit their own `spack repo add` lines until the image-repos partial
+  is wired.
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
+- Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
+  (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
+- CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
+  for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `config: deprecated: true` in spack.yaml — allows deprecated package versions (e.g. py-torch@2.4.1). Spack v1.2.0 enforces the check at concretize time; this setting bypasses it.
 - `view: false` in spack.yaml + `spack env view enable /opt/spack-view` in Dockerfile — works around spack v1.2.0 PR #52551 which changed view updates from symlink swap to `os.rename` (fails with EXDEV on Docker overlayfs). The view is created after `spack gc` so build dependencies are removed first.
@@ -73,6 +88,13 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `_build_*_script` methods are pure (return str) — unit-testable without a container
 - `Container._run` streams output line-by-line via `Popen` when `capture=False` (real-time `[podman]` logging). `capture=True` uses `subprocess.run` for quick programmatic queries. stderr merged into stdout in streaming mode to avoid pipe deadlock.
 - `set -o pipefail` in all generated bash scripts — ensures `spack ... | tee` pipelines correctly propagate non-zero exit codes.
+
+## Positioning vs conda
+
+hpc_cf targets **HPC source builds** with pinned Spack concretization, offline source
+mirrors, OCI images, and Apptainer SIF — not a general conda replacement. Prefer this
+stack when you need compiler/MPI/GPU variant control and air-gapped mirror installs;
+use conda/mamba when a binary env solver is enough.
 
 ## Adding a New CP2K Version
 

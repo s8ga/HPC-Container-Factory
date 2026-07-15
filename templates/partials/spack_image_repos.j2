@@ -1,7 +1,10 @@
 {# Register image-phase custom repos from SpackEnvironmentPlan.spack_image_repos.
    Expects plan_context keys: spack_env_name, spack_repo_scope, spack_image_repos.
    Does not COPY/clone sources — application templates must stage image_path first.
-   Not wired into shipped app Dockerfiles yet (optional merge-guardrail partial). #}
+
+   STATUS: NOT wired into any shipped app Dockerfile.j2. Image custom repos today
+   still come from per-env templates + template_vars (e.g. cp2k_branch /
+   cp2k_dev_repo_path). Keep this partial as an optional merge-guardrail only. #}
 {% if spack_image_repos %}
 RUN set -euo pipefail; \
 {%- for repo in spack_image_repos %}

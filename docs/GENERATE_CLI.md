@@ -45,9 +45,13 @@ python -m hpc_cf dockerfile \
 | `--output <path>` | 输出 Dockerfile 路径 |
 | `--mirror` / `--no-mirror` | 启用 / 禁用离线 mirror 上下文 |
 | `--build-only` | 只渲染 builder 阶段（模板支持时） |
+| `--allow-reconcretize` | 允许在无非空 `spack.lock` 时渲染/构建（默认 fail-closed） |
 
 `method: no_spack` 且无 per-env `Dockerfile.j2` 时，自动使用共享
 `templates/Dockerfile.nospack.j2`。
+
+> **ProjectLayout**：服务层可注入布局供测试使用；**CLI 不提供**更换项目根 /
+> assets 路径的开关。运维始终使用仓库默认目录树。
 
 ## build
 
@@ -66,6 +70,7 @@ python -m hpc_cf build \
 | `--network-host` | 构建时加 `--network host` |
 | `--build-arg KEY=VAL` | 传递 `--build-arg`（可重复） |
 | `--build-opt OPT` | 额外 build 选项（可重复） |
+| `--allow-reconcretize` | 缺 `spack.lock` 时允许镜像内 reconcretize（默认拒绝） |
 
 命名规则（未传 `--image`/`--tag`）：从 `spack-envs/<name>/` 目录名按
 `<app>_<variant>-<version>[-suffix]` 约定推断；`env.yaml` 中

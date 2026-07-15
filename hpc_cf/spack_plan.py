@@ -54,19 +54,25 @@ class PhasePlan:
 
 @dataclass(frozen=True)
 class SpackEnvironmentPlan:
-    """Authoritative Spack contract for one environment."""
+    """Authoritative Spack contract for one environment.
+
+    Today the plan is the reliable shared contract for **assets** scripts.
+    Image Dockerfiles still stage/register many custom repos via per-env
+    templates + ``template_vars``; ``spack_image_repos`` context is available
+    but the shared partial is not wired into shipped apps yet.
+    """
 
     version: str
     env_name: str
     assets: PhasePlan
     image: PhasePlan
-    # Mirror registration scope is independent of custom-repo scope.
-    # Defaults to site so image ``repo_scope: env`` never leaks into
-    # ``spack mirror add --scope``.
+    # Mirror registration scope is intentionally fixed to site (not read from
+    # env.yaml). Kept independent of custom-repo scope so image
+    # ``repo_scope: env`` never leaks into ``spack mirror add --scope``.
     mirror_scope: RepoScope = RepoScope.SITE
 
     def mirror_scope_flag(self) -> str:
-        """Value for ``spack mirror add --scope``."""
+        """Value for ``spack mirror add --scope`` (always site unless overridden in code)."""
         if self.mirror_scope is RepoScope.ENV:
             return f"env:{self.env_name}"
         return "site"
