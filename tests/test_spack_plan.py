@@ -1,4 +1,11 @@
-"""SpackEnvironmentPlan unit tests and all-env render contracts."""
+"""SpackEnvironmentPlan unit tests and all-env render contracts.
+
+Dual-write must stay in sync: when a git ``custom_repos`` entry's branch / url /
+sparse_path is also exposed via ``template_vars`` (e.g. ``cp2k_branch``,
+``cp2k_dev_repo_path``), both sides must match and the rendered Dockerfile must
+contain those values. Prefer a single source later; until image-repos wiring
+lands, tests enforce the sync.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +30,12 @@ from hpc_cf.spack_plan import (
 from hpc_cf.spack_ops import SpackOps
 from hpc_cf.template import build_context, render_template, select_template
 from hpc_cf.config import SPACK_ENVS_DIR
+
+# template_vars key → CustomRepo attribute that must match when dual-written.
+_DUAL_WRITE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("cp2k_branch", "branch"),
+    ("cp2k_dev_repo_path", "sparse_path"),
+)
 
 
 def _spack_env_dirs() -> list[Path]:
@@ -295,3 +308,68 @@ def test_vasp_image_skips_builtin_update() -> None:
         assert plan.image.update_builtin is False
         assert plan.assets.update_builtin is True
         assert plan.image.repo_scope is RepoScope.SITE
+
+
+def _cp2k_git_repo(spec: EnvironmentSpec) -> CustomRepo | None:
+    """Prefer the git custom_repo that supplies the CP2K spack recipes."""
+    for repo in spec.spack.custom_repos:
+        if repo.type != "git" or not repo.url:
+            continue
+        if "cp2k" in repo.url.lower() or (repo.namespace or "").startswith("cp2k"):
+            return repo
+    return None
+
+
+def _render_env_dockerfile(env_dir: Path) -> str:
+    template_path = select_template(env_dir.name)
+    context = build_context(
+        use_mirror=False,
+        build_only=False,
+        app_version=env_dir.name,
+        template_path=template_path,
+    )
+    return render_template(template_path, context)
+
+
+@pytest.mark.parametrize("env_dir", _spack_env_dirs(), ids=lambda p: p.name)
+def test_custom_repos_template_vars_cross_check_dockerfile(env_dir: Path) -> None:
+    """Git custom_repos dual-written via template_vars must match the Dockerfile."""
+    spec = load_environment_spec(env_dir)
+    if spec.method is BuildMethod.NO_SPACK:
+        pytest.skip("no_spack env has no Spack Dockerfile contract")
+    if not (env_dir / "Dockerfile.j2").exists():
+        pytest.skip("no per-env Dockerfile.j2")
+
+    dual_keys = [k for k, _ in _DUAL_WRITE_FIELDS if k in spec.template_vars]
+    if not dual_keys:
+        pytest.skip("no dual-write template_vars for this env")
+
+    repo = _cp2k_git_repo(spec)
+    assert repo is not None, (
+        f"{env_dir.name}: template_vars {dual_keys} require a matching git custom_repos entry"
+    )
+
+    for tv_key, attr in _DUAL_WRITE_FIELDS:
+        if tv_key not in spec.template_vars:
+            continue
+        tv_val = spec.template_vars[tv_key]
+        repo_val = getattr(repo, attr)
+        assert repo_val, (
+            f"{env_dir.name}: custom_repos.{attr} missing while template_vars.{tv_key}={tv_val!r}"
+        )
+        assert tv_val == repo_val, (
+            f"{env_dir.name}: dual-write drift — template_vars.{tv_key}={tv_val!r} "
+            f"!= custom_repos.{attr}={repo_val!r} (keep them synced)"
+        )
+
+    rendered = _render_env_dockerfile(env_dir)
+    assert repo.url and repo.url in rendered, (
+        f"{env_dir.name}: custom_repos url {repo.url!r} missing from rendered Dockerfile"
+    )
+    for tv_key, attr in _DUAL_WRITE_FIELDS:
+        if tv_key not in spec.template_vars:
+            continue
+        value = str(spec.template_vars[tv_key])
+        assert value in rendered, (
+            f"{env_dir.name}: {tv_key}/{attr} value {value!r} missing from rendered Dockerfile"
+        )
