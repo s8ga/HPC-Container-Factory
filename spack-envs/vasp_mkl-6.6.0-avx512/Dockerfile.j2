@@ -19,83 +19,9 @@ LABEL stage="builder" \
       maintainer="s8ga"
 
 # ============================================================================
-# BUILDER BASE - Common initialization
+# BUILDER BASE - common Spack prelude (APT + install + bootstrap + mirror)
 # ============================================================================
-
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-
-# System dependencies for Spack and compilation
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    bash \
-    build-essential \
-    ca-certificates \
-    curl \
-    environment-modules \
-    gfortran \
-    git \
-    openssh-client \
-    pkg-config \
-    unzip \
-    wget \
-    cmake \
-    file \
-    automake \
-    bzip2 \
-    xxd \
-    xz-utils \
-    zstd \
-    ninja-build \
-    patch \
-    patchelf \
-    pkgconf \
-    libtool-bin \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /opt
-
-# Copy pre-downloaded Spack from assets and extract in builder container
-COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
-
-ENV SPACK_ROOT=/opt/spack-exe
-
-RUN cd /opt && \
-    mkdir ${SPACK_ROOT} && \
-    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
-    rm /tmp/spack.tar.gz && \
-    cd ${SPACK_ROOT} && \
-    ls -la bin/ lib/ var/
-
-ENV PATH="${SPACK_ROOT}/bin:${PATH}"
-
-# Configure Spack to use local bootstrap mirror.
-COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
-    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
-    spack bootstrap disable github-actions-v2 && \
-    spack bootstrap disable github-actions-v0.6 && \
-    spack bootstrap disable spack-install && \
-    spack bootstrap now && \
-    spack bootstrap list && \
-    spack --version && \
-    echo "✅ Spack bootstrap configured from local mirror"
-{% if use_mirror %}
-# Register local mirror as primary source (highest priority)
-RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
-    spack mirror list && \
-    echo "✅ Local source mirror configured at /opt/spack-mirror"
-{% endif %}
-
-# Configure build directory (actual install location set in spack.yaml)
-RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
+{% include 'partials/spack_builder_prelude_debian.j2' %}
 
 # ============================================================================
 # VASP-SPECIFIC BUILD
@@ -115,35 +41,21 @@ RUN mkdir -p /opt/vasp && \
     cp /opt/manual-package/vasp.6.6.0.tgz /opt/vasp/ && \
     echo "✅ VASP source tarball ready: $(ls /opt/vasp/)"
 
-# Prepare the spack environment + configuration
-COPY spack-envs/{{ env_dir_name }}/spack-env-file /opt/spack-env-file
-
-# Create env, then import lock/config/repos from source directory.
-RUN /bin/bash -c 'set -euo pipefail; \
-    spack env create vasp-env /opt/spack-env-file/spack.yaml && \
-    if [ -f /opt/spack-env-file/spack.lock ]; then \
-        cp -f /opt/spack-env-file/spack.lock "${SPACK_ROOT}/var/spack/environments/vasp-env/spack.lock"; \
-        echo "Imported existing spack.lock"; \
-    else \
-        echo "No spack.lock provided; install step will concretize"; \
-    fi'
-
-# Find all compilers + all external packages
-RUN spack compiler find && \
-    spack external find --all --not-buildable
+{% include 'partials/spack_env_create.j2' %}
+{% include 'partials/spack_update_builtin.j2' %}
+{% include 'partials/spack_compiler_find.j2' %}
 
 # Add local repo with custom vasp package.py
-RUN spack repo add --scope site /opt/spack-env-file/repos/ && \
-    spack -e vasp-env repo ls
+RUN spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
+    spack -e {{ spack_env_name }} repo ls
 
-# Fix for OpenMPI@5.0.8: zlib not found
-RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
+{% include 'partials/spack_zlib_fix.j2' %}
 
 # Pre install openmpi and intel-oneapi-mkl (needed for MKL purge step)
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e vasp-env install --fail-fast -j "$(nproc)" -p 20 openmpi intel-oneapi-mkl;
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 openmpi intel-oneapi-mkl;
 
 # Prepare fakeintel library to work around MKL's CPU dispatching issues in AMD cpus.
 COPY spack-envs/{{ env_dir_name }}/libfakeintel /opt/libfakeintel/
@@ -153,7 +65,7 @@ RUN make -C /opt/libfakeintel/ all
 
 # Purge MKL's compiler and IntelMPI to reduce image size.
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack env activate vasp-env && \
+    spack env activate {{ spack_env_name }} && \
     MKL_TRUELOCATION=$(spack location -i intel-oneapi-mkl) && \
     rm -rf "${MKL_TRUELOCATION}/compiler" && \
     rm -rf "${MKL_TRUELOCATION}/mpi" && \
@@ -167,17 +79,17 @@ RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
         cd /opt/vasp && \
-        spack -e vasp-env install --fail-fast -j "$(nproc)" -p 20 --only dependencies;
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies;
 
 # Install VASP itself with --keep-stage to preserve the build directory for testsuite extraction.
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
         cd /opt/vasp && \
-        spack -e vasp-env install --fail-fast -j "$(nproc)" -p 20 --keep-stage vasp;
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --keep-stage vasp;
 
 # Extract VASP testsuite from the spack stage directory.
-RUN VASP_STAGE=$(spack -e vasp-env location -s vasp) && \
+RUN VASP_STAGE=$(spack -e {{ spack_env_name }} location -s vasp) && \
     echo "VASP stage: ${VASP_STAGE}" && \
     mkdir -p /opt/vasp-testsuite && \
     cp -a "${VASP_STAGE}/spack-src/testsuite" /opt/vasp-testsuite/testsuite && \
@@ -189,36 +101,8 @@ RUN cd /opt/vasp-testsuite/testsuite && \
     sed -i '/^include.*makefile\.include/d' makefile && \
     make numbertable
 
-RUN spack -e vasp-env gc -y
-
-# Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
-RUN spack -e vasp-env env view enable /opt/spack-view
-
-# ----------------------------------------------------------------------------
-# STEP: Strip debug symbols
-# ----------------------------------------------------------------------------
-RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "=== Stripping debug symbols (${BEFORE}MB) ===" && \
-    find /opt/spack -type f \( -name '*.so' -o -name '*.so.*' \) \
-        -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
-    find /opt/spack -path '*/bin/*' -type f -print0 2>/dev/null \
-        | xargs -0 -r file 2>/dev/null \
-        | grep 'ELF.*executable' | cut -d: -f1 \
-        | xargs -r strip --strip-all 2>/dev/null || true && \
-    AFTER=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "✅ Stripped: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB)"
-
-# ----------------------------------------------------------------------------
-# STEP: Build manifest
-# ----------------------------------------------------------------------------
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    { echo "=== VASP 6.6.0 Build Manifest ==="; \
-      echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
-      echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
-      echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
-    echo "=== Generating Dependency Graph ===" && \
-    spack -e vasp-env graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
-    echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
+{% set build_manifest_title = "VASP 6.6.0 Build Manifest" %}
+{% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
@@ -233,25 +117,7 @@ LABEL stage="runtime" \
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/spack-view/bin:/opt/bin:$PATH"
 
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-
-# Install minimal runtime dependencies
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    bash \
-    python3 \
-    curl \
-    tar \
-    libgfortran5 \
-    libstdc++6 \
-    libgcc-s1 \
-    libnuma1 \
-    openssh-client \
-    util-linux \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+{% include 'partials/runtime_apt_debian.j2' %}
 
 # Create non-root user for security (before COPY to use --chown)
 RUN useradd -m -s /bin/bash hpc
@@ -279,54 +145,7 @@ COPY --chmod=644 spack-envs/{{ env_dir_name }}/testsuite-file/spack_build_test_f
 RUN { echo "/opt/spack-view/lib"; } > /etc/ld.so.conf.d/vasp.conf && \
     ldconfig
 
-# ----------------------------------------------------------------------------
-# RUNTIME CLEANUP: Remove development-only content to minimize image size
-# ----------------------------------------------------------------------------
-RUN echo "=== Runtime cleanup: removing development-only content ===" && \
-    BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
-    echo "Before: ${BEFORE}MB" && \
-    \
-    echo "--- [1/8] Purging system compiler packages ---" && \
-    apt-get purge -y --auto-remove \
-        gcc-14 gcc-14-x86-64-linux-gnu \
-        gfortran-14 gfortran-14-x86-64-linux-gnu \
-        cpp-14 cpp-14-x86-64-linux-gnu \
-        libgcc-14-dev libgfortran-14-dev \
-        gcc gfortran cpp 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    \
-    echo "--- [2/8] Removing headers (include/) ---" && \
-    find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/include && \
-    rm -rf /usr/include && \
-    \
-    echo "--- [3/8] Removing Python bytecode cache ---" && \
-    find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    \
-    echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
-    for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
-        rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
-    done && \
-    \
-    echo "--- [5/8] Removing docs and man pages ---" && \
-    find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man && \
-    \
-    echo "--- [6/8] Removing .spack metadata ---" && \
-    find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
-    \
-    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
-    find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
-    \
-    echo "--- [8/8] Removing static libraries (.a) ---" && \
-    find /opt -name "*.a" -delete 2>/dev/null || true && \
-    \
-    AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
-    echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
+{% include 'partials/runtime_cleanup.j2' %}
 
 # Create workspace directory
 RUN mkdir -p /workspace && chown hpc:hpc /workspace

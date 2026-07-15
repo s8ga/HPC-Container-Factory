@@ -1,0 +1,9 @@
+{# Standard Debian builder prelude: apt + Spack install + bootstrap + mirror + dirs. #}
+{% include 'partials/builder_apt_debian.j2' %}
+
+{% include 'partials/spack_install.j2' %}
+
+{% include 'partials/spack_bootstrap.j2' %}
+{% include 'partials/spack_mirror.j2' %}
+
+{% include 'partials/spack_build_dirs.j2' %}

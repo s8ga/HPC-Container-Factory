@@ -1,0 +1,11 @@
+{# Strip debug symbols from the Spack install tree to shrink the image. #}
+RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
+    echo "=== Stripping debug symbols (${BEFORE}MB) ===" && \
+    find /opt/spack -type f \( -name '*.so' -o -name '*.so.*' \) \
+        -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
+    find /opt/spack -path '*/bin/*' -type f -print0 2>/dev/null \
+        | xargs -0 -r file 2>/dev/null \
+        | grep 'ELF.*executable' | cut -d: -f1 \
+        | xargs -r strip --strip-all 2>/dev/null || true && \
+    AFTER=$(du -sm /opt/spack/ | cut -f1) && \
+    echo "✅ Stripped: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB)"

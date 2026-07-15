@@ -30,7 +30,7 @@ ARG AMDGPU_TARGETS="gfx942"
 ARG SPACK_MAKE_JOBS=0
 
 # ============================================================================
-# BUILDER BASE - Common initialization
+# BUILDER BASE - ROCm/Ubuntu deps + shared Spack install/bootstrap/mirror
 # ============================================================================
 
 # Configure APT mirrors to use USTC (中科大) for faster downloads in China
@@ -75,44 +75,12 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 
 # Copy pre-downloaded Spack from assets and extract in builder container
 # This avoids network issues and git clone limitations in containers
-COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
+{% include 'partials/spack_install.j2' %}
 
-ENV SPACK_ROOT=/opt/spack-exe
+{% include 'partials/spack_bootstrap.j2' %}
+{% include 'partials/spack_mirror.j2' %}
 
-RUN cd /opt && \
-    mkdir ${SPACK_ROOT} && \
-    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
-    rm /tmp/spack.tar.gz && \
-    cd ${SPACK_ROOT} && \
-    ls -la bin/ lib/ var/
-
-ENV PATH="${SPACK_ROOT}/bin:${PATH}"
-
-# Configure Spack to use local bootstrap mirror.
-COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
-    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
-    spack bootstrap disable github-actions-v2 && \
-    spack bootstrap disable github-actions-v0.6 && \
-    spack bootstrap disable spack-install && \
-    spack bootstrap now && \
-    spack bootstrap list && \
-    spack --version && \
-    echo "✅ Spack bootstrap configured from local mirror"
-
-{% if use_mirror %}
-# Register local mirror as primary source (highest priority)
-RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
-    spack mirror list && \
-    echo "✅ Local source mirror configured at /opt/spack-mirror"
-{% endif %}
-
-# Configure build directory (actual install location set in spack.yaml)
-RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
+{% include 'partials/spack_build_dirs.j2' %}
 
 # ============================================================================
 # CP2K-SPECIFIC BUILD (ROCm)
@@ -129,50 +97,33 @@ RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
     git checkout && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
-# Prepare the spack environment + configuration
-COPY spack-envs/{{ env_dir_name }}/spack-env-file /opt/spack-env-file
-
-# Create env, then import lock/config/repos from source directory.
-RUN /bin/bash -c 'set -euo pipefail; \
-    spack env create cp2k-env /opt/spack-env-file/spack.yaml && \
-    if [ -f /opt/spack-env-file/spack.lock ]; then \
-        cp -f /opt/spack-env-file/spack.lock "${SPACK_ROOT}/var/spack/environments/cp2k-env/spack.lock"; \
-        echo "Imported existing spack.lock"; \
-    else \
-        echo "No spack.lock provided; install step will concretize"; \
-    fi'
-
-# Ensure builtin repo matches env config (repos.builtin.commit or default branch).
-RUN spack -e cp2k-env repo update builtin
-# Find all compilers + all external packages (discovers ROCm 7.2.1 from base image)
-RUN spack compiler find && \
-    spack external find --all --not-buildable
+{% include 'partials/spack_env_create.j2' %}
+{% include 'partials/spack_update_builtin.j2' %}
+{% include 'partials/spack_compiler_find.j2' %}
 
 # Add custom spack repo from CP2K developers and our local repo with custom package overrides
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack repo add --scope site /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack repo add --scope site /opt/spack-env-file/repos/ && \
-    spack -e cp2k-env repo ls
+    spack repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
+    spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
+    spack -e {{ spack_env_name }} repo ls
 
 # ROCm 7.x compatibility for BLT FindHIP.cmake.
 RUN ln -sf /opt/rocm /opt/rocm/hip
 
-# Special Fix for compile OpenMPI@5.0.8
-# checking for zlib library (z) in /usr... not found
-RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
+{% include 'partials/spack_zlib_fix.j2' %}
 
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
 
         echo; \
         echo "Installing libint..."; \
         echo "Note: libint is a critical dependency that often takes the longest to build."; \
         echo; \
 
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 libint & \
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
 
         sleep 5 && \
 
@@ -180,41 +131,22 @@ RUN {% if use_mirror %}
         echo "Concurrently Install cp2k and it's dependencies..."; \
         echo; \
 
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20;
-RUN spack -e cp2k-env gc -y
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
+{% include 'partials/spack_view_enable.j2' %}
 
-# Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
-# Actual library / executable locations are still in /opt/spack/ to allow flexible runtime image construction
-RUN spack -e cp2k-env env view enable /opt/spack-view
-
-# ----------------------------------------------------------------------------
-# STEP: Strip debug symbols
-# ----------------------------------------------------------------------------
-# With padded_length: 0, binaries live under /opt/spack/<os-target>/.../bin|lib
-# Follow symlinks from the view to find and strip all real ELF files.
-
-RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "=== Stripping debug symbols (${BEFORE}MB) ===" && \
-    find /opt/spack -type f \( -name '*.so' -o -name '*.so.*' \) \
-        -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
-    find /opt/spack -path '*/bin/*' -type f -print0 2>/dev/null \
-        | xargs -0 -r file 2>/dev/null \
-        | grep 'ELF.*executable' | cut -d: -f1 \
-        | xargs -r strip --strip-all 2>/dev/null || true && \
-    AFTER=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "✅ Stripped: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB)"
+{% include 'partials/spack_strip.j2' %}
 
 # ----------------------------------------------------------------------------
 # STEP: Build manifest
 # ----------------------------------------------------------------------------
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e cp2k-env env activate --sh > /tmp/env.sh && \
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack -e {{ spack_env_name }} env activate --sh > /tmp/env.sh && \
     . /tmp/env.sh && \
     { echo "=== CP2K 2026.1 ROCm Build Manifest ==="; \
       echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
       echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
     echo "=== Generating Dependency Graph ===" && \
-    spack -e cp2k-env graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
+    spack -e {{ spack_env_name }} graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
 
 # ----------------------------------------------------------------------------

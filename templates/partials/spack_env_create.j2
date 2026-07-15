@@ -1,0 +1,12 @@
+{# Copy env files and create the named Spack environment (import lock if present). #}
+COPY spack-envs/{{ env_dir_name }}/spack-env-file /opt/spack-env-file
+
+# Create env, then import lock/config/repos from source directory.
+RUN /bin/bash -c 'set -euo pipefail; \
+    spack env create {{ spack_env_name }} /opt/spack-env-file/spack.yaml && \
+    if [ -f /opt/spack-env-file/spack.lock ]; then \
+        cp -f /opt/spack-env-file/spack.lock "${SPACK_ROOT}/var/spack/environments/{{ spack_env_name }}/spack.lock"; \
+        echo "Imported existing spack.lock"; \
+    else \
+        echo "No spack.lock provided; install step will concretize"; \
+    fi'

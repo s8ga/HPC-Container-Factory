@@ -1,0 +1,23 @@
+{# Debian runtime APT mirror + common system libraries for Spack-built apps. #}
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    bash \
+    python3 \
+    curl \
+    tar \
+    libgfortran5 \
+    libstdc++6 \
+    libgcc-s1 \
+    libnuma1 \
+    openssh-client \
+    util-linux \
+{% if runtime_extra_apt_pkgs is defined and runtime_extra_apt_pkgs %}
+{% for pkg in runtime_extra_apt_pkgs %}
+    {{ pkg }} \
+{% endfor %}
+{% endif %}
+    && apt-get clean && rm -rf /var/lib/apt/lists/*

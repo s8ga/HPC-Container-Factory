@@ -1,0 +1,4 @@
+{# Ensure builtin repo matches env config (repos.builtin.commit or default branch). #}
+{% if spack_update_builtin %}
+RUN spack -e {{ spack_env_name }} repo update builtin
+{% endif %}

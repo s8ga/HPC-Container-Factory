@@ -1,0 +1,37 @@
+{# Debian builder APT mirror + Spack compile dependencies. #}
+{# Configure APT mirrors to use USTC for faster downloads in China.
+   Debian Trixie uses .sources format in /etc/apt/sources.list.d/ #}
+RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+
+# System dependencies for Spack and compilation
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    curl \
+    environment-modules \
+    gfortran \
+    git \
+    openssh-client \
+    pkg-config \
+    unzip \
+    wget \
+    cmake \
+    file \
+    automake \
+    bzip2 \
+    xxd \
+    xz-utils \
+    zstd \
+    ninja-build \
+    patch \
+    patchelf \
+    pkgconf \
+    libtool-bin \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt

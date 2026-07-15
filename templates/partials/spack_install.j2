@@ -1,0 +1,13 @@
+{# Copy and extract pre-downloaded Spack from assets. #}
+COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
+
+ENV SPACK_ROOT=/opt/spack-exe
+
+RUN cd /opt && \
+    mkdir ${SPACK_ROOT} && \
+    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
+    rm /tmp/spack.tar.gz && \
+    cd ${SPACK_ROOT} && \
+    ls -la bin/ lib/ var/
+
+ENV PATH="${SPACK_ROOT}/bin:${PATH}"

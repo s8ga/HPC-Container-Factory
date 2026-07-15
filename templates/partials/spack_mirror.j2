@@ -1,0 +1,9 @@
+{# Register local source mirror when --use-mirror is enabled (spack_mirror_scope). #}
+{% if use_mirror %}
+# Register local mirror as primary source (highest priority)
+RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack mirror add --scope {{ spack_mirror_scope }} local-mirror file:///opt/spack-mirror && \
+    spack mirror list && \
+    echo "✅ Local source mirror configured at /opt/spack-mirror"
+{% endif %}

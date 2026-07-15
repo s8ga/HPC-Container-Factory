@@ -1,0 +1,13 @@
+{# Configure Spack to use the local bootstrap mirror. #}
+COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
+
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
+    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
+    spack bootstrap disable github-actions-v2 && \
+    spack bootstrap disable github-actions-v0.6 && \
+    spack bootstrap disable spack-install && \
+    spack bootstrap now && \
+    spack bootstrap list && \
+    spack --version && \
+    echo "✅ Spack bootstrap configured from local mirror"

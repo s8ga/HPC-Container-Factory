@@ -1,0 +1,6 @@
+{# Garbage-collect build deps, then enable the unified /opt/spack-view. #}
+RUN spack -e {{ spack_env_name }} gc -y
+
+# Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage.
+# Install tree remains under /opt/spack/ for flexible runtime image construction.
+RUN spack -e {{ spack_env_name }} env view enable /opt/spack-view

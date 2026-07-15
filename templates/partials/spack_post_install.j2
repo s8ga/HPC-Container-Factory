@@ -1,0 +1,7 @@
+{# Post-install: gc/view + strip + build manifest.
+   Requires: build_manifest_title #}
+{% include 'partials/spack_view_enable.j2' %}
+
+{% include 'partials/spack_strip.j2' %}
+
+{% include 'partials/spack_manifest.j2' %}

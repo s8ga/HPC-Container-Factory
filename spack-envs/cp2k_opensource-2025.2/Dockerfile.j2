@@ -19,87 +19,9 @@ LABEL stage="builder" \
       maintainer="s8ga"
 
 # ============================================================================
-# BUILDER BASE - Common initialization (inlined from former Dockerfile-base.j2)
+# BUILDER BASE - common Spack prelude (APT + install + bootstrap + mirror)
 # ============================================================================
-
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
-# This significantly speeds up apt-get operations in containers
-# Note: Debian Trixie uses .sources format in /etc/apt/sources.list.d/
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-
-# System dependencies for Spack and compilation
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    bash \
-    build-essential \
-    ca-certificates \
-    curl \
-    environment-modules \
-    gfortran \
-    git \
-    openssh-client \
-    pkg-config \
-    unzip \
-    wget \
-    cmake \
-    file \
-    automake \
-    bzip2 \
-    xxd \
-    xz-utils \
-    zstd \
-    ninja-build \
-    patch \
-    patchelf \
-    pkgconf \
-    libtool-bin \
-    python3 \
-    python3-pip \
-    python3-venv \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /opt
-
-# Copy pre-downloaded Spack from assets and extract in builder container
-# This avoids network issues and git clone limitations in containers
-COPY assets/spack-v{{ spack_version }}.tar.gz /tmp/spack.tar.gz
-
-ENV SPACK_ROOT=/opt/spack-exe
-
-RUN cd /opt && \
-    mkdir ${SPACK_ROOT} && \
-    tar -axf /tmp/spack.tar.gz --strip-components=1 -C ${SPACK_ROOT} && \
-    rm /tmp/spack.tar.gz && \
-    cd ${SPACK_ROOT} && \
-    ls -la bin/ lib/ var/
-
-ENV PATH="${SPACK_ROOT}/bin:${PATH}"
-
-# Configure Spack to use local bootstrap mirror.
-COPY assets/bootstrap-{{ spack_version }} /opt/bootstrap
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack bootstrap add --trust local-sources /opt/bootstrap/metadata/sources && \
-    spack bootstrap add --trust local-binaries /opt/bootstrap/metadata/binaries && \
-    spack bootstrap disable github-actions-v2 && \
-    spack bootstrap disable github-actions-v0.6 && \
-    spack bootstrap disable spack-install && \
-    spack bootstrap now && \
-    spack bootstrap list && \
-    spack --version && \
-    echo "✅ Spack bootstrap configured from local mirror"
-
-{% if use_mirror %}
-# Register local mirror as primary source (highest priority)
-RUN --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack mirror add --scope site local-mirror file:///opt/spack-mirror && \
-    spack mirror list && \
-    echo "✅ Local source mirror configured at /opt/spack-mirror"
-{% endif %}
-
-# Configure build directory (actual install location set in spack.yaml)
-RUN mkdir -p /opt/hpc && mkdir -p /tmp/spack-build
+{% include 'partials/spack_builder_prelude_debian.j2' %}
 
 # ============================================================================
 # CP2K-SPECIFIC BUILD
@@ -117,48 +39,30 @@ RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
     git checkout && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
-# Prepare the spack environment + configuration
-COPY spack-envs/{{ env_dir_name }}/spack-env-file /opt/spack-env-file
-
-# Create env, then import lock/config/repos from source directory.
-RUN /bin/bash -c 'set -euo pipefail; \
-    spack env create cp2k-env /opt/spack-env-file/spack.yaml && \
-    if [ -f /opt/spack-env-file/spack.lock ]; then \
-        cp -f /opt/spack-env-file/spack.lock "${SPACK_ROOT}/var/spack/environments/cp2k-env/spack.lock"; \
-        echo "Imported existing spack.lock"; \
-    else \
-        echo "No spack.lock provided; install step will concretize"; \
-    fi'
-
-# Ensure builtin repo matches env config (repos.builtin.commit or default branch).
-RUN spack -e cp2k-env repo update builtin
-# Find all compilers + all external packages
-RUN spack compiler find && \
-    spack external find --all --not-buildable
+{% include 'partials/spack_env_create.j2' %}
+{% include 'partials/spack_update_builtin.j2' %}
+{% include 'partials/spack_compiler_find.j2' %}
 
 # Add custom spack repo from CP2K developers and our local repo with custom package overrides
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack repo add --scope site /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack repo add --scope site /opt/spack-env-file/repos/ && \
-    spack -e cp2k-env repo ls
+    spack repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
+    spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
+    spack -e {{ spack_env_name }} repo ls
 
-# Special Fix for compile Openmp@5.0.8
-# checking for zlib library (z) in /usr... not found
-
-RUN ln -sf /usr/lib/x86_64-linux-gnu/libz.so /usr/lib/libz.so
+{% include 'partials/spack_zlib_fix.j2' %}
 
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
 
         echo; \
         echo "Installing libint..."; \
         echo "Note: libint is a critical dependency that often takes the longest to build."; \
         echo; \
 
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20 libint & \
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
 
         sleep 10 && \
 
@@ -166,42 +70,10 @@ RUN {% if use_mirror %}
         echo "Concurrently Install cp2k and it's dependencies..."; \
         echo; \
 
-        spack -e cp2k-env install --fail-fast -j "$(nproc)" -p 20;
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
 
-RUN spack -e cp2k-env gc -y
-
-# Enable spack env view to create symlinks in /opt/spack-view/ for runtime stage
-# Actual library / executable locations are still in /opt/spack/ to allow flexible runtime image construction
-RUN spack -e cp2k-env env view enable /opt/spack-view
-
-# ----------------------------------------------------------------------------
-# STEP: Strip debug symbols
-# ----------------------------------------------------------------------------
-# With padded_length: 0, binaries live under /opt/spack/<os-target>/.../bin|lib
-# Follow symlinks from the view to find and strip all real ELF files.
-
-RUN BEFORE=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "=== Stripping debug symbols (${BEFORE}MB) ===" && \
-    find /opt/spack -type f \( -name '*.so' -o -name '*.so.*' \) \
-        -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
-    find /opt/spack -path '*/bin/*' -type f -print0 2>/dev/null \
-        | xargs -0 -r file 2>/dev/null \
-        | grep 'ELF.*executable' | cut -d: -f1 \
-        | xargs -r strip --strip-all 2>/dev/null || true && \
-    AFTER=$(du -sm /opt/spack/ | cut -f1) && \
-    echo "✅ Stripped: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB)"
-
-# ----------------------------------------------------------------------------
-# STEP: Build manifest
-# ----------------------------------------------------------------------------
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    { echo "=== CP2K 2025.2 Build Manifest ==="; \
-      echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
-      echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
-      echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
-    echo "=== Generating Dependency Graph ===" && \
-    spack -e cp2k-env graph --dot > /opt/spack-view/DependencyGraph.dot && \
-    echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
+{% set build_manifest_title = "CP2K 2025.2 Build Manifest" %}
+{% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
@@ -228,28 +100,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data"
 
 
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-
-# Install minimal runtime dependencies (system libraries not included in spack view)
-# Note: Spack links against runtime libs (libgfortran5, libstdc++6, libgcc-s1).
-# We install the compiler packages to ensure all runtime libs are available,
-# plus common tools for user convenience (nano, curl, python3, screen).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    bash \
-    python3 \
-    curl \
-    tar \
-    libgfortran5 \
-    libstdc++6 \
-    libgcc-s1 \
-    libnuma1 \
-    openssh-client \
-    util-linux \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+{% include 'partials/runtime_apt_debian.j2' %}
 
 # Create non-root user for security (before COPY to use --chown)
 RUN useradd -m -s /bin/bash hpc
@@ -276,71 +127,7 @@ COPY --from=builder --chown=hpc:hpc /opt/cp2k/tools/regtesting /opt/cp2k/tools/r
 RUN { echo "/opt/spack-view/lib"; } > /etc/ld.so.conf.d/cp2k.conf && \
     ldconfig
 
-# ----------------------------------------------------------------------------
-# RUNTIME CLEANUP: Remove development-only content to minimize image size
-# ----------------------------------------------------------------------------
-# CP2K uses Spack's own gcc-runtime (libgfortran.so.5, libstdc++.so.6,
-# libgcc_s.so.1 under /opt/spack/.../gcc-runtime-14.2.0/), verified via ldd.
-# System gcc/gfortran are pulled in as recommends of libgfortran5/libstdc++6
-# but are NOT needed at runtime. Safe to purge.
-#
-# Cleanup summary (verified on localhost/cp2k-opensource:2025.2):
-#   1. Purge system compiler packages:           ~159 MB
-#   2. Remove C/C++/Fortran headers (include/):  ~730 MB
-#   3. Remove Python bytecode cache (__pycache__):~685 MB (auto-regenerated)
-#   4. Remove Python test/idle/tkinter:                  ~36 MB
-#   5. Remove documentation and man pages:        ~89 MB
-#   5. Remove .spack install metadata:            ~42 MB
-#   6. Remove cmake/pkgconfig build metadata:      ~3 MB
-#   7. Remove static libraries (.a):                ~0 MB
-#   Total saved: ~1,744 MB → image shrinks from ~2.5 GB to ~750 MB
-#
-# NOT removed: cp2k/share/cp2k/data/ (basis sets, potentials — runtime needed)
-RUN echo "=== Runtime cleanup: removing development-only content ===" && \
-    BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
-    echo "Before: ${BEFORE}MB" && \
-    \
-    echo "--- [1/7] Purging system compiler packages ---" && \
-    apt-get purge -y --auto-remove \
-        gcc-14 gcc-14-x86-64-linux-gnu \
-        gfortran-14 gfortran-14-x86-64-linux-gnu \
-        cpp-14 cpp-14-x86-64-linux-gnu \
-        libgcc-14-dev libgfortran-14-dev \
-        gcc gfortran cpp 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    \
-    echo "--- [2/7] Removing headers (include/) ---" && \
-    find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/include && \
-    rm -rf /usr/include && \
-    \
-    echo "--- [3/7] Removing Python bytecode cache ---" && \
-    find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
-    \
-    echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
-    for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
-        rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
-    done && \
-    \
-    echo "--- [5/8] Removing docs and man pages ---" && \
-    find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man && \
-    \
-    echo "--- [6/8] Removing .spack metadata ---" && \
-    find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
-    \
-    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
-    find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
-    find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
-    rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
-    \
-    echo "--- [8/8] Removing static libraries (.a) ---" && \
-    find /opt -name "*.a" -delete 2>/dev/null || true && \
-    \
-    AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
-    echo "=== Cleanup complete: ${BEFORE}MB → ${AFTER}MB (saved $((BEFORE - AFTER))MB) ==="
+{% include 'partials/runtime_cleanup.j2' %}
 
 # Create workspace directory
 RUN mkdir -p /workspace && chown hpc:hpc /workspace
