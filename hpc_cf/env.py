@@ -1,18 +1,32 @@
-"""env.yaml parsing and environment helpers."""
+"""env.yaml discovery helpers and static preflight validators.
+
+Validators raise on errors for backwards compatibility. Prefer
+:mod:`hpc_cf.validation` (:func:`~hpc_cf.validation.validate_environment`)
+for structured ``ValidationReport`` output and profile selection.
+"""
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from functools import lru_cache
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError as exc:
-    raise ImportError(f"Required package not installed: {exc}. Install: pip install pyyaml") from exc
-
-from hpc_cf.config import DEFAULT_SPACK_VERSION, PROJECT_ROOT, SPACK_ENVS_DIR
+from hpc_cf.config import DEFAULT_SPACK_VERSION
+from hpc_cf.environment import (
+    EnvironmentSpec,
+    load_environment_spec,
+    load_environment_spec_from_template,
+    parse_environment_spec,
+)
+from hpc_cf.execution import ProjectLayout
+from hpc_cf.validation import (
+    ValidationProfile,
+    assert_valid,
+    collect_branch_consistency,
+    collect_manual_packages,
+    collect_spack_assets,
+    collect_spack_yaml,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,31 +56,32 @@ def find_env_yaml(env_dir: Path) -> Path:
 
 
 def load_env_yaml(template_path: Path | None) -> dict:
-    """Load env.yaml associated with a Dockerfile.j2 template path."""
+    """Deprecated: load env.yaml as a dict for template rendering.
+
+    Prefer :func:`hpc_cf.environment.load_environment_spec` /
+    :func:`load_environment_spec_from_template`.
+    """
+    logger.warning(
+        "load_env_yaml is deprecated; use hpc_cf.environment.load_environment_spec"
+    )
     if not template_path:
         return {}
-    try:
-        env_yaml = find_env_yaml(template_path.parent)
-    except FileNotFoundError:
+    spec = load_environment_spec_from_template(template_path)
+    if spec is None:
         return {}
-    with env_yaml.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return spec.as_dict()
 
 
-def list_available_envs() -> list[str]:
+def list_available_envs(*, layout: ProjectLayout | None = None) -> list[str]:
     """List environment directories under spack-envs/ that contain env.yaml."""
-    envs: list[str] = []
-    if SPACK_ENVS_DIR.exists():
-        for d in sorted(SPACK_ENVS_DIR.iterdir()):
-            if d.is_dir() and (
-                (d / "spack-env-file" / "env.yaml").exists()
-                or (d / "env.yaml").exists()
-            ):
-                envs.append(d.name)
-    return envs
+    return (layout or ProjectLayout.default()).list_env_names()
 
 
-def spack_version_for_env(env_name: str | None) -> str:
+def spack_version_for_env(
+    env_name: str | None,
+    *,
+    layout: ProjectLayout | None = None,
+) -> str:
     """Read spack.version from the given env's env.yaml.
 
     Returns :data:`DEFAULT_SPACK_VERSION` when env_name is None or env.yaml
@@ -74,93 +89,70 @@ def spack_version_for_env(env_name: str | None) -> str:
     """
     if not env_name:
         return DEFAULT_SPACK_VERSION
-    env_dir = SPACK_ENVS_DIR / env_name
+    root = layout or ProjectLayout.default()
+    env_dir = root.spack_envs_dir / env_name
     try:
-        env_yaml = find_env_yaml(env_dir)
+        return load_environment_spec(env_dir).spack.version
     except FileNotFoundError:
         return DEFAULT_SPACK_VERSION
-    with env_yaml.open("r", encoding="utf-8") as f:
-        env_config = yaml.safe_load(f) or {}
-    return env_config.get("spack", {}).get("version", DEFAULT_SPACK_VERSION)
 
 
-def validate_manual_packages(env_config: dict) -> None:
+def _as_spec(env_config: dict | EnvironmentSpec) -> EnvironmentSpec:
+    if isinstance(env_config, EnvironmentSpec):
+        return env_config
+    return parse_environment_spec(env_config, source="<dict>")
+
+
+def _layout() -> ProjectLayout:
+    return ProjectLayout.default()
+
+
+def validate_manual_packages(env_config: dict | EnvironmentSpec) -> None:
     """Validate manual_packages entries from env.yaml.
 
     Each entry's ``file`` is resolved relative to the project root.
     If sha256 is provided, the checksum is verified.  Raises on missing
     file or checksum mismatch; warns when sha256 is absent.
     """
-    manual_packages = env_config.get("manual_packages", [])
-    if not manual_packages:
-        return
+    import hashlib
 
-    for mp in manual_packages:
-        rel_path = mp["file"]
-        mp_file = PROJECT_ROOT / rel_path
+    from hpc_cf.validation import ValidationReport, ValidationSeverity
 
-        if not mp_file.exists():
-            raise FileNotFoundError(
-                f"manual_packages: file not found: {rel_path}\n"
-                f"  Expected: {mp_file}\n"
-                f"  Place the file in the project before building."
-            )
-
-        sha256_expected = mp.get("sha256")
-        if not sha256_expected:
-            logger.warning(
-                "⚠️  manual_packages: '%s' has NO sha256 checksum. "
-                "Build reproducibility CANNOT be guaranteed.",
-                rel_path,
-            )
-        else:
+    spec = _as_spec(env_config)
+    root = _layout()
+    findings = collect_manual_packages(spec, project_root=root.project_root)
+    report = ValidationReport(profile="manual_packages")
+    report.extend(findings)
+    for f in findings:
+        if f.severity is ValidationSeverity.WARNING:
+            logger.warning("%s", f.message)
+    report.raise_if_errors()
+    for mp in spec.manual_packages:
+        mp_file = root.project_root / mp.file
+        if mp.sha256 and mp_file.is_file():
             actual = hashlib.sha256(mp_file.read_bytes()).hexdigest()
-            if actual != sha256_expected:
-                raise ValueError(
-                    f"manual_packages: sha256 mismatch for '{rel_path}'\n"
-                    f"  expected: {sha256_expected}\n"
-                    f"  actual:   {actual}\n"
-                    f"  Update env.yaml or replace the file."
-                )
-            logger.info("✅ manual_packages: '%s' sha256 verified", rel_path)
+            if actual == mp.sha256:
+                logger.info("✅ manual_packages: '%s' sha256 verified", mp.file)
 
 
-def validate_spack_assets(env_config: dict) -> None:
+def validate_spack_assets(env_config: dict | EnvironmentSpec) -> None:
     """Verify the Spack tarball and bootstrap cache exist before an expensive build.
 
     The Dockerfile ``COPY assets/spack-v<ver>.tar.gz`` and
     ``COPY assets/bootstrap-<ver>`` fail the build if these are missing; this
-    check surfaces the problem early. Skipped when ``method != 'spack'``
-    (e.g. ``no_spack`` builds do not COPY these assets).
+    check surfaces the problem early. Skipped when the build method does not
+    require Spack assets (see :attr:`BuildMethod.requires_spack_assets`).
     """
-    method = env_config.get("method", "spack")
-    if method != "spack":
-        return
+    from hpc_cf.validation import ValidationReport, ValidationSeverity
 
-    spack_version = env_config.get("spack", {}).get("version")
-    if not spack_version:
-        # Nothing to validate (and no spack build to drive); skip silently.
-        return
-
-    from hpc_cf.config import ASSETS_DIR
-
-    tarball = ASSETS_DIR / f"spack-v{spack_version}.tar.gz"
-    if not tarball.exists():
-        raise FileNotFoundError(
-            f"Spack tarball not found: {tarball}\n"
-            f"  env.yaml declares spack.version={spack_version!r}. "
-            f"Place the tarball under assets/ before building (the Dockerfile "
-            f"COPY would fail ~20 min into the build otherwise)."
-        )
-
-    bootstrap = ASSETS_DIR / f"bootstrap-{spack_version}"
-    if not bootstrap.is_dir():
-        logger.warning(
-            "Bootstrap cache missing: %s — run "
-            "`python -m hpc_cf assets --prepare-bootstrap` (the Dockerfile "
-            "COPYs it, so the build will fail if absent).",
-            bootstrap,
-        )
+    spec = _as_spec(env_config)
+    findings = collect_spack_assets(spec, assets_dir=_layout().assets_dir)
+    report = ValidationReport(profile="spack_assets")
+    report.extend(findings)
+    for f in findings:
+        if f.severity is ValidationSeverity.WARNING:
+            logger.warning("%s", f.message)
+    report.raise_if_errors()
 
 
 def validate_branch_consistency(env_dir: Path) -> None:
@@ -169,83 +161,52 @@ def validate_branch_consistency(env_dir: Path) -> None:
     After the 3.3 refactor every env's Dockerfile.j2 clones with
     ``-b {{ cp2k_branch }}`` and env.yaml declares it under template_vars.
     This catches a regression where someone re-hardcodes the branch or
-    forgets the template_vars entry (which would render a literal
-    ``{{ cp2k_branch }}`` into the Dockerfile).
+    forgets the template_vars entry (which would fail under StrictUndefined).
     """
-    dockerfile = env_dir / "Dockerfile.j2"
-    if not dockerfile.exists():
-        return  # nothing to check
-    text = dockerfile.read_text(encoding="utf-8")
-    uses_var = "{{ cp2k_branch }}" in text
+    from hpc_cf.validation import ValidationReport
 
-    try:
-        env_yaml = find_env_yaml(env_dir)
-        raw = yaml.safe_load(env_yaml.read_text(encoding="utf-8")) or {}
-    except FileNotFoundError:
-        env_yaml, raw = None, {}
-    tv = raw.get("template_vars") or {}
-    has_var = "cp2k_branch" in tv
-
-    if uses_var and not has_var:
-        where = f" ({env_yaml})" if env_yaml else ""
-        raise ValueError(
-            f"Dockerfile.j2 uses {{{{ cp2k_branch }}}} but env.yaml{where} "
-            f"does not declare it under template_vars — "
-            f"rendering would emit a literal."
-        )
-
-    # Catch a re-hardcoded cp2k clone branch. Join backslash continuations
-    # first, because the clone URL (cp2k.git) sits on the line after the
-    # `-b <branch>` flag.
-    joined = text.replace("\\\n", " ")
-    for line in joined.splitlines():
-        if "git clone" in line and "cp2k" in line and "-b " in line:
-            if "{{ cp2k_branch }}" not in line:
-                raise ValueError(
-                    "cp2k git clone hardcodes a branch instead of "
-                    f"{{{{ cp2k_branch }}}}:\n  {line.strip()}"
-                )
+    findings = collect_branch_consistency(env_dir)
+    report = ValidationReport(profile="branch")
+    report.extend(findings)
+    report.raise_if_errors()
 
 
 def validate_spack_yaml(env_dir: Path) -> None:
     """Basic spack.yaml sanity: parses; if repos.builtin.commit is set it
     must be a 40-char hex string."""
-    candidates = [env_dir / "spack-env-file" / "spack.yaml", env_dir / "spack.yaml"]
-    spack_yaml = next((c for c in candidates if c.exists()), None)
-    if spack_yaml is None:
-        logger.debug("No spack.yaml under %s — skipping spack.yaml checks", env_dir)
-        return
-    try:
-        data = yaml.safe_load(spack_yaml.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ValueError(f"spack.yaml is not valid YAML: {spack_yaml}\n  {exc}") from exc
+    from hpc_cf.validation import ValidationReport, ValidationSeverity
 
-    builtin = ((data.get("spack", {}) or {}).get("repos", {}) or {}).get("builtin", {}) or {}
-    commit = builtin.get("commit")
-    if commit is not None and not (isinstance(commit, str) and len(commit) == 40):
-        logger.warning(
-            "repos.builtin.commit in %s is not a 40-char hex string: %r",
-            spack_yaml, commit,
-        )
-    elif commit is None:
-        logger.info(
-            "Tip: add 'repos: builtin: commit: <sha>' to %s for reproducible "
-            "concretization (prevents builtin recipe drift between builds).",
-            spack_yaml,
-        )
+    findings = collect_spack_yaml(env_dir)
+    report = ValidationReport(profile="spack_yaml")
+    report.extend(findings)
+    for f in findings:
+        if f.severity is ValidationSeverity.WARNING:
+            logger.warning("%s", f.message)
+        elif f.severity is ValidationSeverity.INFO:
+            logger.info(
+                "Tip: add 'repos: builtin: commit: <sha>' to %s for reproducible "
+                "concretization (prevents builtin recipe drift between builds).",
+                f.path or env_dir,
+            )
+    report.raise_if_errors()
 
 
-def run_static_checks(env_dir: Path, env_config: dict | None = None) -> None:
-    """Run the full pre-build static validation suite.
+def run_static_checks(
+    env_dir: Path,
+    env_config: dict | EnvironmentSpec | None = None,
+    *,
+    profile: ValidationProfile | str = ValidationProfile.BUILD_INPUT,
+    layout: ProjectLayout | None = None,
+) -> None:
+    """Run a validation profile and raise on errors.
 
-    Shared by ``validate`` and ``build`` so expensive builds cannot skip
-    checks that ``validate`` would catch.
+    Default is ``build-input`` (pre-build suite). Shared by ``validate`` and
+    ``build``. Use ``config`` for render-only paths that must not require
+    large assets.
     """
-    if env_config is None:
-        env_yaml = find_env_yaml(env_dir)
-        env_config = yaml.safe_load(env_yaml.read_text(encoding="utf-8")) or {}
-
-    validate_manual_packages(env_config)
-    validate_spack_assets(env_config)
-    validate_branch_consistency(env_dir)
-    validate_spack_yaml(env_dir)
+    assert_valid(
+        env_dir,
+        profile,
+        env_config=env_config,
+        layout=layout or _layout(),
+    )

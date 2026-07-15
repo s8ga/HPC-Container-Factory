@@ -17,6 +17,17 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "integration: needs podman + spack assets (--run-integration)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "e2e: opt-in end-to-end boundary checks (also gated by --run-integration)",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
     """Skip @pytest.mark.integration tests unless --run-integration is given."""
     if config.getoption("--run-integration"):
