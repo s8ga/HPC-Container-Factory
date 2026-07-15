@@ -1,7 +1,7 @@
-"""Failure baselines for confirmed hpc_cf framework defects.
+"""Regression guards for previously confirmed hpc_cf framework defects.
 
-These tests document desired post-fix behavior. They are expected to fail
-against the current implementation; Stream A–D repairs should turn them green.
+These tests document post-fix behavior and must stay green. They are
+guardrails against regressions — not an “expected red” suite.
 All fixtures are synthetic — no shipped application env is required.
 """
 

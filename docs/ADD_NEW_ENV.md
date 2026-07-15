@@ -79,9 +79,14 @@ Dockerfile.j2 在 `spack-envs/<env>/Dockerfile.j2`。公共 Spack 步骤应通�
 
 如果新环境与源环境的构建流程完全一致，可以只改 `env.yaml` / `spack.yaml`。
 
-### Step 5: 删除 `spack.lock`
+### Step 5: 删除 `spack.lock`（随后由 assets 重新生成）
 
 **spack.lock 不可复用**——它是根据源环境的 `spack.yaml` + 编译器信息 + 平台信息求解的具体依赖图，直接复用会导致安装失败。
+
+两阶段契约：
+
+1. **assets** 负责 concretize 并写出 `spack.lock`（以及共享 mirror）
+2. **build / dockerfile** 默认**只读消费**已有 lock；缺 lock 时镜像构建 fail-closed（`exit 1`），除非显式 `--allow-reconcretize`
 
 ```bash
 rm spack-envs/<new-env-name>/spack-env-file/spack.lock
@@ -129,9 +134,12 @@ python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dock
 # build-input 校验（需要 assets tarball / manual_packages）
 python -m hpc_cf validate --app-version <new-env-name> --format text
 
-# concretize + 下载 mirror（在容器内；持共享 mirror 锁并写 manifest）
+# concretize + 下载 mirror（缺 lock 时必须显式 --allow-concretize；持共享 mirror 锁并写 manifest）
 python -m hpc_cf assets --env <new-env-name> --create-container
-python -m hpc_cf assets --env <new-env-name> --download-mirror
+python -m hpc_cf assets --env <new-env-name> --download-mirror --allow-concretize
+
+# 之后 build 默认要求非空 spack.lock（不要依赖镜像内 reconcretize）
+python -m hpc_cf build --app-version <new-env-name>
 ```
 
 ---

@@ -348,6 +348,7 @@ def build_context(
     template_path: Path | None,
     resolved: ResolvedBuildInput | None = None,
     layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
 ) -> dict:
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags.
 
@@ -414,6 +415,7 @@ def build_context(
         "env_dir_name": env_dir_name,
         "manual_packages": manual_packages,
         "compatibility_mode": compatibility,
+        "allow_reconcretize": allow_reconcretize,
         **template_vars,
     }
 
@@ -421,6 +423,7 @@ def build_context(
     # plan_context keys override raw template_vars for reserved names.
     if spec is not None and method is BuildMethod.SPACK:
         context.update(plan_context(build_spack_environment_plan(spec)))
+        context["allow_reconcretize"] = allow_reconcretize
     elif method is BuildMethod.SPACK:
         context.setdefault("spack_env_name", "cp2k-env")
         context.setdefault("spack_update_builtin", True)
@@ -429,6 +432,7 @@ def build_context(
         context.setdefault("spack_mirror_scope", "site")
         context.setdefault("spack_mirror_scope_kind", "site")
         context.setdefault("spack_image_repos", [])
+        context["allow_reconcretize"] = allow_reconcretize
 
     if method is BuildMethod.NO_SPACK:
         context["script"] = spec.script if spec is not None else ""
@@ -519,6 +523,7 @@ def generate_dockerfile(
     use_mirror: bool,
     build_only: bool,
     layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
 ) -> Path:
     root = _layout(layout)
     resolved = resolve_build_input(app_version, template, layout=root)
@@ -529,6 +534,7 @@ def generate_dockerfile(
         template_path=resolved.render_template,
         resolved=resolved,
         layout=root,
+        allow_reconcretize=allow_reconcretize,
     )
     content = render_template(
         resolved.render_template, context, layout=root

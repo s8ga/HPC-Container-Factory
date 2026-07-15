@@ -119,11 +119,15 @@ def run_mirror(
     env_name: str,
     *,
     layout: ProjectLayout | None = None,
+    allow_concretize: bool = False,
 ) -> dict[str, int]:
     """Generate source mirror for the given environment.
 
     Acquires the shared-mirror write lock, writes a run-scoped log directory
     and a manifest (env, spack version, lock hash, stats).
+
+    Missing ``spack.lock`` fails closed unless *allow_concretize* is true
+    (explicit concretize+mirror escape hatch — never silent upgrade to all).
     """
     layout = layout or ProjectLayout.default()
     host_dir, container_dir = resolve_env_paths(env_name, layout=layout)
@@ -134,18 +138,21 @@ def run_mirror(
     env_config, ops = _make_spack_ops(env_name, ctr, layout=layout)
     mirror_dir = layout.container_mirror_dir()
     store = SharedMirrorStore(layout)
+    lock_path = host_dir / "spack.lock"
+    has_lock = lock_path.is_file() and lock_path.stat().st_size > 0
 
     with store.exclusive_write():
         run = store.begin_run(env_name)
-        if (host_dir / "spack.lock").exists():
+        if has_lock:
             stats = ops.run_mirror_pipeline(
                 str(container_dir),
                 mirror_dir,
                 create_log=run.create_log_container,
             )
-        else:
+        elif allow_concretize:
             logger.warning(
-                "spack.lock NOT found — switching to 'all' mode (concretize + mirror)"
+                "spack.lock missing — --allow-concretize: running "
+                "concretize + mirror"
             )
             stats = ops.run_all_pipeline(
                 host_dir,
@@ -153,12 +160,18 @@ def run_mirror(
                 mirror_dir,
                 create_log=run.create_log_container,
             )
+        else:
+            raise FileNotFoundError(
+                f"spack.lock not found or empty under {host_dir}; "
+                "run assets with --allow-concretize to produce a lock, "
+                "or place a non-empty spack.lock before --download-mirror"
+            )
 
         store.write_manifest(
             run,
             env_name=env_name,
             spack_version=env_config.spack.version,
-            lock_path=host_dir / "spack.lock",
+            lock_path=lock_path,
             stats=stats,
             status="success",
         )
@@ -411,7 +424,12 @@ def run_assets(
             layout=layout,
         )
 
-        run_mirror(ctr, request.env, layout=layout)
+        run_mirror(
+            ctr,
+            request.env,
+            layout=layout,
+            allow_concretize=request.allow_concretize,
+        )
 
         if not request.skip_verify:
             run_verify(ctr, request.env, layout=layout)
@@ -436,7 +454,12 @@ def run_assets(
         if not request.env:
             raise ValueError("--env is required with --download-mirror")
         ensure_image_once()
-        run_mirror(ctr, request.env, layout=layout)
+        run_mirror(
+            ctr,
+            request.env,
+            layout=layout,
+            allow_concretize=request.allow_concretize,
+        )
 
     if request.verify_mirror:
         if not request.env:

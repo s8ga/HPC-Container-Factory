@@ -58,6 +58,48 @@ def test_build_input_requires_spack_tarball(tmp_path: Path) -> None:
     assert "spack_assets.tarball_missing" in codes
 
 
+def test_build_input_requires_nonempty_spack_lock(tmp_path: Path) -> None:
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+
+    report = validate_environment(
+        env_dir, ValidationProfile.BUILD_INPUT, layout=layout
+    )
+    assert not report.ok
+    assert any(f.code == "spack_lock.missing" for f in report.errors())
+
+    (env_dir / "spack.lock").write_text("{}\n", encoding="utf-8")
+    ok_report = validate_environment(
+        env_dir, ValidationProfile.BUILD_INPUT, layout=layout
+    )
+    assert not any(f.code == "spack_lock.missing" for f in ok_report.errors())
+
+    warn_report = validate_environment(
+        env_dir,
+        ValidationProfile.BUILD_INPUT,
+        layout=layout,
+        allow_reconcretize=True,
+    )
+    # With lock present, allow_reconcretize does not invent a warning.
+    assert not any(f.code == "spack_lock.missing" for f in warn_report.findings)
+
+    (env_dir / "spack.lock").unlink()
+    escape = validate_environment(
+        env_dir,
+        ValidationProfile.BUILD_INPUT,
+        layout=layout,
+        allow_reconcretize=True,
+    )
+    assert escape.ok
+    assert any(
+        f.code == "spack_lock.missing" and f.severity.value == "warning"
+        for f in escape.findings
+    )
+
+
 def test_assets_profile_requires_tarball_not_manual_packages(tmp_path: Path) -> None:
     env_dir = tmp_path / "env"
     env_dir.mkdir()

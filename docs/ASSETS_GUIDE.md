@@ -2,6 +2,15 @@
 
 assets 负责把构建中最耗时、最依赖网络的部分前置到本地。
 
+## Lock 两阶段契约
+
+| 阶段 | 职责 |
+|------|------|
+| **assets** | 产出 / 更新 `spack.lock`（mirror 下载默认要求已有非空 lock；首次或缺 lock 时加 `--allow-concretize` 走 concretize+mirror） |
+| **build / dockerfile** | **只读消费** lock；`BUILD_INPUT` 要求非空 lock；镜像内缺 lock 默认 `exit 1`，逃生口为 `--allow-reconcretize` |
+
+禁止在 `run_mirror` 缺 lock 时静默升到 `run_all_pipeline`。
+
 ## 目录结构
 
 ```
@@ -66,6 +75,7 @@ python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 - 系统包在运行时由 `spack_ops` 从 `EnvironmentSpec` 读取后安装
 - 共享 `assets/spack-mirror` 保持累积布局；并发写通过 `SharedMirrorStore.exclusive_write` 串行化
 - 每次成功 mirror 会在 `.hpc_cf/runs/<id>/manifest.json` 记录 env、spack 版本、lock hash、统计
+- **assets 产 lock，build 只读消费**：`--download-mirror` 缺 `spack.lock` 默认失败；初次生成用 `--allow-concretize`。镜像构建缺 lock 默认 `exit 1`，逃生口是 `build`/`dockerfile` 的 `--allow-reconcretize`
 
 ### 校验 profile（按动作选择）
 
@@ -100,7 +110,8 @@ container verify → host symlink → 原子写 manifest；失败时写入
 | （无标志） | **是** | 一键完整流程：构建镜像 → 创建容器 → bootstrap → mirror → verify |
 | `--create-container` | 否 | 构建镜像并创建/启动 reusable mirror worker container |
 | `--prepare-bootstrap` | 否 | 生成 Spack bootstrap mirror（失败必须传播，不吞错） |
-| `--download-mirror` | **是** | 下载源码 mirror（持锁 + 写 manifest） |
+| `--download-mirror` | **是** | 下载源码 mirror（持锁 + 写 manifest；缺 lock 需加 `--allow-concretize`） |
+| `--allow-concretize` | 配合 download / 一键流程 | 缺 `spack.lock` 时显式允许 concretize+mirror |
 | `--verify-mirror` | **是** | 校验 mirror 完整性（与 download 同属 assets profile） |
 | `--status` | **是** | 显示镜像、bootstrap、mirror、环境状态（config profile） |
 

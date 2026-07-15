@@ -83,6 +83,14 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Render only builder stage in templates that support it",
     )
+    parser.add_argument(
+        "--allow-reconcretize",
+        action="store_true",
+        help=(
+            "Permit image builds without a non-empty spack.lock "
+            "(fail-open; installs may re-concretize). Default is fail-closed."
+        ),
+    )
 
 
 def add_assets_options(parser: argparse.ArgumentParser) -> None:
@@ -160,6 +168,14 @@ def add_assets_options(parser: argparse.ArgumentParser) -> None:
         "--skip-verify",
         action="store_true",
         help="Default workflow only: skip verify after mirror download",
+    )
+    parser.add_argument(
+        "--allow-concretize",
+        action="store_true",
+        help=(
+            "When spack.lock is missing, run concretize+mirror instead of failing. "
+            "Required for first-time lock generation after deleting a copied lock."
+        ),
     )
 
 

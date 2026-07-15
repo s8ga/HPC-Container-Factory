@@ -5,8 +5,9 @@ preconditions that need large on-disk inputs:
 
 * ``config`` / ``template`` — schema, Dockerfile branch params, spack.yaml
   sanity.  Run on every Dockerfile render.
-* ``build-input`` — config plus manual_packages and Spack tarball presence.
-  Run before ``build``.
+* ``build-input`` — config plus manual_packages, Spack tarball, and a
+  non-empty ``spack.lock`` (unless ``--allow-reconcretize``).  Run before
+  ``build``.
 * ``assets`` — schema, spack.yaml, and Spack assets needed to prepare
   bootstrap/mirror.  Run before ``assets`` workflows that touch an env.
 """
@@ -116,7 +117,10 @@ class ValidationReport:
             return
         first = errs[0]
         # Prefer legacy exception types expected by callers/tests.
-        if first.code.startswith("spack_assets.") or first.code == "manual_packages.missing":
+        if first.code.startswith("spack_assets.") or first.code in (
+            "manual_packages.missing",
+            "spack_lock.missing",
+        ):
             raise FileNotFoundError(_format_finding(first))
         raise ValueError(_format_finding(first))
 
@@ -354,6 +358,52 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
     return findings
 
 
+def collect_spack_lock(
+    env_dir: Path,
+    *,
+    allow_reconcretize: bool = False,
+) -> list[ValidationFinding]:
+    """Require a non-empty spack.lock for image builds (fail-closed).
+
+    When *allow_reconcretize* is true the missing lock is a warning so
+    ``--allow-reconcretize`` builds can proceed knowingly.
+    """
+    candidates = [
+        env_dir / "spack-env-file" / "spack.lock",
+        env_dir / "spack.lock",
+    ]
+    lock = next(
+        (c for c in candidates if c.is_file() and c.stat().st_size > 0),
+        None,
+    )
+    if lock is not None:
+        return []
+
+    existing = next((c for c in candidates if c.exists()), None)
+    path = str(existing or candidates[0])
+    severity = (
+        ValidationSeverity.WARNING
+        if allow_reconcretize
+        else ValidationSeverity.ERROR
+    )
+    return [
+        ValidationFinding(
+            code="spack_lock.missing",
+            severity=severity,
+            message=(
+                "spack.lock missing or empty (required for method=spack "
+                "image builds unless --allow-reconcretize)"
+            ),
+            path=path,
+            fix_hint=(
+                "Run `python -m hpc_cf assets --env <name> --allow-concretize` "
+                "to produce a lock, or pass --allow-reconcretize to "
+                "build/dockerfile (install may re-concretize)."
+            ),
+        )
+    ]
+
+
 def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     candidates = [env_dir / "spack-env-file" / "spack.yaml", env_dir / "spack.yaml"]
@@ -420,6 +470,7 @@ def validate_environment(
     *,
     env_config: dict | EnvironmentSpec | None = None,
     layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
 ) -> ValidationReport:
     """Run the named validation profile and return a structured report."""
     profile = ValidationProfile.parse(profile)
@@ -450,6 +501,11 @@ def validate_environment(
             report.extend(
                 collect_spack_assets(spec, assets_dir=layout.assets_dir)
             )
+            report.extend(
+                collect_spack_lock(
+                    env_dir, allow_reconcretize=allow_reconcretize
+                )
+            )
 
     if profile is ValidationProfile.ASSETS:
         if spec.method.runs_spack_validations:
@@ -473,10 +529,15 @@ def assert_valid(
     *,
     env_config: dict | EnvironmentSpec | None = None,
     layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
 ) -> ValidationReport:
     """Run a profile and raise on the first error finding."""
     report = validate_environment(
-        env_dir, profile, env_config=env_config, layout=layout
+        env_dir,
+        profile,
+        env_config=env_config,
+        layout=layout,
+        allow_reconcretize=allow_reconcretize,
     )
     report.raise_if_errors()
     return report

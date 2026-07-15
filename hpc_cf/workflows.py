@@ -36,6 +36,7 @@ class AssetsRequest:
     status: bool = False
     skip_create_container: bool = False
     skip_verify: bool = False
+    allow_concretize: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class BuildRequest:
     build_args: tuple[str, ...] = ()
     build_opts: tuple[str, ...] = ()
     render_only: bool = False
+    allow_reconcretize: bool = False
 
 
 def assets_request_from_args(args: Any) -> AssetsRequest:
@@ -73,6 +75,7 @@ def assets_request_from_args(args: Any) -> AssetsRequest:
         status=bool(getattr(args, "status", False)),
         skip_create_container=bool(getattr(args, "skip_create_container", False)),
         skip_verify=bool(getattr(args, "skip_verify", False)),
+        allow_concretize=bool(getattr(args, "allow_concretize", False)),
     )
 
 
@@ -96,6 +99,7 @@ def build_request_from_args(
         build_args=tuple(getattr(args, "build_arg", None) or ()),
         build_opts=tuple(getattr(args, "build_opt", None) or ()),
         render_only=render_only,
+        allow_reconcretize=bool(getattr(args, "allow_reconcretize", False)),
     )
 
 
@@ -177,6 +181,7 @@ class BuildService:
             resolved.environment_spec,
             profile=profile,
             layout=self.layout,
+            allow_reconcretize=request.allow_reconcretize,
         )
 
         if request.render_only:
@@ -187,6 +192,7 @@ class BuildService:
                 use_mirror=request.use_mirror,
                 build_only=request.build_only,
                 layout=self.layout,
+                allow_reconcretize=request.allow_reconcretize,
             )
             logger.info("Done")
             return 0
@@ -206,6 +212,7 @@ class BuildService:
             use_mirror=request.use_mirror,
             build_only=request.build_only,
             layout=self.layout,
+            allow_reconcretize=request.allow_reconcretize,
         )
 
         if request.engine not in ("podman", "docker"):

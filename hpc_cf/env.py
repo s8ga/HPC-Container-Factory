@@ -197,6 +197,7 @@ def run_static_checks(
     *,
     profile: ValidationProfile | str = ValidationProfile.BUILD_INPUT,
     layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
 ) -> None:
     """Run a validation profile and raise on errors.
 
@@ -209,4 +210,5 @@ def run_static_checks(
         profile,
         env_config=env_config,
         layout=layout or _layout(),
+        allow_reconcretize=allow_reconcretize,
     )

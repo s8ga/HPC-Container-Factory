@@ -152,4 +152,6 @@ def plan_context(plan: SpackEnvironmentPlan) -> dict:
             }
             for r in plan.image.repos
         ],
+        # Overridden by build_context(allow_reconcretize=...); default fail-closed.
+        "allow_reconcretize": False,
     }
