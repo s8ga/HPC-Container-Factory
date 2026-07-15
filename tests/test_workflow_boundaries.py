@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hpc_cf.execution import ProjectLayout, RunnerPort, SharedMirrorStore
 from hpc_cf.workflows import (
     AssetsRequest,
@@ -211,6 +213,50 @@ def test_shared_mirror_lock_serializes_writers(tmp_path: Path) -> None:
         ["a-enter", "a-exit", "b-enter", "b-exit"],
         ["b-enter", "b-exit", "a-enter", "a-exit"],
     )
+
+
+def test_exclusive_write_logs_while_waiting(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Blocked writers emit wait logs (interval patched short for the test)."""
+    import hpc_cf.execution as execution
+
+    monkeypatch.setattr(execution, "MIRROR_LOCK_WAIT_LOG_INTERVAL_S", 0.05)
+    monkeypatch.setattr(execution, "MIRROR_LOCK_POLL_INTERVAL_S", 0.01)
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedMirrorStore(layout)
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with store.exclusive_write():
+            held.set()
+            release.wait(timeout=5)
+
+    t = threading.Thread(target=holder)
+    t.start()
+    assert held.wait(timeout=2)
+
+    def delayed_release() -> None:
+        # Hold long enough for the initial wait log plus one periodic log.
+        time.sleep(0.12)
+        release.set()
+
+    threading.Thread(target=delayed_release, daemon=True).start()
+
+    with caplog.at_level("INFO", logger="hpc_cf.execution"):
+        with store.exclusive_write():
+            pass
+    t.join(timeout=2)
+    assert not t.is_alive()
+
+    text = caplog.text
+    assert "Shared mirror lock busy" in text
+    assert "Still waiting for shared mirror lock" in text
+    assert "Acquired shared mirror lock after" in text
 
 
 def test_shared_mirror_run_dir_and_manifest(tmp_path: Path) -> None:

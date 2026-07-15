@@ -78,7 +78,7 @@ python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 **设计原则**：
 - `containers/Dockerfile.mirror-builder` 是通用 Spack-only 镜像
 - 系统包在运行时由 `spack_ops` 从 `EnvironmentSpec` 读取后安装
-- 共享 `assets/spack-mirror` 保持累积布局；并发写通过 `SharedMirrorStore.exclusive_write` 串行化
+- 共享 `assets/spack-mirror` 保持累积布局；并发写通过 `SharedMirrorStore.exclusive_write` 串行化（**writers-only** flock：不与只读 bind-mount 读者互斥；等锁时约每 30s 打日志；优先本地盘，NFS flock 可能不可靠）
 - 每次成功 mirror 会在 `.hpc_cf/runs/<id>/manifest.json` 记录 env、spack 版本、lock hash、统计
 - **assets 产 lock，build 只读消费**：`--download-mirror` 缺 `spack.lock` 默认失败；初次生成用 `--allow-concretize`。镜像构建缺 lock 默认 `exit 1`，逃生口是 `build`/`dockerfile` 的 `--allow-reconcretize`
 
