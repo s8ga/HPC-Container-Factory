@@ -43,6 +43,11 @@ def find_env_yaml(env_dir: Path) -> Path:
     Raises ``FileNotFoundError`` if neither exists — callers can rely on a
     concrete path rather than re-implementing the lookup (previously done
     inconsistently in 3 places with REVERSED order).
+
+    Cache note: results are ``lru_cache``'d for the process lifetime. That
+    matches a single CLI invocation (env.yaml does not move mid-run). Long-
+    lived callers that create/relocate env.yaml under the same ``env_dir``
+    must call ``find_env_yaml.cache_clear()`` after mutating the layout.
     """
     nested = env_dir / "spack-env-file" / "env.yaml"
     if nested.exists():

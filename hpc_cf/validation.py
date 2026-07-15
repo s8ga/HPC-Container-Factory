@@ -111,18 +111,35 @@ class ValidationReport:
         self.findings.extend(findings)
 
     def raise_if_errors(self) -> None:
-        """Raise the first error as a concrete exception for CLI abort."""
+        """Raise when any ERROR findings exist.
+
+        The exception message aggregates all ERROR codes and counts (not
+        just the first finding) so callers see the full failure set.
+        Legacy exception types are preserved when every ERROR is a
+        missing-file style code; otherwise ``ValueError`` is used.
+        """
         errs = self.errors()
         if not errs:
             return
-        first = errs[0]
-        # Prefer legacy exception types expected by callers/tests.
-        if first.code.startswith("spack_assets.") or first.code in (
-            "manual_packages.missing",
-            "spack_lock.missing",
-        ):
-            raise FileNotFoundError(_format_finding(first))
-        raise ValueError(_format_finding(first))
+
+        def _is_missing_file(code: str) -> bool:
+            return code.startswith("spack_assets.") or code in (
+                "manual_packages.missing",
+                "spack_lock.missing",
+            )
+
+        if len(errs) == 1:
+            body = _format_finding(errs[0])
+        else:
+            codes = ", ".join(e.code for e in errs)
+            details = "\n".join(_format_finding(e) for e in errs)
+            body = (
+                f"{len(errs)} validation errors ({codes}):\n{details}"
+            )
+
+        if all(_is_missing_file(e.code) for e in errs):
+            raise FileNotFoundError(body)
+        raise ValueError(body)
 
     def to_dict(self) -> dict[str, Any]:
         return {

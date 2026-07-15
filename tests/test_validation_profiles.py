@@ -164,6 +164,38 @@ def test_report_json_and_text_roundtrip() -> None:
     assert "FAILED" in text
 
 
+def test_raise_if_errors_aggregates_all_codes() -> None:
+    report = ValidationReport(profile="config", env_name="demo")
+    report.add(
+        ValidationFinding(
+            code="schema.invalid",
+            severity=ValidationSeverity.ERROR,
+            message="first problem",
+        )
+    )
+    report.add(
+        ValidationFinding(
+            code="branch.hardcoded",
+            severity=ValidationSeverity.ERROR,
+            message="second problem",
+        )
+    )
+    report.add(
+        ValidationFinding(
+            code="branch.soft",
+            severity=ValidationSeverity.WARNING,
+            message="ignored",
+        )
+    )
+    with pytest.raises(ValueError, match=r"2 validation errors") as exc_info:
+        report.raise_if_errors()
+    msg = str(exc_info.value)
+    assert "schema.invalid" in msg
+    assert "branch.hardcoded" in msg
+    assert "first problem" in msg
+    assert "second problem" in msg
+
+
 def test_profile_alias_template() -> None:
     assert ValidationProfile.parse("template") is ValidationProfile.CONFIG
     assert ValidationProfile.parse("config/template") is ValidationProfile.CONFIG

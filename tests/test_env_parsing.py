@@ -51,6 +51,30 @@ def test_find_env_yaml_missing_raises(tmp_path: Path) -> None:
         find_env_yaml(env_dir)
 
 
+def test_find_env_yaml_cache_clear_sees_new_file(tmp_path: Path) -> None:
+    """lru_cache is process-lifetime; cache_clear is required after layout changes."""
+    env_dir = tmp_path / "cached-env"
+    env_dir.mkdir()
+    with pytest.raises(FileNotFoundError):
+        find_env_yaml(env_dir)
+
+    bare = env_dir / "env.yaml"
+    bare.write_text("spack:\n  version: '1.1.1'\n  env_name: e\n", encoding="utf-8")
+    # Stale negative is not cached as FileNotFoundError by lru_cache for raises?
+    # Actually lru_cache does NOT cache exceptions — only successful returns.
+    # Prove a successful hit is sticky until clear.
+    assert find_env_yaml(env_dir) == bare
+    nested_dir = env_dir / "spack-env-file"
+    nested_dir.mkdir()
+    nested = nested_dir / "env.yaml"
+    nested.write_text("spack:\n  version: '1.1.1'\n  env_name: nested\n", encoding="utf-8")
+    # Without clear, cached bare path wins even though nested now exists.
+    assert find_env_yaml(env_dir) == bare
+    find_env_yaml.cache_clear()
+    assert find_env_yaml(env_dir) == nested
+    find_env_yaml.cache_clear()
+
+
 def test_both_loaders_read_same_file(tmp_path: Path) -> None:
     """The bug: load_env_yaml (nested-first) vs load_env_config (bare-first)
     returned different files when both existed. After A2 both use find_env_yaml."""

@@ -138,7 +138,7 @@ def test_validate_spack_assets_requires_tarball_for_spack(
         classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
     )
     with pytest.raises(FileNotFoundError, match="Spack tarball"):
-        validate_spack_assets({"method": "spack", "spack": {"version": "1.1.1"}})
+        validate_spack_assets({"method": "spack", "spack": {"version": "1.1.1", "env_name": "e"}})
 
 
 def test_cli_dockerfile_requires_explicit_app_version(
