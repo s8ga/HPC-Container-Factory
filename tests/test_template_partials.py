@@ -69,6 +69,13 @@ def test_required_partials_exist() -> None:
         assert (PARTIALS_DIR / name).is_file(), f"missing partial {name}"
 
 
+def test_runtime_cleanup_removes_third_party_python_tests() -> None:
+    cleanup = (PARTIALS_DIR / "runtime_cleanup.j2").read_text(encoding="utf-8")
+    assert "-path '*/site-packages/*'" in cleanup
+    assert r"\( -name tests -o -name test \)" in cleanup
+    assert "-prune -exec rm -rf {} +" in cleanup
+
+
 def test_choice_loader_includes_global_partial(tmp_path: Path) -> None:
     """Per-env templates must resolve includes under templates/partials/."""
     tpl = tmp_path / "Dockerfile.j2"

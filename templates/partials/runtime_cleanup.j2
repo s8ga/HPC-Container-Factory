@@ -3,7 +3,7 @@ RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     BEFORE=$(du -sm / 2>/dev/null | cut -f1) && \
     echo "Before: ${BEFORE}MB" && \
     \
-    echo "--- [1/8] Purging system compiler packages ---" && \
+    echo "--- [1/9] Purging system compiler packages ---" && \
     apt-get purge -y --auto-remove \
         gcc-14 gcc-14-x86-64-linux-gnu \
         gfortran-14 gfortran-14-x86-64-linux-gnu \
@@ -13,33 +13,37 @@ RUN echo "=== Runtime cleanup: removing development-only content ===" && \
     apt-get autoremove -y 2>/dev/null || true && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     \
-    echo "--- [2/8] Removing headers (include/) ---" && \
+    echo "--- [2/9] Removing headers (include/) ---" && \
     find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/include && \
     rm -rf /usr/include && \
     \
-    echo "--- [3/8] Removing Python bytecode cache ---" && \
+    echo "--- [3/9] Removing Python bytecode cache ---" && \
     find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     \
-    echo "--- [4/8] Removing Python test/idle/tkinter ---" && \
+    echo "--- [4/9] Removing Python test/idle/tkinter ---" && \
     for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
         rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
     done && \
     \
-    echo "--- [5/8] Removing docs and man pages ---" && \
+    echo "--- [5/9] Removing third-party Python test trees ---" && \
+    find /opt/spack -type d -path '*/site-packages/*' \( -name tests -o -name test \) \
+        -prune -exec rm -rf {} + 2>/dev/null || true && \
+    \
+    echo "--- [6/9] Removing docs and man pages ---" && \
     find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man && \
     \
-    echo "--- [6/8] Removing .spack metadata ---" && \
+    echo "--- [7/9] Removing .spack metadata ---" && \
     find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true && \
     \
-    echo "--- [7/8] Removing cmake/pkgconfig ---" && \
+    echo "--- [8/9] Removing cmake/pkgconfig ---" && \
     find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true && \
     rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig && \
     \
-    echo "--- [8/8] Removing static libraries (.a) ---" && \
+    echo "--- [9/9] Removing static libraries (.a) ---" && \
     find /opt -name "*.a" -delete 2>/dev/null || true && \
     \
     AFTER=$(du -sm / 2>/dev/null | cut -f1) && \
