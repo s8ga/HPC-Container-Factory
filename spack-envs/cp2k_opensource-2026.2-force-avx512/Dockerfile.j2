@@ -59,24 +59,16 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
 
 {% include 'partials/spack_zlib_fix.j2' %}
 
+# CP2K 2026.2+ ships *pregenerated* libint sources (cp2k-lmax-*), not prebuilt
+# binaries — libint still must be compiled. Cap -j at 12 for peak memory.
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
-
-        echo; \
-        echo "Installing libint..."; \
-        echo "Note: libint is a critical dependency that often takes the longest to build."; \
-        echo; \
-
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
-
-        sleep 5 && \
-
-        echo; \
-        echo "Concurrently Install cp2k and it's dependencies..."; \
-        echo; \
-
+        libint_jobs="$(nproc)"; \
+        if [ "${libint_jobs}" -gt 12 ]; then libint_jobs=12; fi; \
+        echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+        spack -e {{ spack_env_name }} install --fail-fast -j "${libint_jobs}" -p 20 libint && \
+        echo "Installing remaining packages with -j $(nproc)..."; \
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
 
 {% set build_manifest_title = "CP2K 2026.2 Build Manifest" %}
@@ -97,10 +89,13 @@ LABEL stage="runtime" \
 # LD_LIBRARY_PATH is intentionally NOT set — we rely solely on ldconfig
 # (registered via /etc/ld.so.conf.d/cp2k.conf) for library discovery.
 # CP2K_DATA_DIR points to data files installed by spack (basis sets, potentials).
+# GAUXC_SKALA_MODEL: required when input uses MODEL SKALA (GauXC +skala); the
+# .fun file is installed by the gauxc package into the env view.
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/spack-view/bin:/opt/bin:$PATH" \
-    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data"
+    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data" \
+    GAUXC_SKALA_MODEL="/opt/spack-view/share/gauxc/onedft_models/skala-1.1.fun"
 
 {% include 'partials/runtime_apt_debian.j2' %}
 
@@ -117,6 +112,9 @@ COPY --from=builder --chown=hpc:hpc /opt/spack /opt/spack
 
 # 2. Spack view (symlinks into /opt/spack, provides unified bin/lib/share layout)
 COPY --from=builder --chown=hpc:hpc /opt/spack-view /opt/spack-view
+
+# Fail the image build if Skala checkpoint is missing from the view (MODEL SKALA).
+RUN test -f "${GAUXC_SKALA_MODEL}"
 
 # 3. CP2K test files for regtesting (sparse-checkout from git clone in builder)
 COPY --from=builder --chown=hpc:hpc /opt/cp2k/tests /opt/cp2k/tests

@@ -10,6 +10,7 @@
 #
 # Runtime ENV variables (set in Dockerfile):
 #   CP2K_DATA_DIR          — path to basis sets and potentials
+#   GAUXC_SKALA_MODEL      — Skala 1.1 .fun (MODEL SKALA / GauXC +skala)
 
 set -euo pipefail
 
@@ -136,6 +137,9 @@ fi
 echo ""
 echo "  ${B_CYA}ENVIRONMENT:${RST}"
 echo "  ${BLD}Data Dir${RST}  : ${DIM}${DATA_DIR}${RST} ${DIM}(Basis sets, Potentials)${RST}"
+if [[ -n "${GAUXC_SKALA_MODEL:-}" ]]; then
+    echo "  ${BLD}Skala Model${RST}: ${DIM}${GAUXC_SKALA_MODEL:-}${RST}"
+fi
 echo "  ${BLD}Executable${RST}: ${DIM}${CP2K_EXEC}${RST}"
 echo ""
 echo "  ${B_YLW}HINT:${RST}"
