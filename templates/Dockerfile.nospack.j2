@@ -13,6 +13,8 @@ LABEL stage="builder" method="no_spack"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+{% include 'partials/locale_c_utf8.j2' %}
+
 # APT mirror
 RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
@@ -39,6 +41,8 @@ LABEL stage="runtime" method="no_spack"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+{% include 'partials/locale_c_utf8.j2' %}
+
 # APT mirror + runtime packages
 RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
@@ -64,8 +68,7 @@ RUN useradd -m -s /bin/bash hpc && mkdir -p /workspace && chown hpc:hpc /workspa
 ENV PATH="/opt/bin:${PATH}" \
     HPC_CONTAINER_NAME="{{ default_image_name }}" \
     HPC_CONTAINER_TAG="{{ default_image_tag }}" \
-    HPC_CONTAINER_BUILD_TS="{{ timestamp }}" \
-    LANG=C.UTF-8 LC_ALL=C.UTF-8
+    HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
 
 WORKDIR /workspace
 USER hpc

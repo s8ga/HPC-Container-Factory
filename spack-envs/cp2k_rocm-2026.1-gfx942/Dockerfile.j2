@@ -25,6 +25,8 @@ LABEL stage="builder" \
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+{% include 'partials/locale_c_utf8.j2' %}
+
 # Build arguments for GPU target and parallelism (kept for flexibility).
 ARG AMDGPU_TARGETS="gfx942"
 ARG SPACK_MAKE_JOBS=0
@@ -208,6 +210,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data" \
     ROCM_PATH="/opt/rocm" \
     HIP_PLATFORM="amd"
+
+{% include 'partials/locale_c_utf8.j2' %}
 
 # Configure APT mirrors to use USTC (中科大) for faster downloads in China
 RUN sed -i 's|//.*archive.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \

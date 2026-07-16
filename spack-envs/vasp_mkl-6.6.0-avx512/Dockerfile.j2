@@ -179,10 +179,6 @@ ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
 ENV MPI_RUNVAR=" --allow-run-as-root --bind-to core -x OMP_STACKSIZE=512m -x OMP_PLACES=cores -x OMP_PROC_BIND=close " \
     MPI_AMDRUNVAR=" --allow-run-as-root --bind-to core -x LD_PRELOAD=/opt/libfakeintel/libfakeintel.so -x OMP_STACKSIZE=512m -x OMP_PLACES=cores -x OMP_PROC_BIND=close "
 
-# Fixed Language releated issue
-ENV LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
-    
 # MOTD system: shown only for interactive shell sessions.
 COPY --chmod=755 scripts/vasp-motd.sh /usr/local/bin/hpc-motd.sh
 COPY --chmod=755 scripts/vasp-entrypoint.sh /usr/local/bin/entrypoint.sh

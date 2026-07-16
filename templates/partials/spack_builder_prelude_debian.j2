@@ -1,4 +1,6 @@
 {# Standard Debian builder prelude: apt + Spack install + bootstrap + mirror + dirs. #}
+{% include 'partials/locale_c_utf8.j2' %}
+
 {% include 'partials/builder_apt_debian.j2' %}
 
 {% include 'partials/spack_install.j2' %}

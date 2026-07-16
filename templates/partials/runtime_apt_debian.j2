@@ -1,4 +1,6 @@
 {# Debian runtime APT mirror + common system libraries for Spack-built apps. #}
+{% include 'partials/locale_c_utf8.j2' %}
+
 RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
     sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true

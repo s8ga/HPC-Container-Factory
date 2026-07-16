@@ -22,6 +22,7 @@ REQUIRED_PARTIALS = (
     "spack_view_enable.j2",
     "spack_strip.j2",
     "runtime_cleanup.j2",
+    "locale_c_utf8.j2",
 )
 
 PILOT_ENV = "cp2k_opensource-2026.1-force-avx512"
@@ -138,6 +139,26 @@ def test_pilot_render_keeps_newline_between_partials() -> None:
     assert "mirror\"\n#" in rendered or 'mirror"\r\n#' in rendered
     assert "fi'RUN" not in rendered
     assert "fi'\nRUN" in rendered or "fi'\r\nRUN" in rendered
+
+
+def test_all_spack_env_renders_set_c_utf8_locale() -> None:
+    """Every shipped spack Dockerfile must set C.UTF-8 in builder and runtime."""
+    dockerfiles = sorted(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
+    assert len(dockerfiles) >= 8
+    for path in dockerfiles:
+        env_name = path.parent.name
+        tpl = select_template(env_name)
+        ctx = build_context(
+            use_mirror=True,
+            build_only=False,
+            app_version=env_name,
+            template_path=tpl,
+        )
+        rendered = render_template(tpl, ctx)
+        assert "LANG=C.UTF-8" in rendered, env_name
+        assert "LC_ALL=C.UTF-8" in rendered, env_name
+        # Builder and runtime stages should each get the locale (two ENV blocks).
+        assert rendered.count("LANG=C.UTF-8") >= 2, env_name
 
 
 def test_pilot_render_preserves_spack_semantics() -> None:
