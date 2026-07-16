@@ -301,6 +301,22 @@ def test_all_spack_envs_assets_plan_uses_declared_repos(env_dir: Path) -> None:
     assert plan.assets.update_builtin is spec.spack.assets.update_builtin
 
 
+def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
+    env_dir = SPACK_ENVS_DIR / "cp2k_opensource-2026.2-force-avx512"
+    spec = load_environment_spec(env_dir)
+    plan = build_spack_environment_plan(spec)
+    assets_ns = [r.namespace for r in plan.assets.repos]
+    image_ns = [r.namespace for r in plan.image.repos]
+    assert "s8_overrides" in assets_ns
+    assert "s8_overrides" in image_ns
+    assert assets_ns.index("cp2k_dev") < assets_ns.index("s8_overrides")
+    assert assets_ns.index("s8_overrides") < assets_ns.index("cp2k-env")
+    assert image_ns.index("cp2k_dev") < image_ns.index("s8_overrides")
+    assert image_ns.index("s8_overrides") < image_ns.index("cp2k-env")
+    assert plan.image.repo_scope is RepoScope.ENV
+    assert plan.image.scope_flag() == "env:cp2k-env"
+
+
 def test_vasp_image_skips_builtin_update() -> None:
     for name in ("vasp_mkl-6.6.0-avx2", "vasp_mkl-6.6.0-avx512"):
         spec = load_environment_spec(SPACK_ENVS_DIR / name)

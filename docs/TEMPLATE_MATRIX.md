@@ -12,6 +12,7 @@
 | `cp2k_opensource-2025.2` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
 | `cp2k_opensource-2025.2-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
 | `cp2k_opensource-2026.1-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
+| `cp2k_opensource-2026.2-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
 | `cp2k_mkl-2025.2-experimental` | spack | per-env `Dockerfile.j2` | ✅ | 🧪 |
 | `cp2k_rocm-2026.1-gfx942` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
 | `vasp_mkl-6.6.0-avx2` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
