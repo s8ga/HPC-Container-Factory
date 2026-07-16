@@ -41,10 +41,7 @@ RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
 
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
-# Find all compilers + all external packages
-RUN spack compiler find && \
-    spack external find --all
-
+{% include 'partials/spack_compiler_find.j2' %}
 
 # Add custom spack repo from CP2K developers and our local repo with custom package overrides
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
