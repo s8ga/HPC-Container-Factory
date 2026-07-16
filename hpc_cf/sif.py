@@ -232,32 +232,41 @@ def build_docker_like(
             "Consider adding --network-host for reliable network access."
         )
 
-    cmd = [engine, "build", "-f", str(dockerfile), "-t", f"{image}:{tag}"]
+    # Build builder stage first and tag it for debugging. Runtime/final failures
+    # must not erase a successful builder checkpoint.
+    builder_tag = f"{image}:{tag}-builder"
+    logger.info("Building builder stage: %s", builder_tag)
+    builder_cmd = [
+        engine,
+        "build",
+        "--target",
+        "builder",
+        "-f",
+        str(dockerfile),
+        "-t",
+        builder_tag,
+    ]
+    if network_host:
+        builder_cmd += ["--network", "host"]
+    for arg in build_args or []:
+        builder_cmd += ["--build-arg", arg]
+    for opt in build_opts or []:
+        builder_cmd += shlex.split(opt)
+    builder_cmd.append(".")
+    run_cmd(builder_cmd)
+
+    # Continue to final image; builder layers come from cache.
+    final_tag = f"{image}:{tag}"
+    logger.info("Building final image: %s", final_tag)
+    cmd = [engine, "build", "-f", str(dockerfile), "-t", final_tag]
     if network_host:
         cmd += ["--network", "host"]
-    for arg in (build_args or []):
+    for arg in build_args or []:
         cmd += ["--build-arg", arg]
-    for opt in (build_opts or []):
+    for opt in build_opts or []:
         cmd += shlex.split(opt)
     cmd.append(".")
     run_cmd(cmd)
-
-    # Tag the builder stage for debugging (instant — all layers cached)
-    builder_tag = f"{image}:{tag}-builder"
-    logger.info("Tagging builder stage: %s", builder_tag)
-    builder_cmd = [engine, "build", "--target", "builder",
-                   "-f", str(dockerfile), "-t", builder_tag]
-    if network_host:
-        builder_cmd += ["--network", "host"]
-    for arg in (build_args or []):
-        builder_cmd += ["--build-arg", arg]
-    for opt in (build_opts or []):
-        builder_cmd += shlex.split(opt)
-    builder_cmd.append(".")
-    try:
-        run_cmd(builder_cmd)
-    except Exception as exc:
-        logger.warning("Could not tag builder stage: %s", exc)
 
 
 def build_sif(

@@ -484,3 +484,85 @@ def test_build_sif_resolves_relative_output_before_stat(
     # Process-cwd-relative absolute resolution (not artifacts-cwd-only).
     expected = (tmp_path / "out" / "rel.sif").resolve()
     assert expected.is_file(), f"expected SIF at {expected}"
+
+
+def test_build_docker_like_builds_builder_before_final(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Builder stage must be tagged before the final image build.
+
+    Runtime-stage failures should leave ``:tag-builder`` available for debug.
+    """
+    from hpc_cf import sif as sif_mod
+
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        "FROM debian:trixie AS builder\nFROM builder AS runtime\nFROM runtime AS final\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    calls: list[list[str]] = []
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> MagicMock:
+        calls.append(list(cmd))
+        return MagicMock(returncode=0)
+
+    with (
+        patch.object(sif_mod, "check_command_exists", return_value=True),
+        patch.object(sif_mod, "run_cmd", side_effect=fake_run_cmd),
+    ):
+        sif_mod.build_docker_like(
+            dockerfile=dockerfile,
+            image="cp2k_opensource",
+            tag="2026.1",
+            engine="podman",
+            network_host=True,
+        )
+
+    assert len(calls) == 2
+    builder_cmd, final_cmd = calls
+    assert builder_cmd[:2] == ["podman", "build"]
+    assert "--target" in builder_cmd
+    assert builder_cmd[builder_cmd.index("--target") + 1] == "builder"
+    assert "-t" in builder_cmd
+    assert builder_cmd[builder_cmd.index("-t") + 1] == "cp2k_opensource:2026.1-builder"
+    assert "--target" not in final_cmd
+    assert final_cmd[final_cmd.index("-t") + 1] == "cp2k_opensource:2026.1"
+
+
+def test_build_docker_like_keeps_builder_tag_if_final_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final-stage failure must not prevent the builder target build from running."""
+    from hpc_cf import sif as sif_mod
+
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM debian:trixie AS builder\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    calls: list[list[str]] = []
+
+    def fake_run_cmd(cmd: list[str], **kwargs: object) -> MagicMock:
+        calls.append(list(cmd))
+        if "--target" not in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        return MagicMock(returncode=0)
+
+    with (
+        patch.object(sif_mod, "check_command_exists", return_value=True),
+        patch.object(sif_mod, "run_cmd", side_effect=fake_run_cmd),
+        pytest.raises(subprocess.CalledProcessError),
+    ):
+        sif_mod.build_docker_like(
+            dockerfile=dockerfile,
+            image="demo",
+            tag="t",
+            engine="podman",
+            network_host=False,
+        )
+
+    assert len(calls) == 2
+    assert "--target" in calls[0]
+    assert calls[0][calls[0].index("-t") + 1] == "demo:t-builder"
+    assert "--target" not in calls[1]
