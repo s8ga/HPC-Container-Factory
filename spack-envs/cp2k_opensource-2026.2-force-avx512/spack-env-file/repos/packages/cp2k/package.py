@@ -264,10 +264,23 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
         when="+sirius",
     )
     variant("tblite", default=False, description="Enable tblite support", when="@2025.2:")
+    # NLCG (SIRIUS + nlcglib): default False — CP2K still treats it as not officially
+    # supported (input_cp2k_pwdft.F comment; CMake default OFF; toolchain/dashboard omit
+    # sirius_nlcg). Keep the variant so it can be turned on later without rewriting the
+    # recipe. Enabling checklist:
+    #   1. cp2k ... +nlcg  (do not rely on default)
+    #   2. This package pulls sirius+nlcglib and applies sirius-nlcg-empty-enum.patch
+    #      (SIRIUS nlcg/processing_unit enum is ["","cpu","gpu"]; empty breaks enum_create)
+    #   3. In the env spack.yaml, pin Kokkos for nlcglib@1.3.0:
+    #        kokkos:
+    #          require: ["@4", "+openmp", "+serial"]
+    #      (@4: View::dimension::rank removed in Kokkos 5; +serial: SpaceAccessibility)
+    #   4. Rebuild sirius+nlcglib and cp2k; expect cp2kflags: sirius_nlcg and no CPASSERT
+    #      on `cp2k.psmp --version`.
     variant(
         "nlcg",
         default=False,
-        description="Enable nlcg support in sirius",
+        description="Enable NLCG support in SIRIUS (experimental / not officially supported)",
         when="+sirius",
     )
     variant(
@@ -278,6 +291,31 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
     )
 
     variant("gauxc", default=False, description="Enable gauxc support", when="@2026.2:")
+    variant(
+        "ace",
+        default=False,
+        description="Enable ACE (ML-PACE) interatomic potentials",
+        when="@2026.2: build_system=cmake",
+    )
+    variant(
+        "libfci",
+        default=False,
+        description="Enable LibFCI full-CI active-space solver",
+        when="@2026.2: build_system=cmake",
+    )
+    variant(
+        "mimic",
+        default=False,
+        description="Enable MiMiC multiscale coupling (MCL)",
+        when="@2026.2: build_system=cmake +mpi",
+    )
+    # LibGint is a CUDA-only integral library (see make_cp2k.sh / libgint recipe).
+    variant(
+        "libgint",
+        default=False,
+        description="Enable LibGint GPU four-centre integrals",
+        when="@2026.2: build_system=cmake +cuda",
+    )
 
     with when("+cuda"):
         variant(
@@ -328,8 +366,15 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
     depends_on("lapack")
 
     depends_on("libxs@1:+fortran", when="smm=libxs")
+    # CP2K 2026.2 uses LIBXSMM as optional JIT kernels on top of LIBXS (smm=libxs).
+    depends_on("libxsmm@2:", when="@2026.2: smm=libxs")
 
     depends_on("fftw-api@3")
+    depends_on("pace@2025.12.4:", when="+ace")
+    depends_on("libfci", when="+libfci")
+    # Builtin package directory is mimic_mcl; CP2K deps yaml historically wrote mimic-mcl.
+    depends_on("mimic-mcl+fortran", when="+mimic")
+    depends_on("libgint", when="+libgint")
     depends_on("greenx", when="+greenx")
     depends_on("hdf5+hl+fortran", when="+hdf5")
     depends_on("trexio", when="+trexio")
@@ -624,6 +669,9 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
     # https://github.com/cp2k/cp2k/commit/9ae0441d1aa760e247a8a389793207ec65a35775
     # https://github.com/electronic-structure/SIRIUS/pull/1048
     patch("sirius-api-7.7.0.patch", when="@2024.2:2025.1 ^sirius@7.7.0")
+
+    # Only when +nlcg: filter blank SIRIUS string enums (nlcg/processing_unit).
+    patch("sirius-nlcg-empty-enum.patch", when="@2026.2: +sirius +nlcg")
 
     # Fix missing S in data/BASIS_MOLOPT_UZH
     # https://github.com/cp2k/cp2k/pull/4140
@@ -1223,10 +1271,12 @@ class CMakeBuilder(cmake.CMakeBuilder):
     def cmake_args(self):
         spec = self.spec
 
+        # CMake option names track CP2K's CMakeLists.txt (v2026.2+ uses
+        # CP2K_USE_PEXSI / BUILD_SHARED_LIBS; METIS+SUPERLU and
+        # CMAKE_BUILD_SHARED are ignored and leave PEXSI/shared misconfigured).
         args = [
             "-DCP2K_USE_FFTW3=ON",
             self.define_from_variant("CP2K_USE_MPI", "mpi"),
-            self.define_from_variant("CP2K_ENABLE_REGTESTS", "enable_regtests"),
             self.define_from_variant("CP2K_USE_ELPA", "elpa"),
             self.define_from_variant("CP2K_USE_DLAF", "dlaf"),
             self.define_from_variant("CP2K_USE_LIBINT2", "libint"),
@@ -1236,30 +1286,44 @@ class CMakeBuilder(cmake.CMakeBuilder):
             self.define_from_variant("CP2K_USE_LIBXC", "libxc"),
             self.define_from_variant("CP2K_USE_LIBTORCH", "pytorch"),
             self.define_from_variant("CP2K_USE_OPENPMD", "openpmd-api"),
-            self.define_from_variant("CP2K_USE_METIS", "pexsi"),
-            self.define_from_variant("CP2K_USE_SUPERLU", "pexsi"),
+            self.define_from_variant("CP2K_USE_PEXSI", "pexsi"),
             self.define_from_variant("CP2K_USE_PLUMED", "plumed"),
             self.define_from_variant("CP2K_USE_SPGLIB", "spglib"),
             self.define_from_variant("CP2K_USE_VORI", "libvori"),
-            self.define_from_variant("CP2K_USE_SPLA", "spla"),
-            self.define_from_variant("CP2K_USE_QUIP", "quip"),
             self.define_from_variant("CP2K_USE_DFTD4", "dftd4"),
             self.define_from_variant("CP2K_USE_MPI_F08", "mpi_f08"),
             self.define_from_variant("CP2K_USE_LIBSMEAGOL", "smeagol"),
             self.define_from_variant("CP2K_ENABLE_GRID_GPU", "grid_gpu"),
             self.define_from_variant("CP2K_ENABLE_DBM_GPU", "dbm_gpu"),
             self.define_from_variant("CP2K_ENABLE_PW_GPU", "pw_gpu"),
-            self.define_from_variant("CP2K_USE_GRPP", "grpp"),
             self.define_from_variant("CP2K_USE_HDF5", "hdf5"),
             self.define_from_variant("CP2K_USE_DEEPMD", "deepmd"),
             self.define_from_variant("CP2K_USE_TREXIO", "trexio"),
             self.define_from_variant("CP2K_USE_GREENX", "greenx"),
             self.define_from_variant("CP2K_USE_LIBVDWXC", "vdwxc"),
             self.define_from_variant("CP2K_USE_TBLITE", "tblite"),
-            self.define_from_variant("CMAKE_BUILD_SHARED", "shared"),
+            self.define_from_variant("BUILD_SHARED_LIBS", "shared"),
             self.define_from_variant("CMAKE_POSITION_INDEPENDENT_CODE", "pic"),
             self.define_from_variant("CP2K_USE_GAUXC", "gauxc"),
         ]
+
+        # QUIP option removed in CP2K 2026.2+; only emit for older releases.
+        if "quip" in spec.variants:
+            args.append(self.define_from_variant("CP2K_USE_QUIP", "quip"))
+
+        # CPU-friendly optional deps introduced / wired for 2026.2 CMake.
+        if "ace" in spec.variants:
+            args.append(self.define_from_variant("CP2K_USE_ACE", "ace"))
+        if "libfci" in spec.variants:
+            args.append(self.define_from_variant("CP2K_USE_LIBFCI", "libfci"))
+        if "mimic" in spec.variants:
+            args.append(self.define_from_variant("CP2K_USE_MIMIC", "mimic"))
+        if "libgint" in spec.variants:
+            args.append(self.define_from_variant("CP2K_USE_LIBGINT", "libgint"))
+
+        # GRPP: optional through 2026.1; vendored unconditionally in 2026.2+.
+        if spec.satisfies("@:2026.1"):
+            args.append(self.define_from_variant("CP2K_USE_GRPP", "grpp"))
 
         if spec.satisfies("+opencl"):
             args += [self.define("CP2K_USE_ACCEL", "OPENCL")]
@@ -1310,7 +1374,7 @@ class CMakeBuilder(cmake.CMakeBuilder):
                 self.define_from_variant("CP2K_USE_SIRIUS_NLCG", "nlcg"),
             ]
         if spec.satisfies("^[virtuals=fftw-api] fftw+openmp"):
-            args += ["-DCP2K_USE_FFTW3_WITH_OPENMP=ON"]
+            args.append(self.define("CP2K_ENABLE_FFTW3_OPENMP_SUPPORT", True))
 
         # we force the use elpa openmp threading support. might need to be revisited though
         args += [
@@ -1323,15 +1387,13 @@ class CMakeBuilder(cmake.CMakeBuilder):
         if "spla" in spec and (spec.satisfies("+cuda") or spec.satisfies("+rocm")):
             args += ["-DCP2K_USE_SPLA_GEMM_OFFLOADING=ON"]
 
-        if spec.satisfies("smm=libxsmm"):
-            args += ["-DCP2K_USE_LIBXSMM=ON"]
-        else:
-            args += ["-DCP2K_USE_LIBXSMM=OFF"]
-
         if spec.satisfies("smm=libxs"):
-            args += ["-DCP2K_USE_LIBXS=ON"]
+            # LIBXS is the SMM backend; LIBXSMM provides JIT kernels (cmake_dependent).
+            args += ["-DCP2K_USE_LIBXS=ON", "-DCP2K_USE_LIBXSMM=ON"]
+        elif spec.satisfies("smm=libxsmm"):
+            args += ["-DCP2K_USE_LIBXS=OFF", "-DCP2K_USE_LIBXSMM=ON"]
         else:
-            args += ["-DCP2K_USE_LIBXS=OFF"]
+            args += ["-DCP2K_USE_LIBXS=OFF", "-DCP2K_USE_LIBXSMM=OFF"]
 
         lapack = spec["lapack"]
         blas = spec["blas"]
