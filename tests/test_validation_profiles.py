@@ -31,6 +31,16 @@ def _write_minimal_env(env_dir: Path, *, method: str = "spack") -> None:
         )
 
 
+def _write_valid_bootstrap(bootstrap: Path) -> None:
+    for relative_path in (
+        Path("metadata/sources/metadata.yaml"),
+        Path("metadata/binaries/metadata.yaml"),
+    ):
+        path = bootstrap / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("bootstrap: valid\n", encoding="utf-8")
+
+
 def test_config_profile_skips_missing_spack_tarball(tmp_path: Path) -> None:
     env_dir = tmp_path / "env"
     _write_minimal_env(env_dir)
@@ -58,12 +68,105 @@ def test_build_input_requires_spack_tarball(tmp_path: Path) -> None:
     assert "spack_assets.tarball_missing" in codes
 
 
+def test_build_input_requires_bootstrap_cache(tmp_path: Path) -> None:
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    (env_dir / "spack.lock").write_text("{}\n", encoding="utf-8")
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+
+    report = validate_environment(
+        env_dir, ValidationProfile.BUILD_INPUT, layout=layout
+    )
+    assert any(
+        f.code == "spack_assets.bootstrap_missing" for f in report.errors()
+    )
+
+
+@pytest.mark.parametrize(
+    ("bootstrap_state", "expected_ok"),
+    [
+        ("missing", False),
+        ("empty_directory", False),
+        ("missing_binary_metadata", False),
+        ("empty_binary_metadata", False),
+        ("valid", True),
+    ],
+)
+def test_build_input_requires_complete_bootstrap_metadata(
+    tmp_path: Path,
+    bootstrap_state: str,
+    expected_ok: bool,
+) -> None:
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    (env_dir / "spack.lock").write_text("{}\n", encoding="utf-8")
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    bootstrap = layout.bootstrap_dir("1.1.1")
+
+    if bootstrap_state == "empty_directory":
+        bootstrap.mkdir()
+    elif bootstrap_state == "missing_binary_metadata":
+        source_metadata = bootstrap / "metadata/sources/metadata.yaml"
+        source_metadata.parent.mkdir(parents=True)
+        source_metadata.write_text("bootstrap: valid\n", encoding="utf-8")
+    elif bootstrap_state == "empty_binary_metadata":
+        _write_valid_bootstrap(bootstrap)
+        (bootstrap / "metadata/binaries/metadata.yaml").write_text(
+            "",
+            encoding="utf-8",
+        )
+    elif bootstrap_state == "valid":
+        _write_valid_bootstrap(bootstrap)
+
+    report = validate_environment(
+        env_dir, ValidationProfile.BUILD_INPUT, layout=layout
+    )
+    bootstrap_errors = [
+        f for f in report.errors()
+        if f.code == "spack_assets.bootstrap_missing"
+    ]
+
+    assert (not bootstrap_errors) is expected_ok
+
+
+def test_assets_warns_for_incomplete_bootstrap_but_config_skips_it(
+    tmp_path: Path,
+) -> None:
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir()
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    layout.bootstrap_dir("1.1.1").mkdir()
+
+    assets_report = validate_environment(
+        env_dir, ValidationProfile.ASSETS, layout=layout
+    )
+    config_report = validate_environment(
+        env_dir, ValidationProfile.CONFIG, layout=layout
+    )
+
+    assert any(
+        f.code == "spack_assets.bootstrap_missing"
+        and f.severity is ValidationSeverity.WARNING
+        for f in assets_report.findings
+    )
+    assert not any(
+        f.code.startswith("spack_assets.") for f in config_report.findings
+    )
+
+
 def test_build_input_requires_nonempty_spack_lock(tmp_path: Path) -> None:
     env_dir = tmp_path / "env"
     _write_minimal_env(env_dir)
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
 
     report = validate_environment(
         env_dir, ValidationProfile.BUILD_INPUT, layout=layout
@@ -228,6 +331,37 @@ def test_cli_validate_json_format(
     assert payload["profile"] == "config"
 
 
+def test_cli_validate_build_input_dispatches_requested_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from hpc_cf.cli import run_new_cli
+
+    env_name = "valtest_nospack"
+    env_dir = tmp_path / "spack-envs" / env_name
+    _write_minimal_env(env_dir, method="no_spack")
+    monkeypatch.setattr(
+        "hpc_cf.execution.ProjectLayout.default",
+        classmethod(lambda cls: ProjectLayout(project_root=tmp_path)),
+    )
+
+    rc = run_new_cli(
+        [
+            "validate",
+            "--app-version",
+            env_name,
+            "--profile",
+            "build-input",
+            "--format",
+            "json",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["profile"] == "build-input"
+
+
 def test_all_envs_pass_config_profile() -> None:
     """Contract: every discovered env loads and passes config validation."""
     from hpc_cf.config import PROJECT_ROOT
@@ -242,3 +376,36 @@ def test_all_envs_pass_config_profile() -> None:
             env_dir, ValidationProfile.CONFIG, layout=layout
         )
         assert report.ok, f"{name}: {report.format_text()}"
+
+
+def test_all_envs_with_assets_pass_build_input_profile() -> None:
+    """Run BUILD_INPUT where all declared local prerequisites are available."""
+    from hpc_cf.config import PROJECT_ROOT
+    from hpc_cf.env import list_available_envs
+    from hpc_cf.environment import load_environment_spec
+
+    layout = ProjectLayout(project_root=PROJECT_ROOT)
+    checked: list[str] = []
+    for name in list_available_envs(layout=layout):
+        env_dir = layout.spack_envs_dir / name
+        spec = load_environment_spec(env_dir)
+        if spec.method.requires_spack_assets:
+            tarball = layout.assets_dir / f"spack-v{spec.spack.version}.tar.gz"
+            bootstrap = layout.bootstrap_dir(spec.spack.version)
+            metadata_files = (
+                bootstrap / "metadata/sources/metadata.yaml",
+                bootstrap / "metadata/binaries/metadata.yaml",
+            )
+            if not tarball.is_file() or not all(
+                path.is_file() and path.stat().st_size > 0
+                for path in metadata_files
+            ):
+                continue
+        report = validate_environment(
+            env_dir, ValidationProfile.BUILD_INPUT, layout=layout
+        )
+        assert report.ok, f"{name}: {report.format_text()}"
+        checked.append(name)
+
+    if not checked:
+        pytest.skip("no env has all BUILD_INPUT assets available")

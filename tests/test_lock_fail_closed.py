@@ -31,12 +31,23 @@ def _write_spack_env(env_dir: Path, *, with_lock: bool = True) -> None:
         (env_dir / "spack.lock").write_text('{"concrete":true}\n', encoding="utf-8")
 
 
+def _write_valid_bootstrap(bootstrap: Path) -> None:
+    for relative_path in (
+        Path("metadata/sources/metadata.yaml"),
+        Path("metadata/binaries/metadata.yaml"),
+    ):
+        path = bootstrap / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("bootstrap: valid\n", encoding="utf-8")
+
+
 def test_build_input_errors_without_lock(tmp_path: Path) -> None:
     env_dir = tmp_path / "env"
     _write_spack_env(env_dir, with_lock=False)
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
 
     report = validate_environment(
         env_dir, ValidationProfile.BUILD_INPUT, layout=layout
@@ -51,6 +62,7 @@ def test_build_input_ok_with_nonempty_lock(tmp_path: Path) -> None:
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
 
     report = validate_environment(
         env_dir, ValidationProfile.BUILD_INPUT, layout=layout
@@ -64,6 +76,7 @@ def test_allow_reconcretize_downgrades_missing_lock(tmp_path: Path) -> None:
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
 
     report = validate_environment(
         env_dir,
@@ -250,6 +263,7 @@ def test_dockerfile_render_only_fails_without_lock(tmp_path: Path) -> None:
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
 
     with (
         patch("hpc_cf.template.generate_dockerfile") as mock_gen,
@@ -275,6 +289,7 @@ def test_dockerfile_render_only_allow_reconcretize_without_lock(
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()
     (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"x")
+    _write_valid_bootstrap(layout.bootstrap_dir("1.1.1"))
     out = tmp_path / "out.Dockerfile"
 
     with patch(

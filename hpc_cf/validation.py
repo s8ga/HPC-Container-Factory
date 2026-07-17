@@ -5,9 +5,9 @@ preconditions that need large on-disk inputs:
 
 * ``config`` / ``template`` — schema, Dockerfile branch params, spack.yaml
   sanity.  Used by ``validate --profile config`` (cheap static checks).
-* ``build-input`` — config plus manual_packages, Spack tarball, and a
-  non-empty ``spack.lock`` (unless ``--allow-reconcretize``).  Run before
-  ``build`` and ``dockerfile`` (both fail closed on missing/empty lock).
+* ``build-input`` — config plus manual_packages, Spack tarball, complete
+  bootstrap metadata, and a non-empty ``spack.lock`` (unless
+  ``--allow-reconcretize``).  Run before ``build`` and ``dockerfile``.
 * ``assets`` — schema, spack.yaml, and Spack assets needed to prepare
   bootstrap/mirror.  Run before ``assets`` workflows that touch an env.
 """
@@ -35,6 +35,11 @@ from hpc_cf.environment import (
 from hpc_cf.execution import ProjectLayout
 
 logger = logging.getLogger(__name__)
+
+BOOTSTRAP_METADATA_FILES = (
+    Path("metadata/sources/metadata.yaml"),
+    Path("metadata/binaries/metadata.yaml"),
+)
 
 
 class ValidationSeverity(str, Enum):
@@ -283,6 +288,7 @@ def collect_spack_assets(
     spec: EnvironmentSpec,
     *,
     assets_dir: Path,
+    require_bootstrap: bool = False,
 ) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     if not spec.method.requires_spack_assets:
@@ -308,12 +314,26 @@ def collect_spack_assets(
         )
 
     bootstrap = assets_dir / f"bootstrap-{spack_version}"
-    if not bootstrap.is_dir():
+    invalid_metadata = [
+        path
+        for relative_path in BOOTSTRAP_METADATA_FILES
+        if not (path := bootstrap / relative_path).is_file()
+        or path.stat().st_size == 0
+    ]
+    if invalid_metadata:
+        invalid_paths = ", ".join(str(path) for path in invalid_metadata)
         findings.append(
             ValidationFinding(
                 code="spack_assets.bootstrap_missing",
-                severity=ValidationSeverity.WARNING,
-                message=f"Bootstrap cache missing: {bootstrap}",
+                severity=(
+                    ValidationSeverity.ERROR
+                    if require_bootstrap
+                    else ValidationSeverity.WARNING
+                ),
+                message=(
+                    "Bootstrap cache missing or incomplete; expected non-empty "
+                    f"metadata files: {invalid_paths}"
+                ),
                 path=str(bootstrap),
                 fix_hint=(
                     "Run `python -m hpc_cf assets --prepare-bootstrap` "
@@ -533,7 +553,11 @@ def validate_environment(
         )
         if spec.method.runs_spack_validations:
             report.extend(
-                collect_spack_assets(spec, assets_dir=layout.assets_dir)
+                collect_spack_assets(
+                    spec,
+                    assets_dir=layout.assets_dir,
+                    require_bootstrap=True,
+                )
             )
             report.extend(
                 collect_spack_lock(
