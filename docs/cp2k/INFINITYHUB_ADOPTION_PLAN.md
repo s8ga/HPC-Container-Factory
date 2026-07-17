@@ -1,7 +1,10 @@
 # CP2K InfinityHub 参数引入计划（含 Credit）
 
 更新时间：2026-04-14
-状态：Draft（待实施）
+状态：已实施（历史设计记录）
+
+> [!NOTE]
+> 本文是 InfinityHub 方案落地前的设计记录，不是 v2 操作指南。方案已落地为正式环境 [`cp2k_rocm-2026.1-gfx942`](../../spack-envs/cp2k_rocm-2026.1-gfx942/)，实际来源、路径映射与本地改动以其 [`README_SOURCE.md`](../../spack-envs/cp2k_rocm-2026.1-gfx942/README_SOURCE.md) 为准。
 
 ## 1. 背景与目标
 
@@ -139,5 +142,5 @@
 ## 10. 风险与注意事项
 
 - 上游 spack.yaml 默认是 SIRIUS 全功能链路，和我们当前无 SIRIUS 路线存在差异，需要在融合时显式取舍。
-- docs/cp2k/docker/README.md 当前包含冲突标记，不能直接作为执行文档发布，需清理后再引用。
+- docs/cp2k/docker/README.md 的历史冲突标记已清理。
 - 上游参数以 ROCm 7.0 验证为主，若继续使用 7.2.1 基镜像需做一次兼容回归。

@@ -118,7 +118,6 @@ repos/packages/
 cp2k_mkl-2025.2-experimental/
 ├── Dockerfile.j2                      # Dockerfile Jinja2 模板
 ├── cp2k.def.j2                        # Apptainer 定义文件模板
-├── env.yaml                           # 构建配置（镜像、系统包等）
 ├── MPIRUN_GUIDE.md                    # MPI 运行指南
 ├── cp2k-mkl-experimental-motd.sh      # 容器 MOTD 脚本
 ├── libfakeintel/                      # AMD CPU MKL 优化库
@@ -131,7 +130,7 @@ cp2k_mkl-2025.2-experimental/
 │   └── README
 └── spack-env-file/
     ├── spack.yaml                     # Spack 环境定义
-    ├── env.yaml                       # 构建元配置
+    ├── env.yaml                       # 权威构建元配置（镜像、系统包等）
     ├── repos/                         # 自定义 Spack 包
     │   └── packages/
     │       ├── cp2k/

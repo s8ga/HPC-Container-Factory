@@ -10,13 +10,13 @@ For more information about CP2K, see www.cp2k.org.
 The latest CP2K review, as of **May 2020**, can be found at **[The Journal of Chemical Physics 10.1063/5.0007045](https://doi.org/10.1063/5.0007045).**
 
 ## Single-Node Server Requirements
-[System Requirements](/README.md#single-node-server-requirements) 
+[Current tool requirements](../../README.md#工具要求)
 
 
 ## Build Recipes
-- [Bare Metal build](/cp2k/baremetal/)
-- [Docker/Singularity Build](/cp2k/docker/)
-- [InfinityHub adoption plan](INFINITYHUB_ADOPTION_PLAN.md)
+- [Bare Metal build](baremetal/)
+- [Docker/Singularity Build](docker/)
+- [InfinityHub adoption plan (historical design record)](INFINITYHUB_ADOPTION_PLAN.md)
 
 ## Running CP2K Benchmarks
 
