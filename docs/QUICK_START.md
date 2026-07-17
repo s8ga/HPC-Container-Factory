@@ -1,90 +1,83 @@
 # 快速开始
 
-5 步完成从 Dockerfile 到可运行的 SIF 容器。更精简的版本见顶层 [../QUICKSTART.md](../QUICKSTART.md)。
+以下示例使用 Spack 1.2.0 的
+`cp2k_opensource-2026.2-force-avx512`。顶层精简入口见
+[../QUICKSTART.md](../QUICKSTART.md)。
 
-## 1. 环境准备
+## 1. 准备运行环境
 
 ```bash
-# 安装 Python 依赖
-pip install -r requirements.txt
-
-# 激活开发环境（自动加入本地 apptainer 到 PATH）
+uv venv venv
+uv pip install -r requirements.txt --python ./venv/bin/python
 source ./activate.sh
+podman info
 ```
 
-## 2. 准备离线资源（首次）
+普通 `build` 支持 `--engine podman` 或 `--engine docker`；`assets` 工作流当前
+使用 Podman。
+
+## 2. 准备 Spack 1.2.0 与 assets
 
 ```bash
-# 一键完整流程：构建 builder → 下载 bootstrap → 下载 mirror → 校验
-python -m hpc_cf assets --env cp2k_opensource-2025.2
+mkdir -p assets
+curl -fSL -o assets/spack-v1.2.0.tar.gz \
+  https://github.com/spack/spack/releases/download/v1.2.0/spack-1.2.0.tar.gz
+
+python -m hpc_cf validate \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --profile config
+
+python -m hpc_cf assets \
+  --env cp2k_opensource-2026.2-force-avx512 \
+  --allow-concretize
 ```
 
-> 此步需要网络。完成后 `assets/` 目录包含所有构建所需资源，后续构建可完全离线。
-> 详见 [ASSETS_GUIDE.md](ASSETS_GUIDE.md)。
+`--allow-concretize` 是缺少 `spack.lock` 时由 assets 生成 lock 的显式授权。
+mirror 可以减少重复下载，但不要据此假设整个后续构建完全离线。
 
-## 3. 构建容器镜像
+## 3. 校验并生成 Dockerfile
 
 ```bash
-# 默认环境（cp2k_opensource-2025.2）
-python -m hpc_cf build --app-version cp2k_opensource-2025.2 --network-host
+python -m hpc_cf validate \
+  --app-version cp2k_opensource-2026.2-force-avx512
 
-# ROCm GPU 版
-python -m hpc_cf build --app-version cp2k_rocm-2026.1-gfx942 --network-host
-
-# force-avx512 变体
-python -m hpc_cf build --app-version cp2k_opensource-2025.2-force-avx512 --network-host
+python -m hpc_cf dockerfile \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --output Dockerfile
 ```
 
-自动镜像命名：
-- opensource → `cp2k_opensource:<version>`
-- rocm → `cp2k_rocm:<version>-<gpu>`
+`dockerfile` 与 `build` 都执行 `build-input` 校验；它们默认只读消费非空
+`spack.lock`。`validate --profile config` 才是不要求完整构建资产的浅层检查。
 
-## 4. 构建 SIF（Apptainer）
+## 4. 构建 OCI 镜像
 
 ```bash
-# 从本地 OCI 镜像构建 SIF
-python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2-force-avx512
-
-# 仅安装 apptainer（不构建 SIF）
-python -m hpc_cf build-sif --install-apptainer-only
+python -m hpc_cf build \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --engine podman \
+  --network-host
 ```
 
-详细说明见 [BUILD_SIF.md](BUILD_SIF.md)。
+如明确接受镜像内重新 concretize，可为 `dockerfile` 或 `build` 加
+`--allow-reconcretize`；常规发布构建应先由 assets 生成 lock。
 
-## 5. 打包 Apptainer（可选）
-
-将本地 apptainer 打包为自解压包，分发到目标机器：
+## 5. 构建并检查 SIF
 
 ```bash
-python -m hpc_cf pack-apptainer
-# 产出: artifacts/apptainer-<version>-x86_64.run
+python -m hpc_cf build-sif \
+  --app-version cp2k_opensource-2026.2-force-avx512
+
+apptainer exec \
+  artifacts/cp2k_opensource_2026.2-force-avx512.sif \
+  cp2k.psmp --version
 ```
 
-目标机器上：
+详见 [BUILD_SIF.md](BUILD_SIF.md)。
+
+## 查看所有环境
 
 ```bash
-mkdir ~/apptainer && cd ~/apptainer
-bash apptainer-*.run                    # 解压到当前目录
-source activate-apptainer.sh            # 激活
-apptainer shell /path/to/image.sif      # 使用
-```
-
-## 只生成 Dockerfile（不构建）
-
-```bash
-# 指定环境 + 输出路径
-python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2 --output Dockerfile
-
-# 列出所有可用环境
 python -m hpc_cf dockerfile --app-version
 ```
 
-## 查看可用环境
-
-任何需要 `--app-version` 的命令，不传值即可列出：
-
-```bash
-python -m hpc_cf build --app-version
-python -m hpc_cf build-sif --app-version
-python -m hpc_cf assets --env
-```
+环境不会被默认选择；请显式传 `--app-version` 或对应命令的 `--env` 别名。

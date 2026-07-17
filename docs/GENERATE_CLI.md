@@ -23,7 +23,7 @@ python -m hpc_cf <command> [options]
 
 | 子命令 | 用途 |
 |--------|------|
-| `dockerfile` | 只生成 Dockerfile（config/template 校验） |
+| `dockerfile` | 执行 build-input 校验并生成 Dockerfile |
 | `build` | 生成 Dockerfile 并构建 OCI 镜像（podman/docker） |
 | `validate` | 静态预检；可用 `--profile` 选择深度 |
 | `build-sif` | 从 OCI 镜像构建 Apptainer SIF |
@@ -41,7 +41,7 @@ python -m hpc_cf dockerfile \
 | 参数 | 说明 |
 |------|------|
 | `--app-version <name>` | 环境名（对应 `spack-envs/<name>/`）。不传值列出可用环境；`--env` 为别名 |
-| `--template <path>` | 显式模板路径（覆盖自动选择；须存在） |
+| `--template <path>` | 显式模板**文件**路径（覆盖自动选择；路径必须存在；不接受目录） |
 | `--output <path>` | 输出 Dockerfile 路径 |
 | `--mirror` / `--no-mirror` | 启用 / 禁用离线 mirror 上下文 |
 | `--build-only` | 只渲染 builder 阶段（模板支持时） |
@@ -86,7 +86,7 @@ python -m hpc_cf validate --env <env-name> --profile config --format json
 | 参数 | 说明 |
 |------|------|
 | `--app-version` / `--env` | 环境名。不传值列出可用环境 |
-| `--template <path>` | 显式模板/目录；**不存在则失败**（含 StrictUndefined 渲染探测） |
+| `--template <path>` | 显式模板**文件**路径；不存在则失败（含 StrictUndefined 渲染探测） |
 | `--profile` | `config` / `template`（同 config）、`build-input`（默认）、`assets` |
 | `--format` | `text`（默认）或 `json`（解析错误也保证合法 JSON findings） |
 
@@ -94,7 +94,7 @@ python -m hpc_cf validate --env <env-name> --profile config --format json
 
 | 动作 | Profile | 大体积资产 |
 |------|---------|-----------|
-| `dockerfile` | config | 否 |
+| `dockerfile` | build-input | 是（tarball + manual_packages；默认还要求非空 lock） |
 | `build` | build-input | 是（tarball + manual_packages 等） |
 | `validate`（默认） | build-input | 是 |
 | `validate --profile config` | config | 否 |
@@ -123,7 +123,9 @@ python -m hpc_cf build-sif --install-apptainer-only
 | `--app-version <name>` | 环境名，自动推断镜像名/tag |
 | `--docker-image` / `--docker-tag` | 显式 OCI 镜像 |
 | `-o, --output <path>` | 输出 SIF（默认 `artifacts/<image>_<tag>.sif`） |
+| `--mksquashfs-args <args>` | 传给 Apptainer 的 SquashFS 压缩参数 |
 | `--install-apptainer-only` | 仅安装 apptainer |
+| `--yes`, `-y` | 安装 Apptainer 时无需交互确认 |
 
 详见 [BUILD_SIF.md](BUILD_SIF.md)。
 

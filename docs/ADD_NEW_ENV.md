@@ -17,7 +17,7 @@ cp -r spack-envs/cp2k_opensource-2025.2 spack-envs/<new-env-name>
 
 > **命名规则**：目录名即 `--app-version` 的值。`hpc_cf` 直接用这个名字查找模板和推断镜像名/tag。
 >
-> 推荐格式：`<app>-<variant>-<version>[-<suffix>]`
+> 推荐格式：`<app>_<variant>-<version>[-<suffix>]`（应用名与变体之间使用下划线）
 > 例：`cp2k_opensource-2025.2-force-avx512`
 
 ### Step 2: 修改 `spack-env-file/env.yaml`
@@ -81,7 +81,7 @@ Dockerfile.j2 在 `spack-envs/<env>/Dockerfile.j2`。公共 Spack 步骤应通�
 
 如果新环境与源环境的构建流程完全一致，可以只改 `env.yaml` / `spack.yaml`。
 
-### Step 5: 删除 `spack.lock`（随后由 assets 重新生成）
+### Step 5: 删除 `spack.lock`（随后由 assets 显式重新生成）
 
 **spack.lock 不可复用**——它是根据源环境的 `spack.yaml` + 编译器信息 + 平台信息求解的具体依赖图，直接复用会导致安装失败。
 
@@ -129,20 +129,21 @@ git diff spack-envs/<original-env>/
 # 激活环境
 source activate.sh
 
-# config 校验（不要求大体积资产）+ 渲染
+# config 校验不要求大体积资产，也不要求 lock
 python -m hpc_cf validate --app-version <new-env-name> --profile config
-python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
 
-# build-input 校验（需要 assets tarball / manual_packages）
-python -m hpc_cf validate --app-version <new-env-name> --format text
-
-# concretize + 下载 mirror（缺 lock 时必须显式 --allow-concretize；持共享 mirror 锁并写 manifest）
+# concretize + 下载 mirror；缺 lock 时必须显式 --allow-concretize
 python -m hpc_cf assets --env <new-env-name> --create-container
 python -m hpc_cf assets --env <new-env-name> --download-mirror --allow-concretize
 
-# 之后 build 默认要求非空 spack.lock（不要依赖镜像内 reconcretize）
+# build-input 校验、dockerfile 和 build 都要求完整构建输入及非空 lock
+python -m hpc_cf validate --app-version <new-env-name> --format text
+python -m hpc_cf dockerfile --app-version <new-env-name> --output /tmp/test.Dockerfile
 python -m hpc_cf build --app-version <new-env-name>
 ```
+
+如果只是临时调试并明确接受镜像内重新 concretize，可给 `dockerfile` 或
+`build` 加 `--allow-reconcretize`；这不是常规 lock 生成流程。
 
 ---
 
@@ -172,7 +173,9 @@ python -m hpc_cf build --app-version <new-env-name>
 | `cp2k_mkl-2025.2-experimental` | `cp2k-mkl` | `2025.2-experimental` |
 | `cp2k_rocm-2026.1-gfx942` | `cp2k-rocm` | `2026.1-gfx942` |
 
-新增变体时无需修改任何代码，只要目录名遵循 `<app>-<variant>-<version>[-<suffix>]` 约定即可自动工作。
+新增变体时无需修改任何代码，只要目录名遵循
+`<app>_<variant>-<version>[-<suffix>]` 约定即可自动工作。CLI 不提供
+`--app` 参数；环境名通过 `--app-version`（或支持时的 `--env` 别名）传入。
 
 **env.yaml 覆盖**（可选）：如果需要自定义镜像名或 tag，在 `env.yaml` 中添加：
 
@@ -267,8 +270,14 @@ rm spack-envs/cp2k_opensource-2025.2-force-avx512/spack-env-file/spack.lock
 
 ```bash
 source activate.sh
+python -m hpc_cf validate \
+  --app-version cp2k_opensource-2025.2-force-avx512 \
+  --profile config
+python -m hpc_cf assets \
+  --env cp2k_opensource-2025.2-force-avx512 \
+  --allow-concretize
 python -m hpc_cf dockerfile --app-version cp2k_opensource-2025.2-force-avx512 --output /tmp/test.Dockerfile
-# 确认输出: cp2k_opensource:2025.2-force-avx512
+# 默认镜像名/tag: cp2k_opensource:2025.2-force-avx512
 ```
 
 ---

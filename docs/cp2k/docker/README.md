@@ -168,7 +168,6 @@ If you want access to any output files generated during the run, add `-v $(pwd):
 #### Docker Interactive
 
 ```bash
-<<<<<<< cp2k_update
 docker run --rm -it \
     --device=/dev/kfd \
     --device=/dev/dri \
@@ -178,9 +177,6 @@ docker run --rm -it \
     -v $(pwd):/tmp \
     mycontainer/cp2k:latest \
     /bin/bash
-=======
-docker run --rm -it --device=/dev/kfd --device=/dev/dri --security-opt seccomp=unconfined --ipc=host -e PMIX_MCA_gds=^ds21 mycontainer/cp2k /bin/bash
->>>>>>> main
 ```
 
 #### Docker Single Command
@@ -224,12 +220,8 @@ Example benchmark scripts are provided in `scripts/`:
 To run benchmarks:
 
 ```bash
-<<<<<<< cp2k_update
 cd /path/to/cp2k/docker
 ./scripts/run_dft_nrep2.sh
-=======
-docker run --rm --device=/dev/kfd --device=/dev/dri --security-opt seccomp=unconfined --ipc=host -e PMIX_MCA_gds=^ds21 mycontainer/cp2k bash -c "<cp2k Command>"
->>>>>>> main
 ```
 
 These scripts handle:

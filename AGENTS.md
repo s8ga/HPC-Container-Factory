@@ -98,11 +98,14 @@ use conda/mamba when a binary env solver is enough.
 
 ## Adding a New CP2K Version
 
-1. Copy env dir: `spack-envs/cp2k_opensource-2026.1-*` → `2026.2`
-2. Update `env.yaml`: `cp2k_branch` (template_vars), `custom_repos.branch`, `sparse_path`
-3. Update `spack.yaml`: dependency versions, `cp2k@<version>` spec
-4. `python -m hpc_cf validate --app-version <new env>` — must pass
-5. `python -m hpc_cf dockerfile --app-version <new env>` — must render cleanly
+1. Copy the closest maintained `spack-envs/cp2k_opensource-*` environment.
+2. Rename it using `cp2k_opensource-<version>[-suffix]`.
+3. Update `env.yaml`: Spack version, `cp2k_branch`, custom repo branch/path, and
+   any release-specific `template_vars`.
+4. Update `spack.yaml`: CP2K/dependency versions, variants, and builtin commit.
+5. Remove the copied lock, then run
+   `python -m hpc_cf assets --env <new-env> --allow-concretize`.
+6. Run config/build-input validation and render the Dockerfile before building.
 
 ## Test Layering
 
@@ -125,7 +128,9 @@ Uses shared `templates/Dockerfile.nospack.j2` (multi-stage: builder runs user sc
 
 ## Spack Version Compatibility
 
-Current `DEFAULT_SPACK_VERSION = "1.1.1"`. Spack v1.2.0 (2026-06-21) audited — no blocking breaking changes.
+Current `DEFAULT_SPACK_VERSION = "1.1.1"`. Spack v1.2.0 is already selected by
+the ABACUS and CP2K 2026.2 environments; other environments keep their pinned
+1.1.0 or 1.1.1 versions.
 
 **v1.2.0 highlights relevant to hpc_cf**:
 - New parallel installer (TUI auto-detects non-TTY → text mode in Docker build)
@@ -136,8 +141,9 @@ Current `DEFAULT_SPACK_VERSION = "1.1.1"`. Spack v1.2.0 (2026-06-21) audited —
 
 **Verified safe**: `--fail-fast`, `-j`, `spack bootstrap mirror --binary-packages`, `spack repo update builtin`
 
-**Upgrade path** (when ready): `assets/spack-v1.2.0.tar.gz` + `assets/bootstrap-1.2.0` → update `DEFAULT_SPACK_VERSION` → verify `-p 20` flag still exists during first real build.
+Do not infer an environment's Spack version from `DEFAULT_SPACK_VERSION`; read
+`spack-env-file/env.yaml`.
 
 ## Branch Strategy
 
-Active work on `refactor-plan` branch. Commits are atomic per change item.
+Active work is on the `v2` branch. Commits are atomic per change item.

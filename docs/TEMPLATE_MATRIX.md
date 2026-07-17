@@ -6,17 +6,20 @@
 
 ## 总表
 
-| 环境 (`--app-version`) | method | 模板 | 共享 partials | 状态 |
+| 环境 (`--app-version`) | method | 模板 | 共享 partials | render/contract |
 |---|---|---|---|---|
-| `abacus_opensource-3.9.0.27-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `cp2k_opensource-2025.2` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `cp2k_opensource-2025.2-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `cp2k_opensource-2026.1-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `cp2k_opensource-2026.2-force-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `cp2k_mkl-2025.2-experimental` | spack | per-env `Dockerfile.j2` | ✅ | 🧪 |
-| `cp2k_rocm-2026.1-gfx942` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `vasp_mkl-6.6.0-avx2` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
-| `vasp_mkl-6.6.0-avx512` | spack | per-env `Dockerfile.j2` | ✅ | ✅ |
+| `abacus_opensource-3.9.0.27-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `cp2k_opensource-2025.2` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `cp2k_opensource-2025.2-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `cp2k_opensource-2026.1-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `cp2k_opensource-2026.2-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `cp2k_mkl-2025.2-experimental` | spack | per-env `Dockerfile.j2` | 使用 | 实验性支持 |
+| `cp2k_rocm-2026.1-gfx942` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `vasp_mkl-6.6.0-avx2` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `vasp_mkl-6.6.0-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+
+这里的“支持”只表示模板可由现行发现与渲染契约处理，不代表 OCI/SIF 构建、
+应用测试、性能或特定硬件验证均已完成。具体仓库测试范围应查看对应发布说明。
 
 ## 共享 Jinja partials
 
@@ -46,14 +49,6 @@
 
 `method: no_spack` 使用共享 `templates/Dockerfile.nospack.j2`（多阶段：builder
 跑用户脚本，runtime 拷贝产物）。无需 Spack 资产。
-
-## Legacy 模板（回退）
-
-| 模板 | 状态 |
-|---|---|
-| `templates/Dockerfile-cp2k_opensource-2025.2.j2` | 回退（`spack-envs/` 优先） |
-| `templates/Dockerfile-cp2k_rocm-2026.1-gfx942.j2` | 回退（`spack-envs/` 优先） |
-| `templates/Dockerfile.nospack.j2` | no_spack 默认模板 |
 
 ## 校验与冒烟
 

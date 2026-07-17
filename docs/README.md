@@ -13,6 +13,7 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 | [模板矩阵](TEMPLATE_MATRIX.md) | 环境 ↔ 模板映射表 |
 | [新建环境](ADD_NEW_ENV.md) | 8 步添加新 Spack 环境 |
 | [已知问题](KNOWN_ISSUES.md) | 当前 issue 跟踪 |
+| [发布说明](releases/README.md) | 版本证据、限制与发布记录索引 |
 
 ## 架构
 
@@ -81,12 +82,19 @@ hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共�
 
 ## 当前环境
 
-| `--app-version` | 说明 | 自动镜像名 |
+| `--app-version` | Spack | 自动镜像名 |
 |------|------|-----------|
-| `cp2k_opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | `cp2k_opensource:2025.2` |
-| `cp2k_opensource-2025.2-force-avx512` | 同上 + AVX512 强制 kernel | `cp2k_opensource:2025.2-force-avx512` |
-| `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | `cp2k_mkl:2025.2-experimental` |
-| `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | `cp2k_rocm:2026.1-gfx942` |
+| `abacus_opensource-3.9.0.27-force-avx512` | 1.2.0 | `abacus_opensource:3.9.0.27-force-avx512` |
+| `cp2k_mkl-2025.2-experimental` | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
+| `cp2k_opensource-2025.2` | 1.1.0 | `cp2k_opensource:2025.2` |
+| `cp2k_opensource-2025.2-force-avx512` | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
+| `cp2k_opensource-2026.1-force-avx512` | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
+| `cp2k_opensource-2026.2-force-avx512` | 1.2.0 | `cp2k_opensource:2026.2-force-avx512` |
+| `cp2k_rocm-2026.1-gfx942` | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
+| `vasp_mkl-6.6.0-avx2` | 1.1.1 | `vasp_mkl:6.6.0-avx2` |
+| `vasp_mkl-6.6.0-avx512` | 1.1.1 | `vasp_mkl:6.6.0-avx512` |
+
+运行 `python -m hpc_cf dockerfile --app-version` 可获取实时发现结果。
 
 ## Build Notes 与专题文档（开发参考）
 
@@ -98,4 +106,4 @@ hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共�
 
 ## 归档
 
-历史路线（VASP、旧版 CP2K MKL）已迁移至 `legacy/` 目录。当前 MKL 实验版本见 `spack-envs/cp2k_mkl-2025.2-experimental/`。
+归档内容位于 `legacy/`。当前可选环境始终以 CLI 发现结果为准。

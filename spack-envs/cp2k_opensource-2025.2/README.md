@@ -56,7 +56,8 @@ smm=libxsmm lmax=6
 >
 > 1. 修改 `spack.yaml`，将 `target="x86_64_v3"` 改为 `target="x86_64_v4"`
 > 2. 删除 `spack.lock`：`rm spack-env-file/spack.lock`
-> 3. 重新生成 assets：`python -m hpc_cf assets --env cp2k_opensource-2025.2`
+> 3. 重新生成 lock 与 assets：
+>    `python -m hpc_cf assets --env cp2k_opensource-2025.2 --allow-concretize`
 > 4. 重新构建容器
 >
 > 这样 ELPA 和 FFTW 会自动检测并编译 AVX512 内核，无需额外补丁。
@@ -73,5 +74,5 @@ repos/packages/
 ## 构建配置
 
 - **基础镜像**：`debian:trixie`（构建）/ `debian:trixie-slim`（运行时）
-- **Spack 目标架构**：`x86_64_v3`（支持 AV2+）
+- **Spack 目标架构**：`x86_64_v3`（支持 AVX2+）
 - **OpenBLAS**：启用 `+dynamic_dispatch`（运行时可选择最优内核）

@@ -1,121 +1,96 @@
 # Quick Start
 
-30 秒完成从零到可运行的 SIF 容器镜像。
+以 `cp2k_opensource-2026.2-force-avx512` 为例完成校验、资源准备、镜像和 SIF 构建。
 
-## 前置条件
+## 1. 安装依赖
 
 ```bash
-# 1. Python 依赖
 uv venv venv
 uv pip install -r requirements.txt --python ./venv/bin/python
-
-# 2. 需要 Podman
+source ./activate.sh
 podman info
 ```
 
-## 六步流程
+普通 OCI 镜像构建可选择 Podman 或 Docker；`assets`/mirror 工作流当前依赖
+Podman。SIF 构建还需要 Apptainer 或 Singularity。
 
-### Step 0 — 准备 Spack 源码（首次 clone 后必须）
+## 2. 准备对应版本的 Spack 源码
+
+每个环境使用 `spack-env-file/env.yaml` 中声明的版本。2026.2 环境使用
+Spack 1.2.0：
 
 ```bash
 mkdir -p assets
-
-# 下载 Spack v1.1.0（大部分环境使用）
-curl -fSL -o assets/spack-v1.1.0.tar.gz \
-  https://github.com/spack/spack/releases/download/v1.1.0/spack-1.1.0.tar.gz
-
-# 下载 Spack v1.1.1（cp2k_opensource-2026.1-force-avx512 使用）
-curl -fSL -o assets/spack-v1.1.1.tar.gz \
-  https://github.com/spack/spack/releases/download/v1.1.1/spack-1.1.1.tar.gz
+curl -fSL -o assets/spack-v1.2.0.tar.gz \
+  https://github.com/spack/spack/releases/download/v1.2.0/spack-1.2.0.tar.gz
 ```
 
-> `assets/` 被 `.gitignore` 排除，每次从 GitHub 新 clone 后都需要执行此步骤。
-> 各环境使用的 Spack 版本由其 `env.yaml` 中 `spack.version` 字段决定，
-> 运行 `assets` 命令时会自动选择对应版本。
+仓库中还存在使用 Spack 1.1.0 和 1.1.1 的环境；切换环境时应准备对应的
+`assets/spack-v<version>.tar.gz`。
 
-### Step 1 — 激活环境
+## 3. 校验并准备 assets
 
 ```bash
-source ./activate.sh
+# 仅检查配置与模板，不要求大体积构建输入
+python -m hpc_cf validate \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --profile config
+
+# 首次准备；若 lock 缺失，显式允许 assets concretize
+python -m hpc_cf assets \
+  --env cp2k_opensource-2026.2-force-avx512 \
+  --allow-concretize
+
+# 检查完整 build-input
+python -m hpc_cf validate \
+  --app-version cp2k_opensource-2026.2-force-avx512
 ```
 
-> 自动激活 Python venv（如存在）并将本地 apptainer 加入 PATH。
+`assets` 会访问包源、Git 仓库和系统软件源。共享 source mirror 可减少后续下载，
+但不代表所有构建步骤在任何环境下都完全离线。
 
-### Step 2 — 准备离线资源（首次或更新依赖时）
-
-**前置：确保 Step 0 已完成（`assets/spack-v*.tar.gz` 存在）。**
+## 4. 渲染并构建 OCI 镜像
 
 ```bash
-python -m hpc_cf assets --env cp2k_opensource-2025.2
+python -m hpc_cf dockerfile \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --output Dockerfile
+
+python -m hpc_cf build \
+  --app-version cp2k_opensource-2026.2-force-avx512 \
+  --engine podman \
+  --network-host
 ```
 
-> 一键完成：构建 mirror builder 容器 → 下载 Spack bootstrap → 下载源码 mirror → 校验。
-> 产出在 `assets/` 目录，支持半离线构建（源码包不用下载，但是spack build过程中存在patch文件）。
-> 详见 [离线资源指南](docs/ASSETS_GUIDE.md)。
+`dockerfile` 和 `build` 都执行 `build-input` 校验并默认要求非空
+`spack.lock`。只有在明确接受镜像内重新 concretize 时才使用
+`--allow-reconcretize`。
 
-### Step 3 — 构建容器镜像
+## 5. 构建并冒烟检查 SIF
 
 ```bash
-python -m hpc_cf build --app-version cp2k_opensource-2025.2 --network-host
+python -m hpc_cf build-sif \
+  --app-version cp2k_opensource-2026.2-force-avx512
+
+apptainer exec \
+  artifacts/cp2k_opensource_2026.2-force-avx512.sif \
+  cp2k.psmp --version
 ```
 
-> 自动推断镜像名 `cp2k_opensource:2025.2`，使用 Podman/Docker 构建多阶段镜像。
+需要非交互确认本地 Apptainer 安装时可加 `--yes`。完整说明见
+[docs/BUILD_SIF.md](docs/BUILD_SIF.md)。
 
-### Step 4 — 转换为 SIF
+## 查看可用环境
 
 ```bash
-python -m hpc_cf build-sif --app-version cp2k_opensource-2025.2
+python -m hpc_cf dockerfile --app-version
 ```
 
-> 首次运行会提示安装 apptainer（非特权安装到 `tools/apptainer/`）。
-> 产出：`artifacts/cp2k_opensource_2025.2.sif`
-
-### Step 5 — 运行
-
-```bash
-apptainer shell artifacts/cp2k_opensource_2025.2.sif
-```
-
-> 进入容器后自动显示 MOTD（硬件信息、环境提示）。
-
-## 可选：打包 Apptainer 分发到目标机器
-
-```bash
-python -m hpc_cf pack-apptainer
-```
-
-> 生成 `artifacts/apptainer-<version>-x86_64.run` 自解压包。
-
-目标机器上：
-
-```bash
-mkdir ~/apptainer && cd ~/apptainer
-bash apptainer-*.run                    # 解压到当前目录
-source activate-apptainer.sh            # 激活
-apptainer shell /path/to/image.sif      # 使用
-```
-
-## 所有可用环境
-
-```bash
-python -m hpc_cf build --app-version    # 列出可用环境
-```
-
-## 验证与测试
-
-```bash
-# 静态预检（分支一致性 + spack assets + spack.yaml 语法）
-python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512
-
-# 单元测试（快速，无外部依赖）
-./venv/bin/pytest -q
-
-# 集成测试（需要 podman + 镜像 + assets）
-./venv/bin/pytest --run-integration -v -s
-```
+CLI 当前发现 9 个环境，不会自动选择默认环境；需要显式传入环境名。
 
 ## 更多文档
 
-- 完整 CLI 参考：[docs/GENERATE_CLI.md](docs/GENERATE_CLI.md)
-- SIF 构建详解：[docs/BUILD_SIF.md](docs/BUILD_SIF.md)
-- 架构总览：[docs/README.md](docs/README.md)
+- [完整 CLI 参考](docs/GENERATE_CLI.md)
+- [assets 与 mirror](docs/ASSETS_GUIDE.md)
+- [SIF 构建](docs/BUILD_SIF.md)
+- [文档总览](docs/README.md)

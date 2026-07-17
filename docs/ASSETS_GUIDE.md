@@ -43,8 +43,10 @@ assets/
 ### 使用
 
 ```bash
-# 一键完整流程（会先跑 assets 校验 profile）
-python -m hpc_cf assets --env cp2k_opensource-2025.2
+# 首次一键流程；缺 lock 时显式允许 concretize
+python -m hpc_cf assets \
+  --env cp2k_opensource-2025.2 \
+  --allow-concretize
 
 # 分步
 python -m hpc_cf assets --create-container
@@ -88,8 +90,9 @@ python -m hpc_cf assets --env cp2k_opensource-2025.2 --status
 
 | 命令 / 标志 | Profile | 是否要求大体积资产 |
 |-------------|---------|-------------------|
-| `dockerfile` / `validate --profile config` | config | 否 |
+| `dockerfile` | **build-input** | 是（默认还要求非空 lock） |
 | `build` / `validate`（默认） | build-input | 是（tarball + manual_packages） |
+| `validate --profile config` | config | 否 |
 | `assets --status` | **config** | 否（缺大资产不因此失败） |
 | `assets --prepare-bootstrap` | assets | 是（bootstrap 输入） |
 | `assets --download-mirror` | assets | 是（tarball；缺输入必失败） |
@@ -112,7 +115,7 @@ container verify → host symlink → 原子写 manifest；失败时写入
 
 | 标志 | 需要 `--env` | 说明 |
 |------|-------------|------|
-| （无标志） | **是** | 一键完整流程：构建镜像 → 创建容器 → bootstrap → mirror → verify |
+| （无标志） | **是** | 一键完整流程：构建镜像 → 创建容器 → bootstrap → mirror → verify；缺 lock 时加 `--allow-concretize` |
 | `--create-container` | 否 | 构建镜像并创建/启动 reusable mirror worker container |
 | `--prepare-bootstrap` | 否 | 生成 Spack bootstrap mirror（失败必须传播，不吞错） |
 | `--download-mirror` | **是** | 下载源码 mirror（持锁 + 写 manifest；缺 lock 需加 `--allow-concretize`） |

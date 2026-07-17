@@ -1,6 +1,6 @@
-# cp2k-opensource-2025.2-force-avx512
+# cp2k_opensource-2025.2-force-avx512
 
-基于 `cp2k-opensource-2025.2` 的 AVX512 增强版本。在 AVX2 构建机器上强制编译 AVX512 内核，使容器可以在 AVX512 目标机器上自动获得更高的数值计算性能。
+基于 `cp2k_opensource-2025.2` 的 AVX512 增强版本。在 AVX2 构建机器上强制编译 AVX512 内核，使容器可以在 AVX512 目标机器上自动获得更高的数值计算性能。
 
 > **⚠️ 这是 workaround，不是最终方案**
 >
@@ -12,7 +12,7 @@
 >
 > **优化范围**：本版本仅针对 **Diag（对角化）算法路径** 中的 ELPA 和 FFTW 进行了 AVX512 优化。CP2K 的 **OT（Orbital Transformation）** 算法路径暂未做专门的 AVX512 优化。如果你的主要工作负载以 OT 为主，此版本带来的性能提升有限。
 
-## 与 `cp2k-opensource-2025.2` 的区别
+## 与 `cp2k_opensource-2025.2` 的区别
 
 ### spack.yaml 差异
 
@@ -44,14 +44,14 @@ repos/packages/
 
 ### 运行时效果对比
 
-**普通版** (`cp2k-opensource-2025.2`)：
+**普通版** (`cp2k_opensource-2025.2`)：
 
 ```
 ELPA 可用内核：SSE, AVX, AVX2（无 AVX512）
 FFTW AVX512 symbols：0
 ```
 
-**AVX512 版** (`cp2k-opensource-2025.2-force-avx512`)：
+**AVX512 版** (`cp2k_opensource-2025.2-force-avx512`)：
 
 ```
 ELPA 可用内核：SSE, AVX, AVX2, AVX512（全部可用）

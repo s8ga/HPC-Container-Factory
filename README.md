@@ -14,13 +14,23 @@
 
 ## 当前环境
 
+环境名以 CLI 发现结果为准：
+
 | 环境 | 说明 | Spack | 自动镜像名 |
 |------|------|-------|------------|
+| `abacus_opensource-3.9.0.27-force-avx512` | ABACUS 开源版 + AVX512 | 1.2.0 | `abacus_opensource:3.9.0.27-force-avx512` |
+| `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版 | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
 | `cp2k_opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | 1.1.0 | `cp2k_opensource:2025.2` |
-| `cp2k_opensource-2025.2-force-avx512` | 同上 + 强制 AVX512 kernel | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
-| `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版（含 DLA-Future） | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
-| `cp2k_opensource-2026.1-force-avx512` | CP2K 2026.1 开源版 + 强制 AVX512 | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
-| `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 (gfx942) | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
+| `cp2k_opensource-2025.2-force-avx512` | CP2K 2025.2 强制 AVX512 kernel | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
+| `cp2k_opensource-2026.1-force-avx512` | CP2K 2026.1 强制 AVX512 kernel | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
+| `cp2k_opensource-2026.2-force-avx512` | CP2K 2026.2 强制 AVX512 kernel | 1.2.0 | `cp2k_opensource:2026.2-force-avx512` |
+| `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
+| `vasp_mkl-6.6.0-avx2` | VASP 6.6.0 MKL AVX2 | 1.1.1 | `vasp_mkl:6.6.0-avx2` |
+| `vasp_mkl-6.6.0-avx512` | VASP 6.6.0 MKL AVX512 | 1.1.1 | `vasp_mkl:6.6.0-avx512` |
+
+```bash
+python -m hpc_cf dockerfile --app-version
+```
 
 ## ROCm 镜像构建参考
 
@@ -40,7 +50,8 @@
 | 工具 | 版本 | 用途 |
 |------|------|------|
 | Python | ≥ 3.10 | 运行 `hpc_cf` (`python -m hpc_cf`) |
-| Podman 或 Docker | 任意 | 容器构建、mirror 构建 |
+| Podman 或 Docker | 任意 | 普通 OCI 镜像构建 |
+| Podman | 任意 | `assets`、bootstrap 与 source mirror 工作流 |
 | Bash | ≥ 4.0 | 脚本运行 |
 
 ### Python 依赖
@@ -79,7 +90,7 @@ uv pip install -r requirements.txt
 - [新建环境](docs/ADD_NEW_ENV.md) — 8 步添加新环境
 - [已知问题](docs/KNOWN_ISSUES.md) — 当前 issue 跟踪
 
-### Build Notes（不动）
+### Build Notes
 
 构建日志记录，仅供开发参考：
 
