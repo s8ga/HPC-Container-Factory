@@ -98,7 +98,9 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
  Production policy defaults come from each env's `spack.buildcache.policy`;
  CLI `--buildcache` is an override. `auto` mounts buildcache and source mirror read-only and permits
   source fallback; strict `only` mounts buildcache alone and fails closed.
- Producer source builds and publication use run-unique temporary tags, then
+ Producer installs use `--use-buildcache auto` (with padding) so published
+ hashes can be reused; misses fall back to the source mirror. Publication uses
+ run-unique temporary tags, then
  promote only after a successful check under the publisher lock; coverage,
  verify, and `only` use the stable
  `{tag}-buildcache-producer` image. Normal builds keep `{tag}-installed`

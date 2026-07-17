@@ -788,6 +788,10 @@ class BuildcacheService:
             lock_path=lock_path,
             spack_version=spec.spack.version,
         )
+        # Producer install uses auto so already-published hashes can be
+        # extracted; miss falls back to the verified source mirror. Keep
+        # buildcache_producer so padded_length is still applied for push.
+        store.ensure_store_root()
         dockerfile = generate_dockerfile(
             template=None,
             app_version=request.env,
@@ -796,22 +800,23 @@ class BuildcacheService:
             build_only=True,
             layout=self.layout,
             allow_reconcretize=False,
-            buildcache_policy=BuildcachePolicy.NEVER.value,
+            buildcache_policy=BuildcachePolicy.AUTO.value,
             buildcache_producer=True,
         )
         temporary_image_ref = temporary_producer_image_ref(
             image, tag, run.run_id
         )
         try:
-            build_docker_stage(
-                dockerfile=dockerfile,
-                image_ref=temporary_image_ref,
-                target="builder-installed",
-                engine=request.engine,
-                network_host=request.network_host,
-                build_args=list(request.build_args),
-                build_opts=list(request.build_opts),
-            )
+            with store.consumer_lock():
+                build_docker_stage(
+                    dockerfile=dockerfile,
+                    image_ref=temporary_image_ref,
+                    target="builder-installed",
+                    engine=request.engine,
+                    network_host=request.network_host,
+                    build_args=list(request.build_args),
+                    build_opts=list(request.build_opts),
+                )
         except Exception as exc:
             remove_temporary_image(
                 engine=request.engine,

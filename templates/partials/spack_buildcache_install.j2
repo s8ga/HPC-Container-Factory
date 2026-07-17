@@ -1,9 +1,11 @@
-{# Consumer install. The host build command supplies both bind sources. #}
+{# Install from the shared filesystem binary cache (consumer or producer).
+   Register is inlined so the RUN stays one Dockerfile instruction. #}
 RUN --mount=type=bind,source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly \
 {% if spack_buildcache_policy == 'auto' %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
 {% endif %}
-    {% include 'partials/spack_buildcache_register.j2' %} && \
+    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache \
+        file:///opt/spack-buildcache && \
     spack -e {{ spack_env_name }} install --only-concrete \
         --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
         -j "$(nproc)" -p 20

@@ -37,7 +37,9 @@ checks prove every source blob complete. Validate and verify first:
 ```
 
 Build the padded `builder-installed` stage into a run-unique temporary image
-and publish it:
+and publish it. The producer install uses `--use-buildcache auto` with both
+the buildcache and source mirror mounted read-only, so already-published
+hashes are extracted and misses fall back to source:
 
 ```bash
 ./venv/bin/python -m hpc_cf buildcache build \

@@ -34,7 +34,7 @@ def _render(policy: str, *, producer: bool = False) -> str:
 
 
 def test_pilot_has_installed_builder_and_final_stages() -> None:
-    rendered = _render("never", producer=True)
+    rendered = _render("auto", producer=True)
     assert "AS builder-installed" in rendered
     assert "FROM builder-installed AS builder" in rendered
     assert "FROM runtime AS final" in rendered
@@ -49,23 +49,80 @@ def test_pilot_has_installed_builder_and_final_stages() -> None:
 
 def test_auto_consumer_mounts_both_read_only_stores_and_can_fallback() -> None:
     rendered = _render("auto")
+    assert not any(line.startswith("&&") for line in rendered.splitlines())
     install = next(
         block for block in rendered.split("RUN ") if "--use-buildcache auto" in block
     )
     assert "source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly" in install
     assert "source=assets/spack-mirror,target=/opt/spack-mirror,readonly" in install
+    assert "mirror add --scope env:cp2k-env --unsigned binary-cache" in install
+    assert "install --only-concrete" in install
     assert "--only-concrete" in install
+    assert install.index("mirror add") < install.index("install --only-concrete")
 
 
 def test_only_consumer_has_no_source_mount_or_source_install_branch() -> None:
     rendered = _render("only")
+    assert not any(line.startswith("&&") for line in rendered.splitlines())
     install = next(
         block for block in rendered.split("RUN ") if "--use-buildcache only" in block
     )
     assert "source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly" in install
     assert "spack-mirror" not in install
     assert "libint" not in install
+    assert "mirror add --scope env:cp2k-env --unsigned binary-cache" in install
+    assert install.index("mirror add") < install.index("install --only-concrete")
     assert "--only-concrete" in install
+
+
+def test_producer_auto_install_reuses_buildcache_with_padding() -> None:
+    """Producer keeps padded_length but may extract published hashes."""
+    rendered = _render("auto", producer=True)
+    assert "padded_length:128" in rendered
+    assert not any(line.startswith("&&") for line in rendered.splitlines())
+    install = next(
+        block for block in rendered.split("RUN ") if "--use-buildcache auto" in block
+    )
+    assert "source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly" in install
+    assert "source=assets/spack-mirror,target=/opt/spack-mirror,readonly" in install
+    assert "--use-buildcache never" not in install
+    assert "libint" not in install
+
+
+def test_buildcache_build_renders_producer_with_auto_policy(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, _, resolved = _producer_service_inputs(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_generate(**kwargs: object) -> Path:
+        captured.update(kwargs)
+        return tmp_path / "Dockerfile"
+
+    with (
+        _producer_patches(resolved),
+        patch("hpc_cf.template.generate_dockerfile", side_effect=fake_generate),
+        patch("hpc_cf.sif.build_docker_stage"),
+        patch(
+            "hpc_cf.buildcache.publish",
+            return_value=(subprocess.CompletedProcess([], 0, stdout=""), 1),
+        ),
+        patch("hpc_cf.buildcache.promote_producer_image"),
+        patch(
+            "hpc_cf.buildcache.inspect_image_digest",
+            return_value="sha256:installed",
+        ),
+        patch("hpc_cf.buildcache.remove_temporary_image"),
+    ):
+        assert BuildcacheService(layout).run(
+            BuildcacheRequest(action="build", env=PILOT)
+        ) == 0
+
+    assert captured["buildcache_policy"] == BuildcachePolicy.AUTO.value
+    assert captured["buildcache_producer"] is True
 
 
 @pytest.mark.parametrize("spack_version", ("1.1.0", "1.1.1", "1.2.0"))
