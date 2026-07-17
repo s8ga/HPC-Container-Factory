@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from hpc_cf.config import SPACK_ENVS_DIR
 from hpc_cf.execution import ProjectLayout
-from hpc_cf.template import build_context, render_template
+from hpc_cf.template import build_context, render_template, select_template
 from hpc_cf.validation import ValidationProfile, validate_environment
 
 
@@ -39,6 +42,24 @@ def _write_valid_bootstrap(bootstrap: Path) -> None:
         path = bootstrap / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("bootstrap: valid\n", encoding="utf-8")
+
+
+def _assert_env_create_script_has_valid_bash(rendered: str) -> None:
+    match = re.search(
+        r"RUN /bin/bash -c '(?P<script>[^']*spack env create[^']*)'",
+        rendered,
+        flags=re.DOTALL,
+    )
+    assert match, "rendered Dockerfile has no spack env create bash script"
+    script = match.group("script").replace("\\\n", "\n")
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=script,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_build_input_errors_without_lock(tmp_path: Path) -> None:
@@ -101,6 +122,7 @@ def test_env_create_partial_fail_closed_without_allow(tmp_path: Path) -> None:
         allow_reconcretize=False,
     )
     out = render_template(tpl, ctx)
+    _assert_env_create_script_has_valid_bash(out)
     assert "refuse to concretize during image build" in out
     assert "exit 1" in out
     assert "install step will concretize" not in out
@@ -118,8 +140,27 @@ def test_env_create_partial_allows_reconcretize_escape(tmp_path: Path) -> None:
         allow_reconcretize=True,
     )
     out = render_template(tpl, ctx)
+    _assert_env_create_script_has_valid_bash(out)
     assert "--allow-reconcretize" in out
     assert "refuse to concretize" not in out
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    [
+        path.parent.name
+        for path in sorted(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
+    ],
+)
+def test_shipped_spack_env_create_scripts_have_valid_bash(env_name: str) -> None:
+    tpl = select_template(env_name)
+    ctx = build_context(
+        use_mirror=True,
+        build_only=False,
+        app_version=env_name,
+        template_path=tpl,
+    )
+    _assert_env_create_script_has_valid_bash(render_template(tpl, ctx))
 
 
 def test_run_mirror_fails_closed_without_lock(tmp_path: Path) -> None:

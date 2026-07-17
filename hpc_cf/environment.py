@@ -139,6 +139,74 @@ class RepoScope(Enum):
             ) from exc
 
 
+class BuildcachePolicy(Enum):
+    """Spack binary-cache install policy, independent of source mirrors."""
+
+    NEVER = "never"
+    AUTO = "auto"
+    ONLY = "only"
+
+    @classmethod
+    def parse(cls, value: str | BuildcachePolicy | None) -> BuildcachePolicy:
+        if isinstance(value, BuildcachePolicy):
+            return value
+        if value is None or value == "":
+            return cls.NEVER
+        if not isinstance(value, str):
+            raise ValueError(
+                f"buildcache policy must be a string; got {type(value).__name__}"
+            )
+        try:
+            return cls(value)
+        except ValueError as exc:
+            known = ", ".join(item.value for item in cls)
+            raise ValueError(
+                f"Unknown buildcache policy {value!r}; expected one of: {known}"
+            ) from exc
+
+
+class BuildcacheCoverage(Enum):
+    """Set of concrete specs expected to have binary packages.
+
+    External specs are intentionally excluded: Spack does not push external
+    compiler/runtime packages, so treating ``all_specs()`` as cacheable would
+    make strict coverage checks fail for valid caches.
+    """
+
+    NON_EXTERNAL = "non_external"
+
+    @classmethod
+    def parse(
+        cls,
+        value: str | BuildcacheCoverage | None,
+    ) -> BuildcacheCoverage:
+        if isinstance(value, BuildcacheCoverage):
+            return value
+        if value is None or value == "":
+            return cls.NON_EXTERNAL
+        if not isinstance(value, str):
+            raise ValueError(
+                f"buildcache coverage must be a string; got {type(value).__name__}"
+            )
+        try:
+            return cls(value)
+        except ValueError as exc:
+            raise ValueError(
+                "Unknown buildcache coverage "
+                f"{value!r}; expected: {cls.NON_EXTERNAL.value}"
+            ) from exc
+
+
+@dataclass
+class BuildcacheConfig:
+    """Per-environment binary-cache contract."""
+
+    enabled: bool = False
+    padded_length: int = 128
+    policy: BuildcachePolicy = BuildcachePolicy.NEVER
+    coverage: BuildcacheCoverage = BuildcacheCoverage.NON_EXTERNAL
+
+
 @dataclass
 class ImageConfig:
     builder: str = "debian:trixie"
@@ -191,6 +259,7 @@ class SpackConfig:
             repo_scope=RepoScope.SITE,
         )
     )
+    buildcache: BuildcacheConfig = field(default_factory=BuildcacheConfig)
 
 
 @dataclass
@@ -308,6 +377,12 @@ class EnvironmentSpec:
                     "update_builtin": self.spack.image.update_builtin,
                     "repo_scope": self.spack.image.repo_scope.value,
                 },
+                "buildcache": {
+                    "enabled": self.spack.buildcache.enabled,
+                    "padded_length": self.spack.buildcache.padded_length,
+                    "policy": self.spack.buildcache.policy.value,
+                    "coverage": self.spack.buildcache.coverage.value,
+                },
                 "custom_repos": repos,
             },
             "mirror_builder": {
@@ -340,9 +415,12 @@ _TOP_LEVEL_KEYS = frozenset({
 })
 _IMAGES_KEYS = frozenset({"builder", "runtime", "output_name", "output_tag"})
 _SPACK_KEYS = frozenset({
-    "version", "env_name", "custom_repos", "assets", "image",
+    "version", "env_name", "custom_repos", "assets", "image", "buildcache",
 })
 _PHASE_POLICY_KEYS = frozenset({"update_builtin", "repo_scope"})
+_BUILDCACHE_KEYS = frozenset({
+    "enabled", "padded_length", "policy", "coverage",
+})
 _CUSTOM_REPO_KEYS = frozenset({
     "url", "branch", "sparse_path", "namespace", "path", "phases", "image_path",
 })
@@ -419,6 +497,36 @@ def _parse_phase_policy(
     except ValueError as exc:
         raise ValueError(f"{path}.repo_scope: {exc}") from exc
     return SpackPhasePolicy(update_builtin=update, repo_scope=scope)
+
+
+def _parse_buildcache(raw: Any) -> BuildcacheConfig:
+    if raw is None:
+        return BuildcacheConfig()
+    data = _require_mapping(raw, path="spack.buildcache")
+    _reject_unknown_keys(data, _BUILDCACHE_KEYS, path="spack.buildcache")
+    enabled = _require_bool(
+        data.get("enabled", False),
+        path="spack.buildcache.enabled",
+    )
+    padded_length = data.get("padded_length", 128)
+    if type(padded_length) is not int:
+        raise ValueError("spack.buildcache.padded_length must be a strict integer")
+    if padded_length < 0:
+        raise ValueError("spack.buildcache.padded_length must be >= 0")
+    try:
+        policy = BuildcachePolicy.parse(data.get("policy"))
+    except ValueError as exc:
+        raise ValueError(f"spack.buildcache.policy: {exc}") from exc
+    try:
+        coverage = BuildcacheCoverage.parse(data.get("coverage"))
+    except ValueError as exc:
+        raise ValueError(f"spack.buildcache.coverage: {exc}") from exc
+    return BuildcacheConfig(
+        enabled=enabled,
+        padded_length=padded_length,
+        policy=policy,
+        coverage=coverage,
+    )
 
 
 def _parse_custom_repos(raw_repos: Any) -> list[CustomRepo]:
@@ -555,6 +663,7 @@ def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
         image=_parse_phase_policy(
             data.get("image"), default=image_default, label="image",
         ),
+        buildcache=_parse_buildcache(data.get("buildcache")),
     )
 
 
@@ -656,12 +765,17 @@ def parse_environment_spec(
     if script_raw is None:
         script_raw = ""
     script = _require_str(script_raw, path="script")
+    spack = _parse_spack(data.get("spack"), method=method)
+    if method is BuildMethod.NO_SPACK and spack.buildcache.enabled:
+        raise ValueError(
+            "spack.buildcache.enabled cannot be true when method: no_spack"
+        )
 
     return EnvironmentSpec(
         schema_version=schema_version,
         method=method,
         images=_parse_images(data.get("images")),
-        spack=_parse_spack(data.get("spack"), method=method),
+        spack=spack,
         mirror_builder=_parse_mirror_builder(data.get("mirror_builder")),
         manual_packages=_parse_manual_packages(data.get("manual_packages")),
         runtime=_parse_runtime(data.get("runtime")),

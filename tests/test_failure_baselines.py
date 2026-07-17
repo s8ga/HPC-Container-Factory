@@ -275,6 +275,7 @@ def test_assets_status_and_download_mirror_use_different_profiles(
         "spack:\n  specs: [pkgconf]\n",
         encoding="utf-8",
     )
+    (env_host / "spack.lock").write_text('{"concrete": true}\n', encoding="utf-8")
     layout.assets_dir.mkdir(parents=True)
 
     seen: list[ValidationProfile] = []
@@ -484,6 +485,61 @@ def test_build_sif_resolves_relative_output_before_stat(
     # Process-cwd-relative absolute resolution (not artifacts-cwd-only).
     expected = (tmp_path / "out" / "rel.sif").resolve()
     assert expected.is_file(), f"expected SIF at {expected}"
+
+
+def test_build_sif_mock_contract_uses_archive_and_requested_options(
+    tmp_path: Path,
+) -> None:
+    """SIF conversion stays mockable and passes the exact archive contract."""
+    from hpc_cf import sif as sif_mod
+    from hpc_cf.execution import ProjectLayout
+
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.artifacts_dir.mkdir()
+    tar_path = layout.artifacts_dir / "demo_tag.tar"
+    tar_path.write_bytes(b"oci-tar")
+    output = tmp_path / "result.sif"
+    calls: list[tuple[list[str], Path | None]] = []
+
+    def fake_run(
+        cmd: list[str],
+        *,
+        cwd: Path | None = None,
+        **_kwargs: object,
+    ) -> None:
+        calls.append((list(cmd), cwd))
+        if cmd[0] == "/usr/bin/apptainer":
+            output.write_bytes(b"sif")
+
+    with (
+        patch.object(sif_mod, "ensure_apptainer", return_value="/usr/bin/apptainer"),
+        patch.object(sif_mod, "check_command_exists", side_effect=lambda c: c == "podman"),
+        patch.object(sif_mod, "run_cmd", side_effect=fake_run),
+        patch.object(sif_mod, "_find_def_template", return_value=None),
+    ):
+        sif_mod.build_sif(
+            docker_image="registry.example/demo",
+            docker_tag="tag",
+            output=output,
+            mksquashfs_args="-comp gzip",
+            yes=True,
+            layout=layout,
+        )
+
+    assert calls == [
+        (
+            [
+                "/usr/bin/apptainer",
+                "build",
+                "--force",
+                "--mksquashfs-args",
+                "-comp gzip",
+                str(output),
+                "docker-archive://demo_tag.tar",
+            ],
+            layout.artifacts_dir,
+        )
+    ]
 
 
 def test_build_docker_like_builds_builder_before_final(

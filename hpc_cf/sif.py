@@ -232,28 +232,34 @@ def build_docker_like(
             "Consider adding --network-host for reliable network access."
         )
 
-    # Build builder stage first and tag it for debugging. Runtime/final failures
-    # must not erase a successful builder checkpoint.
+    def _stage_command(target: str, output_tag: str) -> list[str]:
+        command = [
+            engine, "build", "--target", target,
+            "-f", str(dockerfile), "-t", output_tag,
+        ]
+        if network_host:
+            command += ["--network", "host"]
+        for arg in build_args or []:
+            command += ["--build-arg", arg]
+        for opt in build_opts or []:
+            command += shlex.split(opt)
+        command.append(".")
+        return command
+
+    # Preserve both checkpoints: installed is publishable before gc/view/strip,
+    # while builder keeps its historical post-install debugging semantics.
+    supports_installed = (
+        dockerfile.is_file()
+        and "AS builder-installed" in dockerfile.read_text(encoding="utf-8")
+    )
+    if supports_installed:
+        installed_tag = f"{image}:{tag}-installed"
+        logger.info("Building installed stage: %s", installed_tag)
+        run_cmd(_stage_command("builder-installed", installed_tag))
+
     builder_tag = f"{image}:{tag}-builder"
     logger.info("Building builder stage: %s", builder_tag)
-    builder_cmd = [
-        engine,
-        "build",
-        "--target",
-        "builder",
-        "-f",
-        str(dockerfile),
-        "-t",
-        builder_tag,
-    ]
-    if network_host:
-        builder_cmd += ["--network", "host"]
-    for arg in build_args or []:
-        builder_cmd += ["--build-arg", arg]
-    for opt in build_opts or []:
-        builder_cmd += shlex.split(opt)
-    builder_cmd.append(".")
-    run_cmd(builder_cmd)
+    run_cmd(_stage_command("builder", builder_tag))
 
     # Continue to final image; builder layers come from cache.
     final_tag = f"{image}:{tag}"
@@ -267,6 +273,41 @@ def build_docker_like(
         cmd += shlex.split(opt)
     cmd.append(".")
     run_cmd(cmd)
+
+
+def build_docker_stage(
+    *,
+    dockerfile: Path,
+    image_ref: str,
+    target: str,
+    engine: str,
+    network_host: bool,
+    build_args: list[str] | None = None,
+    build_opts: list[str] | None = None,
+) -> None:
+    """Build one named OCI stage for producer workflows."""
+    import shlex
+
+    if not check_command_exists(engine):
+        raise RuntimeError(f"{engine} command not found in PATH")
+    command = [
+        engine,
+        "build",
+        "--target",
+        target,
+        "-f",
+        str(dockerfile),
+        "-t",
+        image_ref,
+    ]
+    if network_host:
+        command += ["--network", "host"]
+    for arg in build_args or []:
+        command += ["--build-arg", arg]
+    for opt in build_opts or []:
+        command += shlex.split(opt)
+    command.append(".")
+    run_cmd(command)
 
 
 def build_sif(

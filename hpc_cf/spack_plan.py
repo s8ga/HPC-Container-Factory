@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from hpc_cf.environment import (
+    BuildcacheCoverage,
+    BuildcachePolicy,
     CustomRepo,
     EnvironmentSpec,
     RepoPhase,
@@ -53,6 +55,21 @@ class PhasePlan:
 
 
 @dataclass(frozen=True)
+class BuildcachePlan:
+    """Binary-cache contract kept separate from source-mirror configuration."""
+
+    enabled: bool
+    padded_length: int
+    policy: BuildcachePolicy
+    coverage: BuildcacheCoverage
+
+    @property
+    def check_excludes_external(self) -> bool:
+        """Whether coverage checks must omit Spack external specs."""
+        return self.coverage is BuildcacheCoverage.NON_EXTERNAL
+
+
+@dataclass(frozen=True)
 class SpackEnvironmentPlan:
     """Authoritative Spack contract for one environment.
 
@@ -66,6 +83,7 @@ class SpackEnvironmentPlan:
     env_name: str
     assets: PhasePlan
     image: PhasePlan
+    buildcache: BuildcachePlan
     # Mirror registration scope is intentionally fixed to site (not read from
     # env.yaml). Kept independent of custom-repo scope so image
     # ``repo_scope: env`` never leaks into ``spack mirror add --scope``.
@@ -137,6 +155,12 @@ def build_spack_environment_plan(spec: EnvironmentSpec) -> SpackEnvironmentPlan:
             repos=repos,
             stage="image",
         ),
+        buildcache=BuildcachePlan(
+            enabled=spec.spack.buildcache.enabled,
+            padded_length=spec.spack.buildcache.padded_length,
+            policy=spec.spack.buildcache.policy,
+            coverage=spec.spack.buildcache.coverage,
+        ),
     )
 
 
@@ -150,6 +174,13 @@ def plan_context(plan: SpackEnvironmentPlan) -> dict:
         "spack_repo_scope_kind": plan.image.repo_scope.value,
         "spack_mirror_scope": plan.mirror_scope_flag(),
         "spack_mirror_scope_kind": plan.mirror_scope.value,
+        "spack_buildcache_enabled": plan.buildcache.enabled,
+        "spack_buildcache_padded_length": plan.buildcache.padded_length,
+        "spack_buildcache_policy": plan.buildcache.policy.value,
+        "spack_buildcache_coverage": plan.buildcache.coverage.value,
+        "spack_buildcache_check_excludes_external": (
+            plan.buildcache.check_excludes_external
+        ),
         "spack_image_repos": [
             {
                 "namespace": r.namespace,

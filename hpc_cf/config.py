@@ -9,6 +9,11 @@ TOOLS_DIR = PROJECT_ROOT / "tools"
 SPACK_ENVS_DIR = PROJECT_ROOT / "spack-envs"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
+# Fixed filesystem contract shared by shipped Spack images and host-side
+# operations that execute inside those images.
+IMAGE_SPACK_ROOT = "/opt/spack-exe"
+IMAGE_SPACK_SETUP_SCRIPT = f"{IMAGE_SPACK_ROOT}/share/spack/setup-env.sh"
+
 # Default Spack version assumed when an env.yaml omits `spack.version`.
 # Single source of truth — import this instead of hardcoding "1.1.0" everywhere.
 # (Previously scattered across env.py, spack_ops.py, template.py.)

@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Any, Iterator, Mapping, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,32 @@ class ProjectLayout:
         return self.assets_dir / "spack-mirror"
 
     @property
+    def spack_buildcache_dir(self) -> Path:
+        """Global opaque filesystem buildcache maintained only by Spack."""
+        return self.assets_dir / "spack-buildcache"
+
+    @property
+    def buildcache_state_dir(self) -> Path:
+        """Factory metadata beside, never inside, the Spack-owned store."""
+        return self.assets_dir / "spack-buildcache-state"
+
+    @property
+    def buildcache_lock_path(self) -> Path:
+        return self.buildcache_state_dir / "buildcache.lock"
+
+    @property
+    def buildcache_health_path(self) -> Path:
+        return self.buildcache_state_dir / "health.json"
+
+    @property
+    def buildcache_coverage_dir(self) -> Path:
+        return self.buildcache_state_dir / "coverage"
+
+    @property
+    def buildcache_runs_dir(self) -> Path:
+        return self.buildcache_state_dir / "runs"
+
+    @property
     def mirror_meta_dir(self) -> Path:
         """Metadata beside the shared cache; must not alter package trees."""
         return self.spack_mirror_dir / ".hpc_cf"
@@ -167,6 +193,14 @@ class ProjectLayout:
 
     def container_mirror_dir(self) -> str:
         return "/work/assets/spack-mirror"
+
+    def container_buildcache_dir(self) -> str:
+        """Read-only buildcache mount used by image consumers."""
+        return "/opt/spack-buildcache"
+
+    def container_publisher_buildcache_dir(self) -> str:
+        """Read-write buildcache mount used only by dedicated publishers."""
+        return "/work/assets/spack-buildcache"
 
     def container_run_dir(self, run_id: str) -> str:
         return f"/work/assets/spack-mirror/.hpc_cf/runs/{run_id}"
@@ -337,3 +371,176 @@ class SharedMirrorStore:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         logger.info("Wrote mirror manifest (%s): %s", status, path)
         return path
+
+
+@dataclass(frozen=True)
+class BuildcacheRun:
+    """Run-scoped sidecar location outside the opaque buildcache."""
+
+    run_id: str
+    host_dir: Path
+
+    @property
+    def provenance_path(self) -> Path:
+        return self.host_dir / "provenance.json"
+
+    def log_path(self, step: str) -> Path:
+        safe_step = step.replace("/", "_")
+        return self.host_dir / f"{safe_step}.log"
+
+
+@dataclass(frozen=True)
+class BuildcacheCoverageRecord:
+    """Provenance and result of checking cacheable concrete specs.
+
+    Coverage is deliberately fixed to non-external specs. External compilers
+    and runtime packages are represented in a Spack DAG but are not pushed as
+    binary packages.
+    """
+
+    spack_version: str
+    builder_image_digest: str
+    environment_provenance: Mapping[str, object]
+    padded_length: int
+    signing_policy: str
+    check_returncode: int
+    checked_spec_count: int
+
+
+class SharedBuildcacheStore:
+    """Host lock and sidecar state for one global Spack-owned buildcache.
+
+    The buildcache root is opaque: this class may create the empty root for a
+    publisher mount, but never lists, parses, copies, renames, or removes
+    anything below it. Spack alone owns v3/blobs/index and future layouts.
+    Factory state is kept in the sibling ``spack-buildcache-state`` directory.
+    """
+
+    def __init__(self, layout: ProjectLayout) -> None:
+        self.layout = layout
+
+    def ensure_store_root(self) -> Path:
+        """Create only the mount root; never initialize internal layout."""
+        self.layout.spack_buildcache_dir.mkdir(parents=True, exist_ok=True)
+        self.layout.buildcache_state_dir.mkdir(parents=True, exist_ok=True)
+        return self.layout.spack_buildcache_dir
+
+    @contextmanager
+    def _lock(self, mode: int) -> Iterator[None]:
+        lock_path = self.layout.buildcache_lock_path
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), mode)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def publisher_lock(self) -> Iterator[None]:
+        """Exclusive lock for push → update-index → check."""
+        with self._lock(fcntl.LOCK_EX):
+            yield
+
+    @contextmanager
+    def consumer_lock(self) -> Iterator[None]:
+        """Shared lock held for an entire multi-stage OCI consumer build."""
+        with self._lock(fcntl.LOCK_SH):
+            yield
+
+    def begin_run(self, env_name: str) -> BuildcacheRun:
+        """Create a run sidecar directory without touching store internals."""
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe_env = env_name.replace("/", "_")
+        run_id = f"{stamp}-{safe_env}-{uuid.uuid4().hex[:8]}"
+        host_dir = self.layout.buildcache_runs_dir / run_id
+        host_dir.mkdir(parents=True, exist_ok=False)
+        return BuildcacheRun(run_id=run_id, host_dir=host_dir)
+
+    def write_provenance(
+        self,
+        run: BuildcacheRun,
+        provenance: Mapping[str, object],
+    ) -> Path:
+        """Write producer provenance to run-scoped sibling state."""
+        payload = dict(provenance)
+        payload["run_id"] = run.run_id
+        payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+        self._write_json(run.provenance_path, payload)
+        return run.provenance_path
+
+    def mark_unhealthy(
+        self,
+        *,
+        run_id: str,
+        failed_step: str,
+        error: str,
+        recovery: Mapping[str, object] | None = None,
+    ) -> Path:
+        """Fail closed after any publisher push/index/check failure."""
+        payload: dict[str, object] = {
+            "healthy": False,
+            "run_id": run_id,
+            "failed_step": failed_step,
+            "error": error,
+        }
+        if recovery:
+            payload.update(recovery)
+        return self._write_health(payload)
+
+    def mark_healthy(self, *, run_id: str, coverage_path: Path) -> Path:
+        """Mark the store healthy only after successful coverage checking."""
+        return self._write_health(
+            {
+                "healthy": True,
+                "run_id": run_id,
+                "coverage_path": str(coverage_path),
+            }
+        )
+
+    def _write_health(self, payload: dict[str, object]) -> Path:
+        payload["timestamp"] = datetime.now(timezone.utc).isoformat()
+        self._write_json(self.layout.buildcache_health_path, payload)
+        return self.layout.buildcache_health_path
+
+    def read_health(self) -> dict[str, Any]:
+        """Read Factory health sidecar; never inspect Spack's index."""
+        return json.loads(
+            self.layout.buildcache_health_path.read_text(encoding="utf-8")
+        )
+
+    def write_coverage(
+        self,
+        *,
+        lock_path: Path,
+        record: BuildcacheCoverageRecord,
+    ) -> Path:
+        """Record check result keyed by lock SHA, not as a second index."""
+        lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        path = self.layout.buildcache_coverage_dir / f"{lock_sha256}.json"
+        payload: dict[str, object] = {
+            "schema_version": 2,
+            "lock_sha256": lock_sha256,
+            "spack_version": record.spack_version,
+            "builder_image_digest": record.builder_image_digest,
+            "environment_provenance": dict(record.environment_provenance),
+            "padded_length": record.padded_length,
+            "signing_policy": record.signing_policy,
+            "check_returncode": record.check_returncode,
+            "checked_spec_count": record.checked_spec_count,
+            "coverage": "non_external",
+            "external_specs_excluded": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._write_json(path, payload)
+        return path
+
+    @staticmethod
+    def _write_json(path: Path, payload: Mapping[str, object]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)

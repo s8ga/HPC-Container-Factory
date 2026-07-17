@@ -188,6 +188,76 @@ def test_cli_build_dispatches_to_build_service() -> None:
     assert req.render_only is True
 
 
+def test_cli_build_command_dispatches_non_render_request() -> None:
+    from hpc_cf.cli import run_new_cli
+
+    with patch.object(BuildService, "run", return_value=0) as mock_run:
+        rc = run_new_cli(
+            [
+                "build",
+                "--app-version",
+                "cp2k_opensource-2026.1-force-avx512",
+                "--engine",
+                "docker",
+            ]
+        )
+    assert rc == 0
+    mock_run.assert_called_once()
+    req = mock_run.call_args.args[0]
+    assert isinstance(req, BuildRequest)
+    assert req.render_only is False
+    assert req.engine == "docker"
+
+
+def _write_assets_service_env(layout: ProjectLayout, *, with_lock: bool) -> None:
+    env_dir = layout.spack_envs_dir / "demo" / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '1.1.1'\n  env_name: demo-env\n",
+        encoding="utf-8",
+    )
+    (env_dir / "spack.yaml").write_text(
+        "spack:\n  specs: [pkgconf]\n",
+        encoding="utf-8",
+    )
+    if with_lock:
+        (env_dir / "spack.lock").write_text('{"concrete": true}\n', encoding="utf-8")
+    layout.assets_dir.mkdir(parents=True)
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"spack")
+
+
+def test_assets_service_fails_before_container_without_lock(tmp_path: Path) -> None:
+    layout = ProjectLayout(project_root=tmp_path)
+    _write_assets_service_env(layout, with_lock=False)
+
+    with (
+        patch("hpc_cf.assets.run_assets") as mock_run,
+        pytest.raises(FileNotFoundError, match="spack.lock"),
+    ):
+        AssetsService(layout=layout).run(AssetsRequest(env="demo"))
+
+    mock_run.assert_not_called()
+
+
+def test_assets_service_allows_concretize_to_produce_lock(tmp_path: Path) -> None:
+    layout = ProjectLayout(project_root=tmp_path)
+    _write_assets_service_env(layout, with_lock=False)
+
+    def fake_run(_request: AssetsRequest, *, layout: ProjectLayout) -> None:
+        lock = layout.spack_envs_dir / "demo" / "spack-env-file" / "spack.lock"
+        lock.write_text('{"concrete": true}\n', encoding="utf-8")
+
+    with patch("hpc_cf.assets.run_assets", side_effect=fake_run) as mock_run:
+        AssetsService(layout=layout).run(
+            AssetsRequest(env="demo", allow_concretize=True)
+        )
+
+    mock_run.assert_called_once()
+    lock = layout.spack_envs_dir / "demo" / "spack-env-file" / "spack.lock"
+    assert lock.stat().st_size > 0
+
+
 def test_shared_mirror_lock_serializes_writers(tmp_path: Path) -> None:
     layout = ProjectLayout(project_root=tmp_path)
     store = SharedMirrorStore(layout)

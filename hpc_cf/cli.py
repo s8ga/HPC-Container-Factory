@@ -12,6 +12,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from hpc_cf.environment import BuildcachePolicy
 from hpc_cf.sif import (
     build_sif,
     ensure_apptainer,
@@ -33,8 +34,10 @@ from hpc_cf.validation import (
 )
 from hpc_cf.workflows import (
     AssetsService,
+    BuildcacheService,
     BuildService,
     assets_request_from_args,
+    buildcache_request_from_args,
     build_request_from_args,
 )
 
@@ -89,6 +92,16 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         help=(
             "Permit build/dockerfile without a non-empty spack.lock "
             "(fail-open; installs may re-concretize). Default is fail-closed."
+        ),
+    )
+    parser.add_argument(
+        "--buildcache",
+        type=BuildcachePolicy.parse,
+        choices=list(BuildcachePolicy),
+        default=None,
+        help=(
+            "Binary-cache policy override: auto, only, or never "
+            "(default: env spack.buildcache.policy)"
         ),
     )
 
@@ -238,6 +251,55 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra podman/docker build option (repeatable), e.g. --build-opt '--no-cache'",
     )
+    buildcache_parser = subparsers.add_parser(
+        "buildcache",
+        help="Build, verify, or show the shared Spack buildcache",
+    )
+    buildcache_actions = buildcache_parser.add_subparsers(
+        dest="buildcache_action",
+        required=True,
+    )
+    for action in ("build", "verify"):
+        action_parser = buildcache_actions.add_parser(action)
+        action_parser.add_argument("--env", required=True)
+        action_parser.add_argument(
+            "--engine",
+            choices=["podman", "docker"],
+            default="podman",
+        )
+        action_parser.add_argument("--image", default=None)
+        action_parser.add_argument("--tag", default=None)
+        action_parser.add_argument("--network-host", action="store_true")
+        action_parser.add_argument("--build-arg", action="append", default=[])
+        action_parser.add_argument("--build-opt", action="append", default=[])
+        action_parser.add_argument(
+            "--operation-timeout-seconds",
+            type=int,
+            default=24 * 60 * 60,
+            help="Publisher/checker container timeout (default: 86400 seconds)",
+        )
+    resume_parser = buildcache_actions.add_parser(
+        "resume",
+        help="Resume the latest validated unhealthy producer publication",
+    )
+    resume_parser.add_argument("--env", required=True)
+    resume_parser.add_argument(
+        "--engine",
+        choices=["podman", "docker"],
+        default="podman",
+    )
+    resume_parser.add_argument(
+        "--operation-timeout-seconds",
+        type=int,
+        default=24 * 60 * 60,
+        help="Publisher/checker container timeout (default: 86400 seconds)",
+    )
+    status_parser = buildcache_actions.add_parser("status")
+    status_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+    )
 
     assets_parser = subparsers.add_parser(
         "assets",
@@ -355,6 +417,13 @@ def build_parser() -> argparse.ArgumentParser:
 def run_new_cli(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if (
+        args.command == "build"
+        and getattr(args, "buildcache", None) is BuildcachePolicy.ONLY
+        and getattr(args, "allow_reconcretize", False)
+    ):
+        parser.error("--buildcache only cannot be combined with --allow-reconcretize")
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -506,6 +575,9 @@ def run_new_cli(argv: list[str]) -> int:
         AssetsService().run(assets_request_from_args(args))
         logger.info("Done")
         return 0
+
+    if args.command == "buildcache":
+        return BuildcacheService().run(buildcache_request_from_args(args))
 
     # ── Handle --app-version/--env without value → list available versions ──
     if getattr(args, "app_version", None) == "__LIST__":

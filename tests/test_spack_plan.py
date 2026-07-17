@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from hpc_cf.environment import (
+    BuildcacheCoverage,
+    BuildcachePolicy,
     BuildMethod,
     CustomRepo,
     EnvironmentSpec,
@@ -24,8 +26,10 @@ from hpc_cf.environment import (
     parse_environment_spec,
 )
 from hpc_cf.spack_plan import (
+    BuildcachePlan,
     SpackEnvironmentPlan,
     build_spack_environment_plan,
+    plan_context,
 )
 from hpc_cf.spack_ops import SpackOps
 from hpc_cf.template import build_context, render_template, select_template
@@ -161,6 +165,39 @@ def test_plan_defaults_match_historical_assets_vs_image() -> None:
     assert plan.assets.scope_flag() == "env:cp2k-env"
     assert plan.image.update_builtin is True
     assert plan.image.scope_flag() == "site"
+
+
+def test_buildcache_plan_is_independent_from_source_mirror() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.0",
+                "env_name": "demo",
+                "buildcache": {
+                    "enabled": True,
+                    "padded_length": 192,
+                    "policy": "only",
+                },
+            },
+        }
+    )
+
+    plan = build_spack_environment_plan(spec)
+    assert isinstance(plan.buildcache, BuildcachePlan)
+    assert plan.buildcache.enabled is True
+    assert plan.buildcache.padded_length == 192
+    assert plan.buildcache.policy is BuildcachePolicy.ONLY
+    assert plan.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
+    assert plan.buildcache.check_excludes_external is True
+    assert not hasattr(plan.buildcache, "mirror_scope")
+
+    context = plan_context(plan)
+    assert context["spack_buildcache_enabled"] is True
+    assert context["spack_buildcache_padded_length"] == 192
+    assert context["spack_buildcache_policy"] == "only"
+    assert context["spack_buildcache_coverage"] == "non_external"
+    assert context["spack_buildcache_check_excludes_external"] is True
 
 
 def test_spack_ops_skips_image_only_repos() -> None:
@@ -324,6 +361,40 @@ def test_vasp_image_skips_builtin_update() -> None:
         assert plan.image.update_builtin is False
         assert plan.assets.update_builtin is True
         assert plan.image.repo_scope is RepoScope.SITE
+
+
+def test_rocm_render_and_plan_keep_gpu_contract() -> None:
+    env_dir = SPACK_ENVS_DIR / "cp2k_rocm-2026.1-gfx942"
+    spec = load_environment_spec(env_dir)
+    plan = build_spack_environment_plan(spec)
+    rendered = _render_env_dockerfile(env_dir)
+
+    assert spec.spack.version == "1.1.0"
+    assert plan.env_name == "cp2k-env"
+    assert [repo.namespace for repo in plan.image.repos] == [
+        "cp2k_dev_repo",
+        "cp2k-env",
+    ]
+    assert 'ARG AMDGPU_TARGETS="gfx942"' in rendered
+    assert "ROCM_PATH=" in rendered
+    assert "spack -e cp2k-env install" in rendered
+    assert "/opt/rocm-export/lib" in rendered
+
+
+def test_abacus_render_and_plan_keep_local_repo_contract() -> None:
+    env_dir = SPACK_ENVS_DIR / "abacus_opensource-3.9.0.27-force-avx512"
+    spec = load_environment_spec(env_dir)
+    plan = build_spack_environment_plan(spec)
+    rendered = _render_env_dockerfile(env_dir)
+
+    assert spec.spack.version == "1.2.0"
+    assert plan.env_name == "abacus-env"
+    assert [repo.namespace for repo in plan.assets.repos] == ["abacus-env"]
+    assert [repo.namespace for repo in plan.image.repos] == ["abacus-env"]
+    assert "spack env create abacus-env" in rendered
+    assert "spack -e abacus-env install" in rendered
+    assert "/opt/spack-env-file/repos/" in rendered
+    assert "abacus_run_integration_tests.sh" in rendered
 
 
 def _cp2k_git_repo(spec: EnvironmentSpec) -> CustomRepo | None:

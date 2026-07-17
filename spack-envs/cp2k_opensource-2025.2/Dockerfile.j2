@@ -10,12 +10,12 @@ ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
 # ============================================================================
-# STAGE 1: BUILDER - CP2K compilation environment
+# STAGE 1: BUILDER-INSTALLED - CP2K compilation environment before cleanup
 # ============================================================================
-FROM {{ builder_base_image }} AS builder
+FROM {{ builder_base_image }} AS builder-installed
 
-LABEL stage="builder" \
-      description="Builder stage: Compiles CP2K 2025.2 with Spack" \
+LABEL stage="builder-installed" \
+      description="Installed stage: Compiles CP2K 2025.2 with Spack" \
       maintainer="s8ga"
 
 # ============================================================================
@@ -51,18 +51,25 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
+{% include 'partials/spack_buildcache_config.j2' %}
 
+{% if spack_buildcache_policy in ['auto', 'only'] %}
+{% include 'partials/spack_buildcache_install.j2' %}
+{% else %}
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache never --fail-fast -j "$(nproc)" -p 20 \
+            --only dependencies libint && \
 
         echo; \
         echo "Installing libint..."; \
         echo "Note: libint is a critical dependency that often takes the longest to build."; \
         echo; \
 
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache never --fail-fast -j "$(nproc)" -p 20 libint & \
 
         sleep 10 && \
 
@@ -70,14 +77,25 @@ RUN {% if use_mirror %}
         echo "Concurrently Install cp2k and it's dependencies..."; \
         echo; \
 
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache never --fail-fast -j "$(nproc)" -p 20;
+{% endif %}
+
+# ============================================================================
+# STAGE 2: BUILDER - Existing post-install/debug checkpoint
+# ============================================================================
+FROM builder-installed AS builder
+
+LABEL stage="builder" \
+      description="Builder stage: post-install CP2K debug image" \
+      maintainer="s8ga"
 
 {% set build_manifest_title = "CP2K 2025.2 Build Manifest" %}
 {% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
-# STAGE 2: RUNTIME - Minimal container with only CP2K and runtime libraries
+# STAGE 3: RUNTIME - Minimal container with only CP2K and runtime libraries
 # ============================================================================
 FROM {{ runtime_base_image }} AS runtime
 
@@ -139,7 +157,7 @@ WORKDIR /workspace
 USER hpc
 
 # ============================================================================
-# STAGE 3: FINAL - Alias for runtime (for backward compatibility)
+# STAGE 4: FINAL - Alias for runtime (for backward compatibility)
 # ============================================================================
 FROM runtime AS final
 

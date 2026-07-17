@@ -9,6 +9,8 @@ import pytest
 
 from hpc_cf.environment import (
     SUPPORTED_SCHEMA_VERSION,
+    BuildcacheCoverage,
+    BuildcachePolicy,
     BuildMethod,
     EnvironmentSpec,
     load_environment_spec,
@@ -70,6 +72,92 @@ def test_parse_schema_version_1() -> None:
     assert spec.images.builder == "a"
     assert spec.spack.version == "1.1.1"
     assert spec.template_vars == {"k": "v"}
+
+
+def test_parse_buildcache_config_and_roundtrip() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.0",
+                "env_name": "e",
+                "buildcache": {
+                    "enabled": True,
+                    "padded_length": 128,
+                    "policy": "auto",
+                    "coverage": "non_external",
+                },
+            },
+        }
+    )
+
+    assert spec.spack.buildcache.enabled is True
+    assert spec.spack.buildcache.padded_length == 128
+    assert spec.spack.buildcache.policy is BuildcachePolicy.AUTO
+    assert spec.spack.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
+    assert spec.as_dict()["spack"]["buildcache"] == {
+        "enabled": True,
+        "padded_length": 128,
+        "policy": "auto",
+        "coverage": "non_external",
+    }
+
+
+def test_buildcache_defaults_disabled_and_exclude_external_specs() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {"version": "1.1.1", "env_name": "e"},
+        }
+    )
+
+    assert spec.spack.buildcache.enabled is False
+    assert spec.spack.buildcache.policy is BuildcachePolicy.NEVER
+    assert spec.spack.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
+
+
+@pytest.mark.parametrize(
+    ("buildcache", "message"),
+    [
+        ({"unknown": True}, "Unexpected key"),
+        ({"enabled": "yes"}, "must be a boolean"),
+        ({"padded_length": -1}, "must be >= 0"),
+        ({"padded_length": True}, "strict integer"),
+        ({"policy": "sometimes"}, "policy"),
+        ({"coverage": "all_specs"}, "coverage"),
+    ],
+)
+def test_invalid_buildcache_config_rejected(
+    buildcache: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "spack": {
+                    "version": "1.1.1",
+                    "env_name": "e",
+                    "buildcache": buildcache,
+                },
+            }
+        )
+
+
+def test_no_spack_environment_cannot_enable_spack_buildcache() -> None:
+    with pytest.raises(ValueError, match="method: no_spack"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "method": "no_spack",
+                "spack": {
+                    "buildcache": {
+                        "enabled": True,
+                    },
+                },
+                "script": "echo ready",
+            }
+        )
 
 
 def test_missing_schema_version_treated_as_v1(caplog: pytest.LogCaptureFixture) -> None:

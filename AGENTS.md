@@ -12,12 +12,13 @@ to Apptainer SIF.
 
 ```
 cli.py          → argparse → request → workflows services
-workflows.py    → BuildRequest/AssetsRequest + BuildService/AssetsService
+workflows.py    → build/assets/buildcache requests + services
 environment.py  → EnvironmentSpec v1 (authoritative env.yaml model)
 spack_plan.py   → SpackEnvironmentPlan (assets + Dockerfile contract)
 template.py     → Jinja2 Dockerfile rendering (StrictUndefined + partials)
 spack_ops.py    → Spack operations: _build_*_script (pure) + exec (container)
-execution.py    → RunnerPort, ProjectLayout, SharedMirrorStore
+execution.py    → RunnerPort, ProjectLayout, mirror/buildcache stores and locks
+buildcache.py   → buildcache policy, publisher/checker execution, coverage gates
 container.py    → Podman RunnerPort implementation
 assets.py       → Asset workflow (no argparse); bootstrap + mirror + verify
 env.py          → env.yaml discovery + legacy validate_* wrappers
@@ -51,7 +52,16 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 ## Conventions
 
 - **Test-first**: write test → implement → verify all green before commit
-- **CLI-over-patching**: use spack CLI (`config`/`mirror`/`repo`), not sed/YAML surgery
+- **Spack CLI over config surgery**: whenever Spack provides an equivalent command,
+  always use its CLI (`spack config` / `mirror` / `repo` / `external` / `env`) instead
+  of directly mutating Spack YAML with `sed`, `yq`, PyYAML, string replacement, or
+  hand-written merge logic.
+- Runtime/image-specific changes must target an explicit environment and scope
+  (for example, `spack -e <env> config add ...` or `--scope env:<env>`). Do not
+  rewrite the repository's source `spack.yaml` to implement transient build behavior.
+- Direct edits to version-controlled `spack.yaml` are reserved for intentional
+  declarative source-of-truth changes such as specs, variants, and reproducibility
+  pins—not as a substitute for an available Spack CLI operation.
 - **English-only code comments** (no mixed languages)
 - **No plan-reference tags** in code (e.g., "plan A1" — use descriptive comments)
 - **ruff must pass** (0 errors) before every commit
@@ -79,6 +89,31 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
+- Source mirror and buildcache are separate artifact classes:
+  `assets/spack-mirror/` contains source archives, while the global
+  `assets/spack-buildcache/` is an opaque Spack-owned filesystem cache.
+  Factory metadata and its shared/exclusive flock live beside it in
+  `assets/spack-buildcache-state/`; never inspect or mutate cache internals.
+- Buildcache is currently enabled only for the `cp2k_opensource-2025.2` pilot.
+ Production policy defaults come from each env's `spack.buildcache.policy`;
+ CLI `--buildcache` is an override. `auto` mounts buildcache and source mirror read-only and permits
+  source fallback; strict `only` mounts buildcache alone and fails closed.
+ Producer source builds and publication use run-unique temporary tags, then
+ promote only after a successful check under the publisher lock; coverage,
+ verify, and `only` use the stable
+ `{tag}-buildcache-producer` image. Normal builds keep `{tag}-installed`
+ separate. Exact lock SHA + producer image digest are authoritative; available
+ lock OS/target/compiler and pinned repo commits are compared, with unavailable
+ fields represented as unknown.
+If the Docker stage fails, its incomplete temporary tag is removed
+best-effort and is never recoverable. After `builder-installed` succeeds,
+publication failures preserve the run-unique image. Resume only with
+`hpc_cf buildcache resume --env <env>` from the latest unhealthy state; it
+validates environment, current lock SHA, Spack version, image existence, and
+immutable digest under the publisher lock. Never add an arbitrary image-ref
+resume bypass. Successful completion removes the temporary tag only after
+promotion, digest verification, coverage/provenance, and healthy state.
+  See `docs/buildcache.md`.
 - CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
@@ -109,15 +144,28 @@ use conda/mamba when a binary env solver is enough.
 
 ## Test Layering
 
-| Layer | Location | Default? | External deps |
-|---|---|---|---|
-| **Unit + contract** | `tests/test_*.py` (excl. integration) | ✅ runs always | None |
-| **Integration matrix** | `tests/test_integration_spack.py` | ❌ `--run-integration` | podman + image + assets |
-| **E2E skeleton** | `tests/test_integration_spack.py` (`@pytest.mark.e2e`) | ❌ `--run-integration` | podman optional; render+plan |
+- **L0 unit/contract**: default `tests/test_*.py`; schema, pure scripts, opaque
+  store state, locking, policy, and lock fail-closed behavior. No external deps.
+- **L1 CLI/service**: default mocked tests; argument mapping, dispatch, exit
+  codes, health/coverage gates, and workflow boundaries. No external deps.
+- **L2 inventory/render**: default tests over all discovered environments,
+  special templates, validation profiles, and the standalone dual-write guard.
+- **L3 real Spack**: opt-in `tests/test_integration_spack.py`; Podman,
+  `hpc-mirror-builder`, and versioned assets are required. The pkgconf matrix
+  covers Spack 1.1.0/1.1.1/1.2.0 push/index/check, padded relocation, auto
+  miss/recoverable damaged-entry fallback, and only fail-closed. Missing
+  assets are skipped.
+- **L4 real application delivery**: deferred. Full CP2K producer/consumer,
+  runtime, and SIF smoke are not current acceptance gates.
 
-Integration tests create a persistent container, set up a minimal spack env via
-CLI, and exercise `_build_*_script` methods against real Spack (matrix:
-1.1.1 / 1.2.0 when assets are present). Missing asset cells are skipped.
+Run L0-L2 with `./venv/bin/pytest -q`. Run L3 explicitly with
+`./venv/bin/pytest --run-integration -v -s tests/test_integration_spack.py`.
+Run the inventory guard independently with
+`./venv/bin/python scripts/check-dual-write.py`.
+
+L3 creates a persistent container per Spack version and uses a minimal pkgconf
+environment; it does not build CP2K. Missing matrix assets are skipped rather
+than counted as passes.
 Environment inventory is discovered via `EnvironmentSpec` / `list_available_envs()`
 — do not hardcode test counts.
 

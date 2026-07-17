@@ -1,0 +1,5 @@
+{# Producer-only relocation padding. Consumers keep the environment's normal prefix. #}
+{% if spack_buildcache_producer %}
+RUN spack -e {{ spack_env_name }} config add \
+        "config:install_tree:padded_length:{{ spack_buildcache_padded_length }}"
+{% endif %}

@@ -349,6 +349,8 @@ def build_context(
     resolved: ResolvedBuildInput | None = None,
     layout: ProjectLayout | None = None,
     allow_reconcretize: bool = False,
+    buildcache_policy: str | None = None,
+    buildcache_producer: bool = False,
 ) -> dict:
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags.
 
@@ -440,6 +442,11 @@ def build_context(
         context.setdefault("spack_image_repos", [])
         context["allow_reconcretize"] = allow_reconcretize
 
+    if method is BuildMethod.SPACK:
+        if buildcache_policy is not None:
+            context["spack_buildcache_policy"] = buildcache_policy
+        context["spack_buildcache_producer"] = buildcache_producer
+
     if method is BuildMethod.NO_SPACK:
         context["script"] = spec.script if spec is not None else ""
         context["runtime_copy_dirs"] = (
@@ -530,6 +537,8 @@ def generate_dockerfile(
     build_only: bool,
     layout: ProjectLayout | None = None,
     allow_reconcretize: bool = False,
+    buildcache_policy: str | None = None,
+    buildcache_producer: bool = False,
 ) -> Path:
     root = _layout(layout)
     resolved = resolve_build_input(app_version, template, layout=root)
@@ -541,6 +550,8 @@ def generate_dockerfile(
         resolved=resolved,
         layout=root,
         allow_reconcretize=allow_reconcretize,
+        buildcache_policy=buildcache_policy,
+        buildcache_producer=buildcache_producer,
     )
     content = render_template(
         resolved.render_template, context, layout=root
