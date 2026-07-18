@@ -19,7 +19,7 @@ binary cache; deepen this Spack buildcache + factory sidecar only.
 - Image-size gates (opensource CPU): runtime soft 6 GB / hard 10 GB;
   `{tag}-installed` soft 25 GB / hard 40 GB. Record measurements in
   `artifacts/cp2k-image-size-log.md`; Wave baselines and libint authority
-  hashes live in `artifacts/cp2k-image-size-baseline.md`. Optional gate
+  hashes live in `artifacts/cp2k-image-size-baseline.md`.
 - Opensource CP2K Dockerfiles must **not** emit
   `--use-buildcache never` for libint (or any install step). Prefer
   `auto`/`only` so the shared authority libint hash can relocate from
