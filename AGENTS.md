@@ -129,6 +129,23 @@ Spack version, image existence, and immutable digest under the publisher lock.
 Never add an arbitrary image-ref resume bypass. Successful completion removes
 the temporary tag only after promotion, digest verification,
 coverage/provenance, and healthy state. See `docs/buildcache.md`.
+- Maximizing Spack buildcache reuse (opensource CPU track lessons):
+  - Share one concrete **libint** DAG hash: `libint@2.13.1-cp2k-lmax-7+fortran`
+    from namespace `cp2k_dev` (not divergent builtin `tune=cp2k-lmax-6` recipes).
+    Authority baseline: `cp2k_opensource-2026.2-force-avx512` /
+    `artifacts/cp2k-image-size-baseline.md`.
+  - Pin shared upstream deps that affect that hash and image size:
+    `python@3.12` and `py-networkx@:2.7` (networkx 2.8+ pulls pandas/numba → llvm).
+    Align other libint-adjacent deps; keep each env’s own `py-torch` pin if needed.
+  - Align Spack version (track uses 1.2.0), compiler/target/OS, and
+    `repos.builtin.commit` with the authority env before expecting hits.
+  - Workflow: **publish then consume** — `hpc_cf buildcache build` (or resume),
+    then `build --buildcache auto|only`. Producer installs already use
+    `--use-buildcache auto` so published hashes can relocate on later runs.
+  - Never emit `--use-buildcache never` for libint (or any install step) in
+    opensource Dockerfiles; that forces source rebuilds and defeats sharing.
+  - Prefer explicit pins + shared lock/hash alignment over `concretizer:reuse`
+    as the primary path to stable DAG hashes. MKL/ROCm stay outside this track.
 - CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
