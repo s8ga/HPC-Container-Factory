@@ -19,11 +19,23 @@ from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore
 logger = logging.getLogger(__name__)
 
 _COUNT_RE = re.compile(r"^HPC_CF_CHECKED_SPEC_COUNT=(\d+)$", re.MULTILINE)
+_PUSHED_COUNT_RE = re.compile(r"^HPC_CF_PUSHED_SPEC_COUNT=(\d+)$", re.MULTILINE)
 _PUBLISH_STEP_RE = re.compile(
     r"^HPC_CF_BUILDCACHE_STEP=(publish|update-index|check)$",
     re.MULTILINE,
 )
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 24 * 60 * 60
+
+
+def publish_output_markers(output: str) -> dict[str, object]:
+    """Parse publisher stdout markers for partial-publish provenance."""
+    pushed = _PUSHED_COUNT_RE.search(output)
+    checked = _COUNT_RE.search(output)
+    return {
+        "partial_publish": "HPC_CF_PARTIAL_PUBLISH=1" in output,
+        "pushed_spec_count": int(pushed.group(1)) if pushed else None,
+        "checked_spec_count": int(checked.group(1)) if checked else None,
+    }
 
 
 def producer_image_ref(image: str, tag: str) -> str:
@@ -366,6 +378,14 @@ def failed_publish_step(exc: BaseException) -> str:
         output = output.decode(errors="replace")
     matches = _PUBLISH_STEP_RE.findall(str(output))
     return matches[-1] if matches else "publish"
+
+
+def failed_publish_output(exc: BaseException) -> str:
+    """Return publisher stdout/output text from a failed subprocess."""
+    output = getattr(exc, "stdout", None) or getattr(exc, "output", None) or ""
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return str(output) if output else ""
 
 
 def verify(

@@ -444,13 +444,15 @@ class BuildcacheService:
         provenance: dict[str, object],
     ) -> None:
         from hpc_cf.buildcache import (
+            failed_publish_output,
             failed_publish_step,
             inspect_image_digest,
             promote_producer_image,
             publish,
+            publish_output_markers,
         )
 
-        recovery = {
+        recovery: dict[str, object] = {
             "recoverable": True,
             "env": request.env,
             "lock_sha256": provenance["lock_sha256"],
@@ -471,10 +473,22 @@ class BuildcacheService:
                 )
             except Exception as exc:
                 failed_step = failed_publish_step(exc)
+                markers = publish_output_markers(failed_publish_output(exc))
+                recovery.update(markers)
+                # Push/index may have succeeded before check failed; keep the
+                # image recoverable and never discard already-published binaries.
+                if failed_step in {"update-index", "check"} or markers.get(
+                    "pushed_spec_count"
+                ):
+                    recovery["partial_publish"] = bool(
+                        markers.get("partial_publish")
+                        or failed_step == "check"
+                    )
                 raise
             run.log_path("publish").write_text(
                 result.stdout or "", encoding="utf-8"
             )
+            markers = publish_output_markers(result.stdout or "")
             failed_step = "promote"
             promote_producer_image(
                 engine=request.engine,
@@ -512,6 +526,7 @@ class BuildcacheService:
                     "producer_image": stable_image_ref,
                     "producer_image_digest": image_digest,
                     "environment_provenance": environment_provenance,
+                    **markers,
                 },
             )
             failed_step = "state"
@@ -817,20 +832,99 @@ class BuildcacheService:
                     build_args=list(request.build_args),
                     build_opts=list(request.build_opts),
                 )
-        except Exception as exc:
-            remove_temporary_image(
-                engine=request.engine,
-                image_ref=temporary_image_ref,
-                layout=self.layout,
+        except Exception as docker_build_error:
+            # Soft-fail producer installs normally tag the image (exit 0).
+            # If the engine still reports failure but a tag exists, push any
+            # installed specs before discarding the run.
+            from hpc_cf.buildcache import (
+                failed_publish_output,
+                failed_publish_step,
+                publish,
+                publish_output_markers,
             )
-            self._record_failure(
-                store=store,
-                run=run,
-                failed_step="docker-build",
-                exc=exc,
-                provenance=provenance,
+
+            try:
+                image_digest = inspect_image_digest(
+                    engine=request.engine,
+                    image_ref=temporary_image_ref,
+                    layout=self.layout,
+                )
+            except Exception:
+                remove_temporary_image(
+                    engine=request.engine,
+                    image_ref=temporary_image_ref,
+                    layout=self.layout,
+                )
+                self._record_failure(
+                    store=store,
+                    run=run,
+                    failed_step="docker-build",
+                    exc=docker_build_error,
+                    provenance=provenance,
+                )
+                raise docker_build_error
+
+            logger.warning(
+                "Producer docker-build reported failure but image %s exists; "
+                "pushing installed specs into the buildcache (partial publish)",
+                temporary_image_ref,
             )
-            raise
+            recovery: dict[str, object] = {
+                "recoverable": True,
+                "env": request.env,
+                "lock_sha256": lock_sha256,
+                "spack_version": spec.spack.version,
+                "recovery_image_ref": temporary_image_ref,
+                "recovery_image_digest": image_digest,
+                "stable_image_ref": stable_image_ref,
+                "partial_publish": True,
+                "partial_publish_attempt": True,
+                "docker_build_error": str(docker_build_error),
+            }
+            with store.publisher_lock():
+                store.ensure_store_root()
+                try:
+                    result, _checked_count = publish(
+                        engine=request.engine,
+                        image_ref=temporary_image_ref,
+                        env_name=spec.spack.env_name,
+                        layout=self.layout,
+                        timeout_seconds=request.operation_timeout_seconds,
+                    )
+                    run.log_path("publish").write_text(
+                        result.stdout or "", encoding="utf-8"
+                    )
+                    recovery.update(
+                        publish_output_markers(result.stdout or "")
+                    )
+                    recovery["partial_publish"] = True
+                    self._record_failure(
+                        store=store,
+                        run=run,
+                        failed_step="docker-build",
+                        exc=docker_build_error,
+                        provenance=provenance,
+                        recovery=recovery,
+                    )
+                except Exception as publish_exc:
+                    failed_step = failed_publish_step(publish_exc)
+                    recovery.update(
+                        publish_output_markers(
+                            failed_publish_output(publish_exc)
+                        )
+                    )
+                    recovery["partial_publish"] = True
+                    self._record_failure(
+                        store=store,
+                        run=run,
+                        failed_step=failed_step,
+                        exc=publish_exc,
+                        provenance=provenance,
+                        recovery=recovery,
+                    )
+                    raise publish_exc from docker_build_error
+            raise docker_build_error
+
         with store.publisher_lock():
             store.ensure_store_root()
             try:

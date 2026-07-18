@@ -15,14 +15,38 @@ def _prelude(setup_script: str) -> str:
     )
 
 
-def _coverage_hashes(env_name: str) -> str:
-    env = shlex.quote(env_name)
-    python = (
+def _inventory_python(*, installed_only: bool) -> str:
+    predicate = (
+        "(not spec.external) and spec.installed"
+        if installed_only
+        else "not spec.external"
+    )
+    return (
         "import spack.environment as ev; "
         "e=ev.active_environment(); "
-        'print("\\n".join("/"+spec.dag_hash() for spec in e.all_specs() '
-        "if not spec.external))"
+        f'print("\\n".join("/"+spec.dag_hash() for spec in e.all_specs() '
+        f"if {predicate}))"
     )
+
+
+def _installed_non_external_hashes(env_name: str) -> str:
+    """Emit mapfile of installed non-external concrete ``/dag_hash`` lines."""
+    env = shlex.quote(env_name)
+    python = _inventory_python(installed_only=True)
+    return (
+        f"mapfile -t installed_hashes < <(spack -e {env} python -c "
+        f"{shlex.quote(python)})\n"
+        'if ((${#installed_hashes[@]} == 0)); then\n'
+        '    echo "No installed non-external concrete specs to push" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        'echo "HPC_CF_PUSHED_SPEC_COUNT=${#installed_hashes[@]}"\n'
+    )
+
+
+def _coverage_hashes(env_name: str) -> str:
+    env = shlex.quote(env_name)
+    python = _inventory_python(installed_only=False)
     return (
         f"mapfile -t spec_hashes < <(spack -e {env} python -c "
         f"{shlex.quote(python)})\n"
@@ -70,17 +94,28 @@ def build_publish_script(
     store_path: str,
     setup_script: str = IMAGE_SPACK_SETUP_SCRIPT,
 ) -> str:
-    """Build the mandatory push → update-index → explicit check sequence."""
+    """Build push(installed) → update-index → explicit full-lock check.
+
+    Push targets only non-external concrete specs already installed on disk so
+    a partial producer install still publishes usable binaries. Full-lock
+    ``buildcache check`` may still fail; callers must record unhealthy/partial
+    coverage honestly without discarding the pushed packages.
+    """
     env = shlex.quote(env_name)
     path = shlex.quote(store_path)
     url = shlex.quote(f"file://{store_path}")
     return _prelude(setup_script) + (
         'echo "HPC_CF_BUILDCACHE_STEP=publish"\n'
-        f"spack -e {env} buildcache push --unsigned --fail-fast {path}\n"
+        f"{_installed_non_external_hashes(env_name)}"
+        f"{_coverage_hashes(env_name)}"
+        'if ((${#installed_hashes[@]} < ${#spec_hashes[@]})); then\n'
+        '    echo "HPC_CF_PARTIAL_PUBLISH=1"\n'
+        "fi\n"
+        f"spack -e {env} buildcache push --unsigned --fail-fast {path} "
+        '"${installed_hashes[@]}"\n'
         'echo "HPC_CF_BUILDCACHE_STEP=update-index"\n'
         f"spack buildcache update-index {url}\n"
         'echo "HPC_CF_BUILDCACHE_STEP=check"\n'
-        f"{_coverage_hashes(env_name)}"
         f"spack -e {env} buildcache check "
         f"--mirror-url {shlex.quote(f'file://{store_path}')} "
         '"${spec_hashes[@]}"\n'

@@ -164,12 +164,34 @@ def test_publisher_script_pushes_indexes_then_checks_explicit_non_external_hashe
     assert push < index < check
     assert "--force" not in script
     assert "spec.external" in script
+    assert "spec.installed" in script
+    assert '"${installed_hashes[@]}"' in script
     assert '"${spec_hashes[@]}"' in script
+    assert "HPC_CF_PUSHED_SPEC_COUNT=" in script
+    assert "HPC_CF_PARTIAL_PUBLISH=1" in script
     assert (
         "spack buildcache update-index "
         "file:///work/assets/spack-buildcache"
     ) in script
     assert "--mirror-url file:///work/assets/spack-buildcache" in script
+
+
+def test_producer_install_soft_fails_to_keep_partial_image() -> None:
+    rendered = _render("auto", producer=True)
+    install = next(
+        block for block in rendered.split("RUN ") if "--use-buildcache auto" in block
+    )
+    assert "HPC_CF_PARTIAL_INSTALL=1" in install
+    assert "HPC_CF_INSTALLED_SPEC_COUNT=" in install
+    assert "keeping image for partial buildcache push" in install
+
+
+def test_consumer_install_still_hard_fails() -> None:
+    rendered = _render("auto", producer=False)
+    install = next(
+        block for block in rendered.split("RUN ") if "--use-buildcache auto" in block
+    )
+    assert "HPC_CF_PARTIAL_INSTALL=1" not in install
 
 
 def test_verify_script_uses_shipped_image_spack_setup_contract_by_default() -> None:
@@ -1500,6 +1522,10 @@ def test_docker_stage_failure_cleans_partial_tag_without_recovery(
             side_effect=RuntimeError("docker build failed"),
         ),
         patch(
+            "hpc_cf.buildcache.inspect_image_digest",
+            side_effect=RuntimeError("image missing"),
+        ),
+        patch(
             "hpc_cf.buildcache.remove_temporary_image",
             side_effect=lambda *, image_ref, **_: removed.append(image_ref),
         ),
@@ -1513,6 +1539,55 @@ def test_docker_stage_failure_cleans_partial_tag_without_recovery(
     health = SharedBuildcacheStore(layout).read_health()
     assert health["failed_step"] == "docker-build"
     assert "recovery_image_ref" not in health
+
+
+def test_docker_stage_failure_with_image_attempts_partial_publish(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, _, resolved = _producer_service_inputs(tmp_path)
+    publish_stdout = (
+        "HPC_CF_BUILDCACHE_STEP=publish\n"
+        "HPC_CF_PUSHED_SPEC_COUNT=3\n"
+        "HPC_CF_CHECKED_SPEC_COUNT=10\n"
+        "HPC_CF_PARTIAL_PUBLISH=1\n"
+        "HPC_CF_BUILDCACHE_STEP=update-index\n"
+        "HPC_CF_BUILDCACHE_STEP=check\n"
+    )
+    publish_exc = subprocess.CalledProcessError(
+        1, ["podman"], output=publish_stdout
+    )
+    removed: list[str] = []
+    with (
+        _producer_patches(resolved),
+        patch(
+            "hpc_cf.sif.build_docker_stage",
+            side_effect=RuntimeError("docker build failed"),
+        ),
+        patch(
+            "hpc_cf.buildcache.publish",
+            side_effect=publish_exc,
+        ),
+        patch(
+            "hpc_cf.buildcache.remove_temporary_image",
+            side_effect=lambda *, image_ref, **_: removed.append(image_ref),
+        ),
+        pytest.raises(subprocess.CalledProcessError),
+    ):
+        BuildcacheService(layout).run(
+            BuildcacheRequest(action="build", env=PILOT)
+        )
+
+    assert removed == []
+    health = SharedBuildcacheStore(layout).read_health()
+    assert health["healthy"] is False
+    assert health["failed_step"] == "check"
+    assert health["partial_publish"] is True
+    assert health["pushed_spec_count"] == 3
+    assert health["recovery_image_ref"].startswith(
+        "cp2k:2025.2-buildcache-producer-"
+    )
 
 
 def _write_recovery_health(
