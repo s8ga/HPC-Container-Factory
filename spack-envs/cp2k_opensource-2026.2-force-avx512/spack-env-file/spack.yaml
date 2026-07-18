@@ -149,6 +149,14 @@ spack:
       require:
         - "+fortran"
 
+    # Pin python 3.12 + networkx@:2.7 to avoid py-networkx@2.8+ → pandas/numba → llvm bloat.
+    python:
+      require:
+        - "@3.12"
+    py-networkx:
+      require:
+        - "@:2.7"
+
     py-torch:
       require:
         - "~distributed"

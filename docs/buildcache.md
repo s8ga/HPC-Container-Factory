@@ -1,9 +1,11 @@
 # Spack Buildcache
 
 The buildcache path accelerates repeated Spack installs with relocatable binary
-packages. It is an MVP pilot for `cp2k_opensource-2025.2`; it has not been
-enabled for other environments and does not yet constitute a completed CP2K
-binary delivery.
+packages. Target state is the full CP2K **opensource CPU** track (authority
+baseline: `cp2k_opensource-2026.2-force-avx512`, then aligned
+`2025.2-force` / `2026.1-force` / `2025.2` base). MKL and ROCm environments
+are out of this migration and remain as-is. Do not invent a parallel homemade
+binary cache; deepen this Spack buildcache + factory sidecar only.
 
 ## Artifact and ownership boundaries
 
@@ -14,28 +16,15 @@ binary delivery.
 - `assets/spack-buildcache-state/` is Factory-owned sidecar state. It contains
   the flock, run logs, producer provenance, global health, and lock-SHA coverage
   records. It is not a second package index.
-
-The source mirror and buildcache are independent artifact classes. Assets
-commands never write the buildcache, and the dedicated buildcache publisher
-never writes the source mirror.
-
-## Prepare and publish
-
-The environment must have a non-empty `spack.lock`, version-matched Spack and
-bootstrap assets, and a non-empty source mirror with a successful
-`assets --verify-mirror` manifest for the exact environment, Spack version,
-and lock SHA. The latest matching Factory assets run must be that successful
-verification; a later failed verification or mirror update invalidates the
-older success. This is an executable provenance gate, not a claim that static
-checks prove every source blob complete. Validate and verify first:
-
-```bash
-./venv/bin/python -m hpc_cf validate \
-  --env cp2k_opensource-2025.2 --profile build-input
-./venv/bin/python -m hpc_cf assets \
-  --env cp2k_opensource-2025.2 --verify-mirror
-```
-
+- Image-size gates (opensource CPU): runtime soft 6 GB / hard 10 GB;
+  `{tag}-installed` soft 25 GB / hard 40 GB. Record measurements in
+  `artifacts/cp2k-image-size-log.md`; Wave baselines and libint authority
+  hashes live in `artifacts/cp2k-image-size-baseline.md`. Optional gate
+- Opensource CP2K Dockerfiles must **not** emit
+  `--use-buildcache never` for libint (or any install step). Prefer
+  `auto`/`only` so the shared authority libint hash can relocate from
+  `assets/spack-buildcache/`. Enforced by
+  `tests/test_cp2k_libint_buildcache_ban.py`.
 Build the padded `builder-installed` stage into a run-unique temporary image
 and publish it. The producer install uses `--use-buildcache auto` with both
 the buildcache and source mirror mounted read-only, so already-published
@@ -53,34 +42,55 @@ publication; only after push/index/check succeeds is it promoted to the stable
 producer therefore cannot replace the last accepted stable image. Concurrent
 producer builds never share a mutable build tag. Temporary tags are removed
 only after the stable tag has been promoted, its digest rechecked, coverage
-and provenance written, and health marked successful. If the Docker stage
-itself fails, its incomplete temporary tag is removed best-effort and is not
-marked recoverable. Once `builder-installed` succeeds, any later failure
-preserves the run-unique image and records its immutable digest and recovery
-identity in unhealthy state. A normal `build` continues to write
-`{tag}-installed`.
+and provenance written, and health marked successful.
+
+### Partial install / partial publish
+
+Full-env install success is **not** a prerequisite for push. Producer Docker
+installs soft-fail when at least one non-external concrete spec is already on
+disk (`HPC_CF_PARTIAL_INSTALL=1`), so the image stays tagged. The publisher
+then:
+
+1. Inventories installed non-external concrete specs in the image.
+2. Runs `spack buildcache push --unsigned` for those hashes only.
+3. Runs `spack buildcache update-index`.
+4. Runs full-lock `buildcache check` (may fail).
+
+If check/coverage is incomplete, sidecar health stays unhealthy with
+`partial_publish` markers (`HPC_CF_PUSHED_SPEC_COUNT`,
+`HPC_CF_PARTIAL_PUBLISH=1`); binaries that did push must not be discarded.
+If the Docker stage fails with no usable tag, the temporary tag is removed
+best-effort and is not recoverable. If a tag exists despite a reported build
+failure, the factory still attempts this partial push. Once
+`builder-installed` succeeds, any later failure preserves the run-unique image
+and records its immutable digest and recovery identity in unhealthy state. A
+normal `build` continues to write `{tag}-installed`.
 
 The service takes the exclusive host lock, resolves the local producer-image
 digest under that lock, and runs this Spack-owned sequence in a dedicated
 container:
 
 ```bash
+# installed_hashes = non-external concrete specs present on disk
 spack -e "$env" buildcache push \
-  --unsigned --fail-fast /work/assets/spack-buildcache
+  --unsigned --fail-fast /work/assets/spack-buildcache \
+  "${installed_hashes[@]}"
 spack buildcache update-index file:///work/assets/spack-buildcache
+# spec_hashes = all non-external concrete specs from the lock/env
 spack -e "$env" buildcache check \
   --mirror-url file:///work/assets/spack-buildcache \
-  "${non_external_spec_hashes[@]}"
+  "${spec_hashes[@]}"
 ```
 
-The explicit hashes contain every non-external concrete spec in the active
-environment. Spack external specs are deliberately excluded because they have
-no binary package to push. The publisher does not use `--force`; package
-deduplication and internal layout remain Spack's responsibility.
+Push uses installed hashes only. Check still uses every non-external concrete
+spec in the active environment. Spack external specs are deliberately excluded
+because they have no binary package to push. The publisher does not use
+`--force`; package deduplication and internal layout remain Spack's
+responsibility.
 
-Any push, index, or check failure marks the global sidecar health unhealthy.
-A successful check writes coverage for the exact lock SHA and then marks the
-store healthy. Coverage records OS and target values present in `spack.lock`,
+Any push, index, or check failure marks the global sidecar health unhealthy
+(partial publish is unhealthy until full-lock check passes). A successful
+check writes coverage for the exact lock SHA and then marks the store healthy. Coverage records OS and target values present in `spack.lock`,
 compiler values when the lock format provides them, and pinned repository
 commits available in `spack.yaml`. Unavailable values are stored as JSON
 `null`, not fabricated placeholders or empty dictionaries. Strict `only`
@@ -226,7 +236,7 @@ fallback, and strict
 only failure.
 
 L4 is deferred: no real CP2K producer/consumer compile, runtime smoke, or SIF
-smoke is claimed. Also outside the MVP are rollout to other environments,
-OCI registries, GPG signing, Spack 1.2 index views, VASP/ROCm integration,
-cache garbage collection or quotas, autopush, cross-distribution relocation,
-and complete OS/base-image air-gap support.
+smoke is claimed as a default gate. Outside current scope: MKL/ROCm CP2K
+migration, OCI registries, GPG signing, Spack 1.2 index views, VASP
+integration, cache garbage collection or quotas, autopush, cross-distribution
+relocation, and complete OS/base-image air-gap support.

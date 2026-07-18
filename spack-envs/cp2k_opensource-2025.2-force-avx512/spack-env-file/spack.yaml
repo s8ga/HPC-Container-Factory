@@ -9,6 +9,8 @@ spack:
       padded_length: 0
     build_stage:
     - /tmp/spack-build
+    # Required on Spack 1.2.0 for pinned py-torch@2.7 (deprecated upstream)
+    deprecated: true
   packages:
     all:
       buildable: true
@@ -18,6 +20,10 @@ spack:
         - +openmp
         - +pic
         - ~rocm
+        # Match Wave 0 authority libint DAG (cmake+ninja pulls libxml2/zstd/libint).
+        - "build_system=cmake"
+        - "build_type=Release"
+        - "generator=ninja"
         - target="x86_64_v3"
     mpi:
       require:
@@ -27,7 +33,9 @@ spack:
         - ~xpmem
     openmpi:
       require:
-        - +internal-hwloc
+        # Match Wave 0 authority openmpi (external hwloc/pmix) for shared libint DAG.
+        - "~internal-hwloc"
+        - "~internal-pmix"
     xpmem:
       buildable: false
       externals:
@@ -76,17 +84,61 @@ spack:
     hdf5:
       require:
         - +fortran
+    # Align libint DAG with Wave 0 authority (2026.2-force).
+    boost:
+      require:
+        - "@1.86.0"
+        - "+mpi"
+        - "+multithreaded"
+        - "+pic"
+        - "+shared"
+        - "cxxstd=11"
+    cmake:
+      require:
+        - "@3.31.12"
+    eigen:
+      require:
+        - "@5.0.1"
+        - "generator=ninja"
     libint:
       require:
-        - +fortran
-        - tune=cp2k-lmax-6
+        - "+fortran"
+        # Authority libint uses cmake generator=ninja (not make/gmake).
+        - "generator=ninja"
+    # Prefer classic zlib over zlib-ng so cmake/curl/openssl match Wave 0 libint DAG.
+    zlib:
+      require:
+        - "@1.3.2"
+    zlib-ng:
+      buildable: false
+    # Align transitive openmpi→hwloc edges with Wave 0 (cmake+ninja, not autotools).
+    libxml2:
+      require:
+        - "build_system=cmake"
+    zstd:
+      require:
+        - "build_system=cmake"
     libxc:
       require:
         - +kxc
         - build_system=cmake
+    ninja:
+      require:
+        - "@1.13.2"
+        - "~re2c"
     pexsi:
       require:
         - +fortran
+    # Pin python 3.12 + networkx@:2.7 to avoid py-networkx@2.8+ → pandas/numba → llvm bloat.
+    # ~libxml2/~pyexpat match Wave 0 python hash used by ninja→eigen→libint.
+    python:
+      require:
+        - "@3.12"
+        - "~libxml2"
+        - "~pyexpat"
+    py-networkx:
+      require:
+        - "@:2.7"
     py-torch:
       require:
         - ~cuda
@@ -113,17 +165,35 @@ spack:
       require:
         - +shared
         - +large_jit_buffer
+    # dftd4@:3.7 requires mctc-lib@0.3; simple-dftd3@1.4 needs mctc>=0.4.1.
+    # Stay on 1.2.1 for the 2025.2 dftd4@3.7 stack (1.4.0 is Wave 0 / dftd4@4.x).
     mctc-lib:
       require:
         - ~openmp
+    simple-dftd3:
+      require:
+        - "@1.2.1"
+
+  repos:
+    builtin:
+      # LIBINT_AUTHORITY_BUILTIN — shared with cp2k_opensource-2026.2-force-avx512
+      commit: fc7222b5b8ababa8588be2e23ff39b33ecc9ce12
 
   specs:
     # Minimal
     - "dbcsr@2.8.0"
     - "libfabric@1.22.0"
     - "netlib-scalapack@2.2.2"
-    - "openblas@0.3.29"
-    - "openmpi@5.0.8"
+    - "openblas@0.3.30"
+    # Align with Wave 0 authority openmpi so boost(+mpi) shares libint DAG hash.
+    - "openmpi@5.0.10"
+    # Libint authority closure pins (Wave 0 hash wnnxqgpvpqzykpsgnpcozdv74wtkujyt)
+    - "boost@1.86.0"
+    - "cmake@3.31.12"
+    - "eigen@5.0.1"
+    - "ninja@1.13.2"
+    - "zlib@1.3.2"
+    - "simple-dftd3@1.2.1"
     # All
     - "cosma@2.7.0"
     - "deepmdkit@3.1.0"
@@ -133,7 +203,7 @@ spack:
     - "greenx@2.2"
     - "hdf5@1.14.6"
     - "lammps-user-pace@2023.11.25.fix2"
-    - "libint@2.9.0"
+    - "libint@2.13.1-cp2k-lmax-7"
     - "libsmeagol@1.2"
     - "libvori@220621"
     - "libxc@7.0.0"
@@ -146,12 +216,9 @@ spack:
     - "spla@1.6.1"
     - "trexio@2.5.0"
     - "tblite@0.4.0"
-    - "cp2k@2025.2+cosma+tblite+deepmd+dftd4~dlaf+elpa+greenx+grpp+hdf5+libint+libxc+pexsi+plumed+pytorch+sirius+smeagol+spglib+trexio+vcsqnm+vdwxc+libvori+mpi_f08+ace smm=libxsmm lmax=6"
-  view:
-    default:
-      root: ./view
-      exclude:
-        # Exclude gcc-runtime to avoid adding a copy of libgomp.so to the view
-        - gcc-runtime
+    - "cp2k@2025.2+cosma+tblite+deepmd+dftd4~dlaf+elpa+greenx+grpp+hdf5+libint+libxc+pexsi+plumed+pytorch+sirius+smeagol+spglib+trexio+vcsqnm+vdwxc+libvori+mpi_f08+ace smm=libxsmm lmax=7"
+  # Disabled during install to avoid EXDEV on Docker overlayfs (spack v1.2
+  # view rename). Unified view is created later via spack_view_enable.j2.
+  view: false
 
 # EOF

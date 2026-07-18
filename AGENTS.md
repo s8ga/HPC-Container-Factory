@@ -94,7 +94,15 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   `assets/spack-buildcache/` is an opaque Spack-owned filesystem cache.
   Factory metadata and its shared/exclusive flock live beside it in
   `assets/spack-buildcache-state/`; never inspect or mutate cache internals.
-- Buildcache is currently enabled only for the `cp2k_opensource-2025.2` pilot.
+- Buildcache target state is the full CP2K **opensource CPU** track (not a
+  single-env pilot). Enable per env via `spack.buildcache.enabled: true`
+  (`policy: auto`, `padded_length: 128`). MKL and ROCm environments remain
+  out of this migration and stay as-is. Do **not** invent a second binary
+  cache format beside Spack's opaque `assets/spack-buildcache/` + factory
+  sidecar. Image-size gates and Wave baselines live under `artifacts/`
+  (`cp2k-image-size-baseline.md`, `cp2k-image-size-log.md`). Opensource CP2K Dockerfiles must
+  not emit `--use-buildcache never` for libint (see
+  `tests/test_cp2k_libint_buildcache_ban.py`). Details: `docs/buildcache.md`.
  Production policy defaults come from each env's `spack.buildcache.policy`;
  CLI `--buildcache` is an override. `auto` mounts buildcache and source mirror read-only and permits
   source fallback; strict `only` mounts buildcache alone and fails closed.
@@ -107,15 +115,20 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
  separate. Exact lock SHA + producer image digest are authoritative; available
  lock OS/target/compiler and pinned repo commits are compared, with unavailable
  fields represented as unknown.
-If the Docker stage fails, its incomplete temporary tag is removed
-best-effort and is never recoverable. After `builder-installed` succeeds,
-publication failures preserve the run-unique image. Resume only with
-`hpc_cf buildcache resume --env <env>` from the latest unhealthy state; it
-validates environment, current lock SHA, Spack version, image existence, and
-immutable digest under the publisher lock. Never add an arbitrary image-ref
-resume bypass. Successful completion removes the temporary tag only after
-promotion, digest verification, coverage/provenance, and healthy state.
-  See `docs/buildcache.md`.
+Producer installs soft-fail when at least one non-external concrete spec is
+on disk so a partial install still yields a tagged image. Publication pushes
+**installed** hashes only, then `update-index`, then full-lock `check`.
+Incomplete coverage stays unhealthy/`partial_publish` but must not discard
+already-pushed binaries. If the Docker stage fails with no usable tag, the
+temporary tag is removed best-effort and is not recoverable; if a tag exists
+despite a reported build failure, the factory still attempts partial push.
+After `builder-installed` succeeds, publication failures preserve the
+run-unique image. Resume only with `hpc_cf buildcache resume --env <env>`
+from the latest unhealthy state; it validates environment, current lock SHA,
+Spack version, image existence, and immutable digest under the publisher lock.
+Never add an arbitrary image-ref resume bypass. Successful completion removes
+the temporary tag only after promotion, digest verification,
+coverage/provenance, and healthy state. See `docs/buildcache.md`.
 - CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option

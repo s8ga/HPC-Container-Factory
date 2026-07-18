@@ -9,12 +9,12 @@ ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
 # ============================================================================
-# STAGE 1: BUILDER - CP2K compilation environment
+# STAGE 1: BUILDER-INSTALLED - CP2K compilation environment before cleanup
 # ============================================================================
-FROM {{ builder_base_image }} AS builder
+FROM {{ builder_base_image }} AS builder-installed
 
-LABEL stage="builder" \
-      description="Builder stage: Compiles CP2K 2026.2 with Spack" \
+LABEL stage="builder-installed" \
+      description="Installed stage: Compiles CP2K 2026.2 with Spack" \
       maintainer="s8ga"
 
 # ============================================================================
@@ -58,7 +58,11 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
+{% include 'partials/spack_buildcache_config.j2' %}
 
+{% if spack_buildcache_policy in ['auto', 'only'] %}
+{% include 'partials/spack_buildcache_install.j2' %}
+{% else %}
 # CP2K 2026.2+ ships *pregenerated* libint sources (cp2k-lmax-*), not prebuilt
 # binaries — libint still must be compiled. Cap -j at 12 for peak memory.
 RUN {% if use_mirror %}
@@ -70,13 +74,23 @@ RUN {% if use_mirror %}
         spack -e {{ spack_env_name }} install --fail-fast -j "${libint_jobs}" -p 20 libint && \
         echo "Installing remaining packages with -j $(nproc)..."; \
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
+{% endif %}
+
+# ============================================================================
+# STAGE 2: BUILDER - Existing post-install/debug checkpoint
+# ============================================================================
+FROM builder-installed AS builder
+
+LABEL stage="builder" \
+      description="Builder stage: post-install CP2K debug image" \
+      maintainer="s8ga"
 
 {% set build_manifest_title = "CP2K 2026.2 Build Manifest" %}
 {% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
-# STAGE 2: RUNTIME - Minimal container with only CP2K and runtime libraries
+# STAGE 3: RUNTIME - Minimal container with only CP2K and runtime libraries
 # ============================================================================
 FROM {{ runtime_base_image }} AS runtime
 
@@ -135,7 +149,7 @@ WORKDIR /workspace
 USER hpc
 
 # ============================================================================
-# STAGE 3: FINAL - Alias for runtime (for backward compatibility)
+# STAGE 4: FINAL - Alias for runtime (for backward compatibility)
 # ============================================================================
 FROM runtime AS final
 

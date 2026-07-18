@@ -10,12 +10,12 @@ ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
 # ============================================================================
-# STAGE 1: BUILDER - CP2K compilation environment
+# STAGE 1: BUILDER-INSTALLED - CP2K compilation environment before cleanup
 # ============================================================================
-FROM {{ builder_base_image }} AS builder
+FROM {{ builder_base_image }} AS builder-installed
 
-LABEL stage="builder" \
-      description="Builder stage: Compiles CP2K 2026.1 with Spack" \
+LABEL stage="builder-installed" \
+      description="Installed stage: Compiles CP2K 2026.1 with Spack" \
       maintainer="s8ga"
 
 # ============================================================================
@@ -39,45 +39,61 @@ RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
     git checkout && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
+# Fetch the force-AVX512 package overrides declared in env.yaml.
+RUN git clone --depth 1 --filter=blob:none --sparse \
+        -b "{{ force_avx512_repo_branch }}" \
+        "{{ force_avx512_repo_url }}" /opt/s8ga-spack-packages && \
+    cd /opt/s8ga-spack-packages && \
+    git sparse-checkout set "{{ force_avx512_repo_path }}"
+
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
-# Add custom spack repo from CP2K developers and our local repo with custom package overrides
+# Repo priority: builtin < CP2K 2026.1 dev < s8 < cp2k_dev(libint) < local cp2k.
+# repos_cp2k_dev provides libint under namespace cp2k_dev (Wave 0 authority hash).
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} "/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}" && \
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos_cp2k_dev/ && \
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
     spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
+{% include 'partials/spack_buildcache_config.j2' %}
 
+{% if spack_buildcache_policy in ['auto', 'only'] %}
+{% include 'partials/spack_buildcache_install.j2' %}
+{% else %}
+# Prefers factory buildcache when policy=auto/only. Source path: memory-cap libint, then rest.
+# Do not use --use-buildcache never for libint (opensource CPU reuse).
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
-
-        echo; \
-        echo "Installing libint..."; \
-        echo "Note: libint is a critical dependency that often takes the longest to build."; \
-        echo; \
-
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
-
-        sleep 5 && \
-
-        echo; \
-        echo "Concurrently Install cp2k and it's dependencies..."; \
-        echo; \
-
+        libint_jobs="$(nproc)"; \
+        if [ "${libint_jobs}" -gt 12 ]; then libint_jobs=12; fi; \
+        echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+        spack -e {{ spack_env_name }} install --fail-fast -j "${libint_jobs}" -p 20 libint && \
+        echo "Installing remaining packages with -j $(nproc)..."; \
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
+{% endif %}
+
+# ============================================================================
+# STAGE 2: BUILDER - Existing post-install/debug checkpoint
+# ============================================================================
+FROM builder-installed AS builder
+
+LABEL stage="builder" \
+      description="Builder stage: post-install CP2K debug image" \
+      maintainer="s8ga"
 
 {% set build_manifest_title = "CP2K 2026.1 Build Manifest" %}
 {% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
-# STAGE 2: RUNTIME - Minimal container with only CP2K and runtime libraries
+# STAGE 3: RUNTIME - Minimal container with only CP2K and runtime libraries
 # ============================================================================
 FROM {{ runtime_base_image }} AS runtime
 

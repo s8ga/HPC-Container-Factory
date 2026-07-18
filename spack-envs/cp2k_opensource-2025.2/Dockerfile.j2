@@ -43,10 +43,11 @@ RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
-# Add custom spack repo from CP2K developers and our local repo with custom package overrides
+# Repo priority: builtin < CP2K dev_repo < local cp2k_dev (libint) < local CP2K.
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
     cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
     spack repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
+    spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos_cp2k_dev/ && \
     spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
     spack -e {{ spack_env_name }} repo ls
 
@@ -56,29 +57,17 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
 {% if spack_buildcache_policy in ['auto', 'only'] %}
 {% include 'partials/spack_buildcache_install.j2' %}
 {% else %}
+# Prefers factory buildcache when policy=auto/only. Source path: memory-cap libint, then rest.
+# Do not use --use-buildcache never for libint (opensource CPU reuse).
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
-        spack -e {{ spack_env_name }} install --only-concrete \
-            --use-buildcache never --fail-fast -j "$(nproc)" -p 20 \
-            --only dependencies libint && \
-
-        echo; \
-        echo "Installing libint..."; \
-        echo "Note: libint is a critical dependency that often takes the longest to build."; \
-        echo; \
-
-        spack -e {{ spack_env_name }} install --only-concrete \
-            --use-buildcache never --fail-fast -j "$(nproc)" -p 20 libint & \
-
-        sleep 10 && \
-
-        echo; \
-        echo "Concurrently Install cp2k and it's dependencies..."; \
-        echo; \
-
-        spack -e {{ spack_env_name }} install --only-concrete \
-            --use-buildcache never --fail-fast -j "$(nproc)" -p 20;
+        libint_jobs="$(nproc)"; \
+        if [ "${libint_jobs}" -gt 12 ]; then libint_jobs=12; fi; \
+        echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+        spack -e {{ spack_env_name }} install --fail-fast -j "${libint_jobs}" -p 20 libint && \
+        echo "Installing remaining packages with -j $(nproc)..."; \
+        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
 {% endif %}
 
 # ============================================================================
