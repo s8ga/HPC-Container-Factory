@@ -381,19 +381,26 @@ def test_rocm_render_and_plan_keep_gpu_contract() -> None:
     assert "/opt/rocm-export/lib" in rendered
 
 
-def test_abacus_render_and_plan_keep_local_repo_contract() -> None:
+def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
     env_dir = SPACK_ENVS_DIR / "abacus_opensource-3.9.0.27-force-avx512"
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
     rendered = _render_env_dockerfile(env_dir)
+    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
 
     assert spec.spack.version == "1.2.0"
     assert plan.env_name == "abacus-env"
-    assert [repo.namespace for repo in plan.assets.repos] == ["abacus-env"]
-    assert [repo.namespace for repo in plan.image.repos] == ["abacus-env"]
+    assert [repo.namespace for repo in plan.assets.repos] == ["abacus", "s8_overrides"]
+    assert [repo.namespace for repo in plan.image.repos] == ["abacus", "s8_overrides"]
+    assert all(repo.commit == pin for repo in spec.spack.custom_repos)
+    assert spec.template_vars["s8ga_repo_commit"] == pin
     assert "spack env create abacus-env" in rendered
-    assert "spack -e abacus-env install" in rendered
-    assert "/opt/spack-env-file/repos/" in rendered
+    assert "AS builder-installed" in rendered
+    assert "FROM builder-installed AS builder" in rendered
+    assert f'git checkout "{pin}"' in rendered
+    assert "/opt/s8ga-spack-packages/spack_repo/abacus" in rendered
+    assert "/opt/s8ga-spack-packages/spack_repo/s8_overrides" in rendered
+    assert "/opt/spack-env-file/repos/" not in rendered
     assert "abacus_run_integration_tests.sh" in rendered
 
 

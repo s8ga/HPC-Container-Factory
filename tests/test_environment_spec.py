@@ -219,12 +219,78 @@ def test_parse_full_fields() -> None:
     assert spec.images.output_name == "out"
     assert len(spec.spack.custom_repos) == 2
     assert spec.spack.custom_repos[0].type == "git"
+    assert spec.spack.custom_repos[0].commit is None
     assert spec.spack.custom_repos[1].type == "local"
     assert spec.mirror_builder.system_pkgs == ["git"]
     assert spec.manual_packages[0].file == "assets/x.tgz"
     assert spec.runtime.copy_dirs == ["/opt/app"]
     assert spec.script == "echo build"
     assert spec.template_vars["cp2k_branch"] == "v1"
+
+
+def test_parse_custom_repo_commit_pin() -> None:
+    sha = "d0ee3f460a2543c05c693317c767652abf964db7"
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.0",
+                "env_name": "abacus-env",
+                "custom_repos": [
+                    {
+                        "url": "https://github.com/s8ga/s8ga-spack-packages.git",
+                        "branch": "master",
+                        "commit": sha.upper(),
+                        "sparse_path": "spack_repo/abacus",
+                        "namespace": "abacus",
+                    }
+                ],
+            },
+        }
+    )
+    repo = spec.spack.custom_repos[0]
+    assert repo.commit == sha
+    assert spec.as_dict()["spack"]["custom_repos"][0]["commit"] == sha
+
+
+def test_parse_custom_repo_commit_rejects_bad_sha() -> None:
+    with pytest.raises(ValueError, match="40-character hex"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "spack": {
+                    "version": "1.2.0",
+                    "env_name": "abacus-env",
+                    "custom_repos": [
+                        {
+                            "url": "https://example.com/r.git",
+                            "namespace": "x",
+                            "commit": "not-a-sha",
+                        }
+                    ],
+                },
+            }
+        )
+
+
+def test_parse_local_repo_rejects_commit() -> None:
+    with pytest.raises(ValueError, match="only valid for git"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "spack": {
+                    "version": "1.2.0",
+                    "env_name": "abacus-env",
+                    "custom_repos": [
+                        {
+                            "path": "repos",
+                            "namespace": "local-ns",
+                            "commit": "d0ee3f460a2543c05c693317c767652abf964db7",
+                        }
+                    ],
+                },
+            }
+        )
 
 
 def test_invalid_method_rejected() -> None:

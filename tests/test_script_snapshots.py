@@ -222,6 +222,33 @@ def test_build_prepare_repos_script_fetches_without_registering() -> None:
     assert "spack repo add" not in s
 
 
+def test_build_prepare_repos_script_checks_out_commit_pin() -> None:
+    sha = "d0ee3f460a2543c05c693317c767652abf964db7"
+    env = EnvConfig(
+        spack=SpackConfig(
+            version="1.2.0",
+            env_name="abacus-env",
+            custom_repos=[
+                CustomRepo(
+                    type="git",
+                    namespace="abacus",
+                    url="https://github.com/s8ga/s8ga-spack-packages.git",
+                    branch="master",
+                    commit=sha,
+                    sparse_path="spack_repo/abacus",
+                ),
+            ],
+        )
+    )
+    s = SpackOps(env, CapturingContainer())._build_prepare_repos_script("/work/env")
+    assert "git clone --filter=blob:none --sparse --no-checkout" in s
+    assert f"git fetch --depth 1 origin {sha}" in s
+    assert f"git checkout {sha}" in s
+    assert "git sparse-checkout set spack_repo/abacus" in s
+    assert "-b master" not in s
+    assert "spack repo add" not in s
+
+
 def test_build_prepare_environment_registers_repos_after_builtin() -> None:
     s = _ops_with_repos()._build_prepare_environment_script(
         "/work/env", import_lock=False,

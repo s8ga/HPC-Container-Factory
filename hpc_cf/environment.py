@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -221,6 +222,9 @@ class CustomRepo:
     namespace: str
     url: str | None = None
     branch: str | None = None
+    # Optional full git SHA (40-char hex). When set, assets clone checkouts
+    # this commit instead of the branch tip (branch remains a clone hint).
+    commit: str | None = None
     sparse_path: str | None = None
     path: str | None = None
     # Which workflows register this repo (default: assets + image).
@@ -345,6 +349,8 @@ class EnvironmentSpec:
                     entry["branch"] = r.branch
                 if r.sparse_path is not None:
                     entry["sparse_path"] = r.sparse_path
+                if r.commit is not None:
+                    entry["commit"] = r.commit
             else:
                 entry = {"path": r.path, "namespace": r.namespace}
             if r.phases is not RepoPhase.BOTH:
@@ -422,8 +428,16 @@ _BUILDCACHE_KEYS = frozenset({
     "enabled", "padded_length", "policy", "coverage",
 })
 _CUSTOM_REPO_KEYS = frozenset({
-    "url", "branch", "sparse_path", "namespace", "path", "phases", "image_path",
+    "url",
+    "branch",
+    "commit",
+    "sparse_path",
+    "namespace",
+    "path",
+    "phases",
+    "image_path",
 })
+_GIT_SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _MIRROR_BUILDER_KEYS = frozenset({
     "system_pkgs", "pkg_mirror_setup", "pkg_install_cmd",
 })
@@ -467,6 +481,16 @@ def _optional_str(value: Any, *, path: str) -> str | None:
     if value is None:
         return None
     return _require_str(value, path=path)
+
+
+def _optional_git_commit(value: Any, *, path: str) -> str | None:
+    """Optional 40-character git SHA for custom_repos.commit."""
+    if value is None:
+        return None
+    commit = _require_str(value, path=path)
+    if not _GIT_SHA40_RE.fullmatch(commit):
+        raise ValueError(f"{path} must be a 40-character hex git SHA")
+    return commit.lower()
 
 
 def _require_str_list(value: Any, *, path: str) -> list[str]:
@@ -557,6 +581,9 @@ def _parse_custom_repos(raw_repos: Any) -> list[CustomRepo]:
                         if "branch" in entry and entry["branch"] is not None
                         else "main"
                     ),
+                    commit=_optional_git_commit(
+                        entry.get("commit"), path=f"{path}.commit"
+                    ),
                     sparse_path=_optional_str(
                         entry.get("sparse_path"), path=f"{path}.sparse_path"
                     ),
@@ -565,6 +592,8 @@ def _parse_custom_repos(raw_repos: Any) -> list[CustomRepo]:
                 )
             )
         elif "path" in entry:
+            if entry.get("commit") is not None:
+                raise ValueError(f"{path}.commit is only valid for git repos")
             repos.append(
                 CustomRepo(
                     type="local",

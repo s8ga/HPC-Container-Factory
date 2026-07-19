@@ -376,24 +376,50 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
         clone_tmp = f"/tmp/repo-clone-{repo.namespace}"
         clone_tmp_q = shlex.quote(clone_tmp)
 
-        sparse_block = ""
         if repo.sparse_path:
-            sparse_block = f"""
+            materialize = f"""
             git sparse-checkout set {sparse}
             cp -a {sparse}/. {clone_dir_q}/"""
         else:
-            sparse_block = f"cp -a ./. {clone_dir_q}/"
+            materialize = f"cp -a ./. {clone_dir_q}/"
 
-        return f"""
-# Prepare git repo: {repo.namespace}
-if [[ ! -f {clone_dir_q}/repo.yaml ]]; then
-    rm -rf {clone_dir_q} {clone_tmp_q}
-    mkdir -p /tmp/spack-repos/spack_repo
+        if repo.commit:
+            commit = shlex.quote(repo.commit)
+            if repo.sparse_path:
+                # Sparse cone must be configured before checkout so only the
+                # requested tree is materialized at the pinned commit.
+                commit_materialize = f"""
+    git sparse-checkout set {sparse}
+    git checkout {commit}
+    mkdir -p {clone_dir_q}
+    cp -a {sparse}/. {clone_dir_q}/"""
+            else:
+                commit_materialize = f"""
+    git checkout {commit}
+    mkdir -p {clone_dir_q}
+    cp -a ./. {clone_dir_q}/"""
+            fetch_block = f"""
+    git clone --filter=blob:none --sparse --no-checkout \
+        {url} {clone_tmp_q}
+    cd {clone_tmp_q}
+    git fetch --depth 1 origin {commit}
+    {commit_materialize}"""
+            pin_note = f" @ {repo.commit}"
+        else:
+            fetch_block = f"""
     git clone --depth 1 --filter=blob:none --sparse \
         -b {branch} {url} {clone_tmp_q}
     cd {clone_tmp_q}
     mkdir -p {clone_dir_q}
-    {sparse_block}
+    {materialize}"""
+            pin_note = ""
+
+        return f"""
+# Prepare git repo: {repo.namespace}{pin_note}
+if [[ ! -f {clone_dir_q}/repo.yaml ]]; then
+    rm -rf {clone_dir_q} {clone_tmp_q}
+    mkdir -p /tmp/spack-repos/spack_repo
+    {fetch_block}
     cd /tmp
     rm -rf {clone_tmp_q}
 fi
