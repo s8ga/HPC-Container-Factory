@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for ABACUS LTS 3.9.0.27 with Spack (force-avx512)
+# Multi-stage Dockerfile for ABACUS 3.9.0.27 with Spack (force-avx512)
 # BUILD REQUIREMENTS:
 # - assets/ directory with spack-v{{ spack_version }}.tar.gz, bootstrap-{{ spack_version }}, spack-mirror (optional)
 # - spack-envs/{{ env_dir_name }}/spack-env-file with spack.yaml and spack.lock
@@ -9,12 +9,12 @@ ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
 # ============================================================================
-# STAGE 1: BUILDER - ABACUS compilation environment
+# STAGE 1: BUILDER-INSTALLED - ABACUS compilation before cleanup
 # ============================================================================
-FROM {{ builder_base_image }} AS builder
+FROM {{ builder_base_image }} AS builder-installed
 
-LABEL stage="builder" \
-      description="Builder stage: Compiles ABACUS 3.9.0.27 with Spack" \
+LABEL stage="builder-installed" \
+      description="Installed stage: Compiles ABACUS 3.9.0.27 with Spack" \
       maintainer="s8ga"
 
 # ============================================================================
@@ -26,27 +26,52 @@ LABEL stage="builder" \
 # ABACUS BUILD
 # ============================================================================
 
+# Fetch s8ga abacus + s8_overrides at the pinned monorepo commit (env.yaml).
+RUN git clone --filter=blob:none --sparse --no-checkout \
+        "{{ s8ga_repo_url }}" /opt/s8ga-spack-packages && \
+    cd /opt/s8ga-spack-packages && \
+    git fetch --depth 1 origin "{{ s8ga_repo_commit }}" && \
+    git sparse-checkout set "{{ s8ga_abacus_repo_path }}" "{{ s8ga_overrides_repo_path }}" && \
+    git checkout "{{ s8ga_repo_commit }}"
+
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
-# Add custom local repo with abacus packages + force-avx512 math lib overrides
-RUN spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
+# Repo priority: builtin < abacus < s8_overrides (env scope).
+RUN spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} \
+        "/opt/s8ga-spack-packages/{{ s8ga_abacus_repo_path }}" && \
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} \
+        "/opt/s8ga-spack-packages/{{ s8ga_overrides_repo_path }}" && \
     spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
+{% include 'partials/spack_buildcache_config.j2' %}
 
+{% if spack_buildcache_policy in ['auto', 'only'] %}
+{% include 'partials/spack_buildcache_install.j2' %}
+{% else %}
 RUN {% if use_mirror %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
     {% endif %}
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
+{% endif %}
+
+# ============================================================================
+# STAGE 2: BUILDER - post-install / debug checkpoint
+# ============================================================================
+FROM builder-installed AS builder
+
+LABEL stage="builder" \
+      description="Builder stage: post-install ABACUS debug image" \
+      maintainer="s8ga"
 
 {% set build_manifest_title = "ABACUS 3.9.0.27 Build Manifest" %}
 {% include 'partials/spack_post_install.j2' %}
 
 {% if not build_only %}
 # ============================================================================
-# STAGE 2: RUNTIME - Minimal container with only ABACUS and runtime libraries
+# STAGE 3: RUNTIME - Minimal container with only ABACUS and runtime libraries
 # ============================================================================
 FROM {{ runtime_base_image }} AS runtime
 
@@ -96,7 +121,7 @@ WORKDIR /workspace
 USER hpc
 
 # ============================================================================
-# STAGE 3: FINAL - Alias for runtime (for backward compatibility)
+# STAGE 4: FINAL - Alias for runtime (for backward compatibility)
 # ============================================================================
 FROM runtime AS final
 
