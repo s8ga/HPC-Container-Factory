@@ -19,6 +19,7 @@
 | 环境 | 说明 | Spack | 自动镜像名 |
 |------|------|-------|------------|
 | `abacus_opensource-3.9.0.27-force-avx512` | ABACUS 开源版 + AVX512 | 1.2.0 | `abacus_opensource:3.9.0.27-force-avx512` |
+| `abacus_opensource-3.10.1-force-avx512` | ABACUS LTS 3.10.1 + AVX512 | 1.2.0 | `abacus_opensource:3.10.1-force-avx512` |
 | `cp2k_mkl-2025.2-experimental` | CP2K 2025.2 MKL 实验版 | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
 | `cp2k_opensource-2025.2` | CP2K 2025.2 开源 BLAS 版 | 1.1.0 | `cp2k_opensource:2025.2` |
 | `cp2k_opensource-2025.2-force-avx512` | CP2K 2025.2 强制 AVX512 kernel | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |

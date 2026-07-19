@@ -146,6 +146,14 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
     opensource Dockerfiles; that forces source rebuilds and defeats sharing.
   - Prefer explicit pins + shared lock/hash alignment over `concretizer:reuse`
     as the primary path to stable DAG hashes. MKL/ROCm stay outside this track.
+- **ABACUS opensource force-avx512 track** (separate from CP2K): environments
+  `abacus_opensource-3.9.0.27-force-avx512` and
+  `abacus_opensource-3.10.1-force-avx512` register s8ga `spack_repo/abacus` +
+  `spack_repo/s8_overrides` with the same pinned monorepo `commit` in
+  `custom_repos` / `template_vars.s8ga_repo_commit`. Align shared math/MPI/ML
+  pins across both envs, then **publish** (`buildcache build`) from the
+  authority env and **consume** (`build --buildcache auto|only`) on the other.
+  Do not assume ABACUS shares DAG hashes with the CP2K track.
 - CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option

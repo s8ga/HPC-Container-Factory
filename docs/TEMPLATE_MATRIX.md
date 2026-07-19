@@ -9,6 +9,7 @@
 | 环境 (`--app-version`) | method | 模板 | 共享 partials | render/contract |
 |---|---|---|---|---|
 | `abacus_opensource-3.9.0.27-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `abacus_opensource-3.10.1-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 | `cp2k_opensource-2025.2` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 | `cp2k_opensource-2025.2-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 | `cp2k_opensource-2026.1-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
