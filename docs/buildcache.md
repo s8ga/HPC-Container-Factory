@@ -271,8 +271,14 @@ push/index/check, padded relocation, auto miss/recoverable damaged-entry
 fallback, and strict
 only failure.
 
-L4 is deferred: no real CP2K producer/consumer compile, runtime smoke, or SIF
-smoke is claimed as a default gate. Outside current scope: MKL/ROCm CP2K
-migration, OCI registries, GPG signing, Spack 1.2 index views, VASP
-integration, cache garbage collection or quotas, autopush, cross-distribution
-relocation, and complete OS/base-image air-gap support.
+L4 application delivery is partially available as an **opt-in ABACUS
+lightweight smoke** (`tests/test_integration_abacus_l4.py`, gated by
+`--run-integration`): consumer build of
+`abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`, then stock
+`abacus_run_integration_tests.sh` when the image ships `share/abacus/tests`.
+Missing healthy buildcache admission or build assets skips (not a false-green
+pass). Full CP2K producer/consumer compile, CP2K runtime/regtest, and SIF
+smoke remain deferred and are not default gates. Outside current scope:
+MKL/ROCm CP2K migration, OCI registries, GPG signing, Spack 1.2 index views,
+VASP integration, cache garbage collection or quotas, autopush,
+cross-distribution relocation, and complete OS/base-image air-gap support.

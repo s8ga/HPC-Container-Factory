@@ -39,6 +39,7 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 ./venv/bin/pytest -q
 
 # Integration tests (needs podman + assets — opt-in)
+# L3 pkgconf matrix + L4 ABACUS consumer smoke
 ./venv/bin/pytest --run-integration -v -s
 # or: ./venv/bin/python scripts/integration-test.py
 
@@ -210,17 +211,24 @@ use conda/mamba when a binary env solver is enough.
   covers Spack 1.1.0/1.1.1/1.2.0 push/index/check, padded relocation, auto
   miss/recoverable damaged-entry fallback, and only fail-closed. Missing
   assets are skipped.
-- **L4 real application delivery**: deferred. Full CP2K producer/consumer,
-  runtime, and SIF smoke are not current acceptance gates.
+- **L4 real application delivery**: opt-in ABACUS lightweight smoke in
+  `tests/test_integration_abacus_l4.py` (consumer build of
+  `abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`, then stock
+  `abacus_run_integration_tests.sh` when `share/abacus/tests` is present).
+  Full CP2K producer/consumer, CP2K regtest, and SIF smoke remain deferred.
 
 Run L0-L2 with `./venv/bin/pytest -q`. Run L3 explicitly with
 `./venv/bin/pytest --run-integration -v -s tests/test_integration_spack.py`.
+Run L4 ABACUS smoke with
+`./venv/bin/pytest --run-integration -v -s tests/test_integration_abacus_l4.py`
+(or `./venv/bin/python scripts/integration-test.py`, which runs L3+L4).
 Run the inventory guard independently with
 `./venv/bin/python scripts/check-dual-write.py`.
 
 L3 creates a persistent container per Spack version and uses a minimal pkgconf
 environment; it does not build CP2K. Missing matrix assets are skipped rather
-than counted as passes.
+than counted as passes. L4 skips when buildcache admission/assets/podman are
+missing, or when the built image lacks installed ABACUS tests (`tests=false`).
 Environment inventory is discovered via `EnvironmentSpec` / `list_available_envs()`
 — do not hardcode test counts.
 
