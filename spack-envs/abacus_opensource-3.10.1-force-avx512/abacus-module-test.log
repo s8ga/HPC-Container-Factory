@@ -1,51 +1,3295 @@
 ================================================================
-  ABACUS 3.10.1 Module Unit Tests (evidence run)
-  image: localhost/abacus_opensource:3.10.1-force-avx512
-  digest: c84d1299f5f017eb956c6adbd8f254f355ca7149c88e009a45b7257e857c4b38
-  started: 2026-07-21T03:36:16+08:00
+  ABACUS Module Unit Tests
+  /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/share/abacus/tests
+  default_timeout=30s slow_timeout=120s full_log=0
 ================================================================
 
-Probe: looking for tests under /opt/spack ...
-abacus prefix: /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-qy7qdu27cs2xrwk5sy4hr7ydwtstinak
-total 20
-drwxr-sr-x 1 hpc hpc  4096 Jul 19 01:50 .
-drwxr-xr-x 1 hpc hpc 12288 Jul 19 01:49 ..
-drwxr-sr-x 2 hpc hpc  4096 Jul 19 01:49 bin
-Traceback (most recent call last):
-  File "<stdin>", line 4, in <module>
-  File "/opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/python-3.12.13-67eeethn27zlgjd7vswtkftpr46pv4sj/lib/python3.12/pathlib.py", line 1027, in read_text
-    with self.open(mode='r', encoding=encoding, errors=errors) as f:
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/python-3.12.13-67eeethn27zlgjd7vswtkftpr46pv4sj/lib/python3.12/pathlib.py", line 1013, in open
-    return io.open(self, mode, buffering, encoding, errors, newline)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FileNotFoundError: [Errno 2] No such file or directory: '.spack/spec.json'
+--- test_batch --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from BatchTest
+[ RUN      ] BatchTest.MaxMinRandom
+[       OK ] BatchTest.MaxMinRandom (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from BatchTest (0 ms total)
 
---- Running abacus_run_module_tests.sh (expected fail: no test dir) ---
-ERROR: Cannot find test dir under /opt/spack/linux-x86_64_v3/
-SCRIPT_EXIT=1
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] test_batch — 0s
 
-BLOCKER: Module unit tests cannot run on existing image
-  - Image tag: localhost/abacus_opensource:3.10.1-force-avx512 (c84d1299f5f017eb956c6adbd8f254f355ca7149c88e009a45b7257e857c4b38)
-  - Also checked: localhost/abacus_opensource:3.10.1-force-avx512-installed, localhost/abacus_opensource:3.10.1-force-avx512-builder (no share/abacus/tests)
-  - Concrete spec has tests=false; MODULE_* binaries only install with +tests
-  - Full OCI rebuild with abacus +tests required for module evidence
-  - Integration evidence uses mounted 3.10.1-lts source tests/integrate instead
-finished: 2026-07-21T03:36:16+08:00
-[('3.10.1-lts', False)]
-[('3.10.1-lts', False)]
-[('3.10.1-lts', False)]
-[('3.10.1-lts', False)]
+--- test_delley --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from DelleyTest
+[ RUN      ] DelleyTest.NumGrid
+[       OK ] DelleyTest.NumGrid (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from DelleyTest (10 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (10 ms total)
+[  PASSED  ] 2 tests.
+[PASS] test_delley — 0s
+
+--- test_partition --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from PartitionTest
+[ RUN      ] PartitionTest.Becke
+time elapsed = 5.075e-02 seconds
+... [4 lines omitted] ...
+[----------] 2 tests from PartitionTest (230 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (230 ms total)
+[  PASSED  ] 2 tests.
+[PASS] test_partition — 0s
+
+--- test_radial --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from RadialTest
+[ RUN      ] RadialTest.Baker
+[       OK ] RadialTest.Baker (0 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from RadialTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 4 tests.
+[PASS] test_radial — 0s
+
+--- Base_Kernels_UTs --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TestModuleBaseMathMultiDevice
+[ RUN      ] TestModuleBaseMathMultiDevice.cal_ylm_real_op_cpu
+... [1 lines omitted] ...
+[----------] 1 test from TestModuleBaseMathMultiDevice (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (7 ms total)
+[  PASSED  ] 1 test.
+[PASS] Base_Kernels_UTs — 0s
+
+--- container_uts --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 37 tests from 7 test suites.
+[----------] Global test environment set-up.
+[----------] 21 tests from Tensor
+[ RUN      ] Tensor.Constructor
+... [94 lines omitted] ...
+[----------] 1 test from TensorAccessorTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 37 tests from 7 test suites ran. (476 ms total)
+[  PASSED  ] 37 tests.
+[PASS] container_uts — 1s
+
+--- Module_Device_UTs --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 9 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 8 tests from TestModulePsiMemory
+[ RUN      ] TestModulePsiMemory.set_memory_op_double_cpu
+... [20 lines omitted] ...
+[----------] 1 test from TestModulePsiDevice (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 2 test suites ran. (1 ms total)
+[  PASSED  ] 9 tests.
+[PASS] Module_Device_UTs — 0s
+
+--- test_mixing --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from Mixing_Test
+[ RUN      ] Mixing_Test.BroydenSolveLinearEq
+... [7 lines omitted] ...
+[----------] 4 tests from Mixing_Test (254 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (254 ms total)
+[  PASSED  ] 4 tests.
+[PASS] test_mixing — 0s
+
+--- assoc_laguerre_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from AssocLaguerreTest
+[ RUN      ] AssocLaguerreTest.LaguerreTest
+... [11 lines omitted] ...
+[----------] 6 tests from AssocLaguerreTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 6 tests.
+[PASS] assoc_laguerre_test — 1s
+
+--- base_abfs-vector3_order --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from AbfsVector3Order
+[ RUN      ] AbfsVector3Order.Vector3Order
+... [1 lines omitted] ...
+[----------] 1 test from AbfsVector3Order (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_abfs-vector3_order — 0s
+
+--- base_atom_in --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from atom_in_test
+[ RUN      ] atom_in_test.atomin
+... [1 lines omitted] ...
+[----------] 1 test from atom_in_test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_atom_in — 0s
+
+--- base_blas_connector --- (timeout=30s)
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from blas_connector
+[ RUN      ] blas_connector.sscal_
+[       OK ] blas_connector.sscal_ (0 ms)
+... [26 lines omitted] ...
+[----------] 14 tests from blas_connector (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 14 tests.
+[PASS] base_blas_connector — 0s
+
+--- base_complexarray --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 34 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 7 tests from ComplexArray
+[ RUN      ] ComplexArray.constructor_bnd1234_test
+... [70 lines omitted] ...
+[----------] 27 tests from ComplexArray_test (21 ms total)
+
+[----------] Global test environment tear-down
+[==========] 34 tests from 2 test suites ran. (21 ms total)
+[  PASSED  ] 34 tests.
+[PASS] base_complexarray — 0s
+
+--- base_complexmatrix --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 34 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 5 tests from ComplexMatrix
+[ RUN      ] ComplexMatrix.Constructor
+... [70 lines omitted] ...
+[----------] 29 tests from ComplexMatrixTest (15 ms total)
+
+[----------] Global test environment tear-down
+[==========] 34 tests from 2 test suites ran. (15 ms total)
+[  PASSED  ] 34 tests.
+[PASS] base_complexmatrix — 0s
+
+--- base_container --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 8 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 8 tests from ContainerOperator
+[ RUN      ] ContainerOperator.VectorPlus
+... [15 lines omitted] ...
+[----------] 8 tests from ContainerOperator (12 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 1 test suite ran. (12 ms total)
+[  PASSED  ] 8 tests.
+[PASS] base_container — 0s
+
+--- base_element_basis_index --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from IndexLNMTest
+[ RUN      ] IndexLNMTest.makeindex
+... [1 lines omitted] ...
+[----------] 1 test from IndexLNMTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_element_basis_index — 0s
+
+--- base_global_file --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from GlobalFile
+[ RUN      ] GlobalFile.mkdirout
+... [9 lines omitted] ...
+[----------] 5 tests from GlobalFile (4 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (4 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_global_file — 0s
+
+--- base_global_function --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 25 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 25 tests from GlobalFunctionTest
+[ RUN      ] GlobalFunctionTest.NewPart
+... [49 lines omitted] ...
+[----------] 25 tests from GlobalFunctionTest (132 ms total)
+
+[----------] Global test environment tear-down
+[==========] 25 tests from 1 test suite ran. (132 ms total)
+[  PASSED  ] 25 tests.
+[PASS] base_global_function — 0s
+
+--- base_gram_schmidt_orth --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from VerifyOrth/GramSchmidtOrthTest
+[ RUN      ] VerifyOrth/GramSchmidtOrthTest.CalOrth/0
+... [11 lines omitted] ...
+[----------] 6 tests from VerifyOrth/GramSchmidtOrthTest (288 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (288 ms total)
+[  PASSED  ] 6 tests.
+[PASS] base_gram_schmidt_orth — 1s
+
+--- base_intarray --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from IntArrayTest
+[ RUN      ] IntArrayTest.GetArrayCount
+... [23 lines omitted] ...
+[----------] 12 tests from IntArrayTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 12 tests.
+[PASS] base_intarray — 0s
+
+--- base_integral --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 15 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 11 tests from SimpsonIntegralSinx
+[ RUN      ] SimpsonIntegralSinx.Constructor
+... [35 lines omitted] ...
+[----------] 2 tests from SimpsonIntegralExp (213 ms total)
+
+[----------] Global test environment tear-down
+[==========] 15 tests from 3 test suites ran. (366 ms total)
+[  PASSED  ] 15 tests.
+[PASS] base_integral — 0s
+
+--- base_inverse_matrix --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from InverseMatrixComplexTest
+[ RUN      ] InverseMatrixComplexTest.InverseMatrixComplex
+... [6 lines omitted] ...
+[----------] 1 test from InverseMatrixRealTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 2 test suites ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_inverse_matrix — 0s
+
+--- base_lapack_connector --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from LapackConnectorTest
+[ RUN      ] LapackConnectorTest.ZHEGV
+[       OK ] LapackConnectorTest.ZHEGV (0 ms)
+[----------] 1 test from LapackConnectorTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_lapack_connector — 1s
+
+--- base_math_bspline --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from MathBsplineTest
+[ RUN      ] MathBsplineTest.Init
+... [3 lines omitted] ...
+[----------] 2 tests from MathBsplineTest (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (7 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_math_bspline — 0s
+
+--- base_math_chebyshev --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 17 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 17 tests from MathChebyshevTest
+[ RUN      ] MathChebyshevTest.calcoef_real
+... [35 lines omitted] ...
+[----------] 17 tests from MathChebyshevTest (5570 ms total)
+
+[----------] Global test environment tear-down
+[==========] 17 tests from 1 test suite ran. (5570 ms total)
+[  PASSED  ] 17 tests.
+[PASS] base_math_chebyshev — 5s
+
+--- base_math_polyint --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from bessell0
+[ RUN      ] bessell0.PolynomialInterpolationThreeDimensionY
+... [9 lines omitted] ...
+[----------] 5 tests from bessell0 (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_math_polyint — 0s
+
+--- base_math_sphbes --- (timeout=30s)
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from Sphbes
+[ RUN      ] Sphbes.Constructor
+[       OK ] Sphbes.Constructor (0 ms)
+... [34 lines omitted] ...
+[----------] 11 tests from Sphbes (87 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (87 ms total)
+[  PASSED  ] 11 tests.
+[PASS] base_math_sphbes — 0s
+
+--- base_mathzone --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from MathzoneTest
+[ RUN      ] MathzoneTest.PointwiseProduct
+... [5 lines omitted] ...
+[----------] 3 tests from MathzoneTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] base_mathzone — 1s
+
+--- base_mathzone_add1 --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from MathzoneAdd1Test
+[ RUN      ] MathzoneAdd1Test.Constructor
+... [17 lines omitted] ...
+[----------] 9 tests from MathzoneAdd1Test (5 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (5 ms total)
+[  PASSED  ] 9 tests.
+[PASS] base_mathzone_add1 — 0s
+
+--- base_matrix --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 25 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from matrix
+[ RUN      ] matrix.ConstructorNrNc
+... [52 lines omitted] ...
+[----------] 24 tests from matrixTest (118 ms total)
+
+[----------] Global test environment tear-down
+[==========] 25 tests from 2 test suites ran. (118 ms total)
+[  PASSED  ] 25 tests.
+[PASS] base_matrix — 0s
+
+--- base_matrix3 --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 23 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 23 tests from Matrix3Test
+[ RUN      ] Matrix3Test.Construct
+[       OK ] Matrix3Test.Construct (0 ms)
+[ RUN      ] Matrix3Test.Idenity
+[       OK ] Matrix3Test.Idenity (0 ms)
+[ RUN      ] Matrix3Test.Zero
+[       OK ] Matrix3Test.Zero (0 ms)
+[ RUN      ] Matrix3Test.Det
+[       OK ] Matrix3Test.Det (0 ms)
+[ RUN      ] Matrix3Test.Transpose
+[       OK ] Matrix3Test.Transpose (0 ms)
+[ RUN      ] Matrix3Test.Inverse
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_base/test/matrix3_test.cpp:148: Failure
+The difference between (ma.e21*mb.e13 + ma.e22*mb.e23 + ma.e23*mb.e33) and 0.0 is 1.0251478989794941e-15, which exceeds 1e-15, where
+(ma.e21*mb.e13 + ma.e22*mb.e23 + ma.e23*mb.e33) evaluates to -1.0251478989794941e-15,
+0.0 evaluates to 0, and
+1e-15 evaluates to 1.0000000000000001e-15.
+
+[  FAILED  ] Matrix3Test.Inverse (0 ms)
+[ RUN      ] Matrix3Test.Assignment
+[       OK ] Matrix3Test.Assignment (0 ms)
+[ RUN      ] Matrix3Test.AddEqual
+[       OK ] Matrix3Test.AddEqual (0 ms)
+[ RUN      ] Matrix3Test.MinusEqual
+[       OK ] Matrix3Test.MinusEqual (0 ms)
+[ RUN      ] Matrix3Test.MultiplyEqual
+[       OK ] Matrix3Test.MultiplyEqual (0 ms)
+[ RUN      ] Matrix3Test.OverEqual
+[       OK ] Matrix3Test.OverEqual (0 ms)
+[ RUN      ] Matrix3Test.Print
+[       OK ] Matrix3Test.Print (0 ms)
+[ RUN      ] Matrix3Test.MaddM
+[       OK ] Matrix3Test.MaddM (0 ms)
+[ RUN      ] Matrix3Test.MminusM
+[       OK ] Matrix3Test.MminusM (0 ms)
+[ RUN      ] Matrix3Test.MoverNum
+[       OK ] Matrix3Test.MoverNum (0 ms)
+[ RUN      ] Matrix3Test.MmultiplyM
+[       OK ] Matrix3Test.MmultiplyM (0 ms)
+[ RUN      ] Matrix3Test.MmultiplyNum
+[       OK ] Matrix3Test.MmultiplyNum (0 ms)
+[ RUN      ] Matrix3Test.MmultiplyV
+[       OK ] Matrix3Test.MmultiplyV (0 ms)
+[ RUN      ] Matrix3Test.VmultiplyM
+[       OK ] Matrix3Test.VmultiplyM (0 ms)
+[ RUN      ] Matrix3Test.MeqM
+[       OK ] Matrix3Test.MeqM (0 ms)
+[ RUN      ] Matrix3Test.MneM
+[       OK ] Matrix3Test.MneM (0 ms)
+[ RUN      ] Matrix3Test.ToMatrix
+[       OK ] Matrix3Test.ToMatrix (0 ms)
+[ RUN      ] Matrix3Test.TemplateVectorMultiplyMatrix
+[       OK ] Matrix3Test.TemplateVectorMultiplyMatrix (0 ms)
+[----------] 23 tests from Matrix3Test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 23 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 22 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] Matrix3Test.Inverse
+
+ 1 FAILED TEST
+[FAIL] base_matrix3 — 0s (rc=1)
+
+--- base_memory --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from MemoryTest
+[ RUN      ] MemoryTest.Constructor
+... [9 lines omitted] ...
+[----------] 5 tests from MemoryTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_memory — 0s
+
+--- base_mymath --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from MymathTest
+[ RUN      ] MymathTest.Heapsort
+... [3 lines omitted] ...
+[----------] 2 tests from MymathTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_mymath — 0s
+
+--- base_opt_CG --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from CG_test
+[ RUN      ] CG_test.Stand_Solve_LinearEq
+... [9 lines omitted] ...
+[----------] 5 tests from CG_test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_opt_CG — 0s
+
+--- base_opt_TN --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from TN_test
+[ RUN      ] TN_test.TN_Solve_LinearEq
+... [3 lines omitted] ...
+[----------] 2 tests from TN_test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_opt_TN — 1s
+
+--- base_realarray --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 13 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 13 tests from realArrayTest
+[ RUN      ] realArrayTest.GetArrayCount
+... [25 lines omitted] ...
+[----------] 13 tests from realArrayTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 13 tests.
+[PASS] base_realarray — 0s
+
+--- base_sph_bessel_recursive --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from SphBessel
+[ RUN      ] SphBessel.D1
+... [3 lines omitted] ...
+[----------] 2 tests from SphBessel (41 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (41 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_sph_bessel_recursive — 0s
+
+--- base_timer --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from TimerTest
+[ RUN      ] TimerTest.Tick
+... [37 lines omitted] ...
+[----------] 6 tests from TimerTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 6 tests.
+[PASS] base_timer — 0s
+
+--- base_tool_check --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from ToolCheckTest
+[ RUN      ] ToolCheckTest.Name
+... [7 lines omitted] ...
+[----------] 4 tests from ToolCheckTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 4 tests.
+[PASS] base_tool_check — 0s
+
+--- base_tool_quit --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from ToolQuitTest
+[ RUN      ] ToolQuitTest.warning
+... [9 lines omitted] ...
+[----------] 5 tests from ToolQuitTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_tool_quit — 0s
+
+--- base_tool_threading --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 8 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 8 tests from ToolThreadingTEST
+[ RUN      ] ToolThreadingTEST.TastDist1DInt
+... [15 lines omitted] ...
+[----------] 8 tests from ToolThreadingTEST (21 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 1 test suite ran. (21 ms total)
+[  PASSED  ] 8 tests.
+[PASS] base_tool_threading — 0s
+
+--- base_tool_title --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from ToolTitleTest
+[ RUN      ] ToolTitleTest.TITLE2
+... [3 lines omitted] ...
+[----------] 2 tests from ToolTitleTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] base_tool_title — 0s
+
+--- base_vector3 --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 27 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 27 tests from Vector3Test
+[ RUN      ] Vector3Test.Construct
+... [53 lines omitted] ...
+[----------] 27 tests from Vector3Test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 27 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 27 tests.
+[PASS] base_vector3 — 0s
+
+--- base_ylm --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ylmTest
+[ RUN      ] ylmTest.Zeros
+... [1 lines omitted] ...
+[----------] 1 test from ylmTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_ylm — 0s
+
+--- base_ylmreal --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 13 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 13 tests from YlmRealTest
+[ RUN      ] YlmRealTest.Constructor
+... [25 lines omitted] ...
+[----------] 13 tests from YlmRealTest (67 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 1 test suite ran. (67 ms total)
+[  PASSED  ] 13 tests.
+[PASS] base_ylmreal — 0s
+
+--- clebsch_gordan_coeff_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from ClebschGordanTest
+[ RUN      ] ClebschGordanTest.ClebschGordanExit
+[       OK ] ClebschGordanTest.ClebschGordanExit (69 ms)
+[ RUN      ] ClebschGordanTest.ClebschGordan
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_base/test/clebsch_gordan_coeff_test.cpp:53: Failure
+Expected equality of these values:
+  ap(0, 0, 0)
+    Which is: 0.28209479177388008
+  0.28209479177387564
+
+[  FAILED  ] ClebschGordanTest.ClebschGordan (1 ms)
+[----------] 2 tests from ClebschGordanTest (70 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (70 ms total)
+[  PASSED  ] 1 test.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] ClebschGordanTest.ClebschGordan
+
+ 1 FAILED TEST
+[FAIL] clebsch_gordan_coeff_test — 0s (rc=1)
+
+--- cubic_spline --- (timeout=30s)
+/tmp/run_tests.sh: line 115:   921 Aborted                 timeout "$to" ./"$name" > "$out" 2>&1
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from CubicSplineTest
+[ RUN      ] CubicSplineTest.MultiEval
+cubic_spline: /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_base/cubic_spline.cpp:367: static void ModuleBase::CubicSpline::_validate_eval(int, const double (&)[2], const double*, const double*, const double*, int, const double*): Assertion `std::all_of(x_interp, x_interp + n_interp, [xmin, xmax](double x_i) { return xmin <= x_i && x_i <= xmax; })' failed.
+[FAIL] cubic_spline — 0s (rc=134)
+
+--- formatter_test --- (timeout=30s)
+[==========] Running 13 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 13 tests from FormatterTest
+[ RUN      ] FormatterTest.FmtCoreStaticFormat
+[       OK ] FormatterTest.FmtCoreStaticFormat (0 ms)
+... [94 lines omitted] ...
+[----------] 13 tests from FormatterTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 13 tests.
+[PASS] formatter_test — 0s
+
+--- lebedev_laikov --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from LebedevLaikovTest
+[ RUN      ] LebedevLaikovTest.Accuracy
+[       OK ] LebedevLaikovTest.Accuracy (508 ms)
+[----------] 1 test from LebedevLaikovTest (508 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (508 ms total)
+[  PASSED  ] 1 test.
+[PASS] lebedev_laikov — 1s
+
+--- ndarray_test --- (timeout=30s)
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from NDArray
+[ RUN      ] NDArray.InitializerListConstructor
+[       OK ] NDArray.InitializerListConstructor (0 ms)
+... [26 lines omitted] ...
+[----------] 14 tests from NDArray (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 14 tests.
+[PASS] ndarray_test — 0s
+
+--- spherical_bessel_transformer --- (timeout=30s)
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from SphericalBesselTransformTest
+[ RUN      ] SphericalBesselTransformTest.RadrfftBasic
+[       OK ] SphericalBesselTransformTest.RadrfftBasic (13 ms)
+... [16 lines omitted] ...
+[----------] 9 tests from SphericalBesselTransformTest (2792 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (2792 ms total)
+[  PASSED  ] 9 tests.
+[PASS] spherical_bessel_transformer — 3s
+
+--- base_ParaCommon --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ParaCommon
+[ RUN      ] ParaCommon.Bcast
+[       OK ] ParaCommon.Bcast (0 ms)
+[----------] 1 test from ParaCommon (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] base_ParaCommon — 0s
+
+--- base_ParaGlobal --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from ParaGlobal
+[ RUN      ] ParaGlobal.SplitGrid
+[       OK ] ParaGlobal.SplitGrid (0 ms)
+... [10 lines omitted] ...
+[----------] 5 tests from ParaGlobal (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.
+[PASS] base_ParaGlobal — 0s
+
+--- base_ParaReduce --- (timeout=30s)
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from ParaReduce
+[ RUN      ] ParaReduce.ReduceIntAll
+[       OK ] ParaReduce.ReduceIntAll (0 ms)
+... [22 lines omitted] ...
+[----------] 12 tests from ParaReduce (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 12 tests.
+[PASS] base_ParaReduce — 0s
+
+--- blacs_connector --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from BLACSTest
+[ RUN      ] BLACSTest.WorldGrid
+[       OK ] BLACSTest.WorldGrid (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from BLACSTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] blacs_connector — 0s
+
+--- parallel_2d_test --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from test_para2d
+[ RUN      ] test_para2d.Divide2D
+[       OK ] test_para2d.Divide2D (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from test_para2d (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] parallel_2d_test — 0s
+
+--- ORB_atomic_lm_test --- (timeout=30s)
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from NumericalOrbitalLmTest
+[ RUN      ] NumericalOrbitalLmTest.Init
+[       OK ] NumericalOrbitalLmTest.Init (49 ms)
+... [16 lines omitted] ...
+[----------] 9 tests from NumericalOrbitalLmTest (495 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (495 ms total)
+[  PASSED  ] 9 tests.
+[PASS] ORB_atomic_lm_test — 1s
+
+--- ORB_nonlocal_lm_test --- (timeout=30s)
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from NumericalNonlocalLmTest
+[ RUN      ] NumericalNonlocalLmTest.Init
+[       OK ] NumericalNonlocalLmTest.Init (3 ms)
+... [10 lines omitted] ...
+[----------] 6 tests from NumericalNonlocalLmTest (42 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (42 ms total)
+[  PASSED  ] 6 tests.
+[PASS] ORB_nonlocal_lm_test — 0s
+
+--- ORB_nonlocal_test --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from NumericalNonlocalTest
+[ RUN      ] NumericalNonlocalTest.SetTypeInfo
+[       OK ] NumericalNonlocalTest.SetTypeInfo (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from NumericalNonlocalTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] ORB_nonlocal_test — 0s
+
+--- ORB_read_test --- (timeout=30s)
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from LcaoOrbitalsTest
+[ RUN      ] LcaoOrbitalsTest.ReadInFlag
+
+... [82 lines omitted] ...
+[----------] 6 tests from LcaoOrbitalsTest (407 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (407 ms total)
+[  PASSED  ] 6 tests.
+[PASS] ORB_read_test — 1s
+
+--- parallel_orbitals_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TestParaO
+[ RUN      ] TestParaO.Divide2D
+[       OK ] TestParaO.Divide2D (0 ms)
+[----------] 1 test from TestParaO (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] parallel_orbitals_test — 0s
+
+--- atomic_radials --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from AtomicRadialsTest
+[ RUN      ] AtomicRadialsTest.ReadAndGet
+[       OK ] AtomicRadialsTest.ReadAndGet (1 ms)
+... [8 lines omitted] ...
+[----------] 5 tests from AtomicRadialsTest (216 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (216 ms total)
+[  PASSED  ] 5 tests.
+[PASS] atomic_radials — 1s
+
+--- beta_radials --- (timeout=30s)
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+[PASS] beta_radials — 0s
+
+--- generate_projection --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from projgen_test
+[ RUN      ] projgen_test.projgen
+... [6 lines omitted] ...
+[----------] 1 test from smoothgen_test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 2 test suites ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] generate_projection — 0s
+
+--- hydrogen_radials --- (timeout=30s)
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from HydrogenRadialsTest
+[ RUN      ] HydrogenRadialsTest.UnzipStrategy
+[       OK ] HydrogenRadialsTest.UnzipStrategy (0 ms)
+... [173 lines omitted] ...
+[----------] 6 tests from HydrogenRadialsTest (12 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (12 ms total)
+[  PASSED  ] 6 tests.
+[PASS] hydrogen_radials — 0s
+
+--- numerical_radial --- (timeout=30s)
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from NumericalRadialTest
+[ RUN      ] NumericalRadialTest.ConstructAndAssign
+[       OK ] NumericalRadialTest.ConstructAndAssign (13 ms)
+... [16 lines omitted] ...
+[----------] 9 tests from NumericalRadialTest (248 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (248 ms total)
+[  PASSED  ] 9 tests.
+[PASS] numerical_radial — 0s
+
+--- pswfc_radials --- (timeout=30s)
+Current getcwd: /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/share/abacus/tests/module_basis/module_nao/test
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from PswfcRadialsTest
+[ RUN      ] PswfcRadialsTest.startswith
+... [51 lines omitted] ...
+[----------] 6 tests from PswfcRadialsTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 6 tests.
+[PASS] pswfc_radials — 0s
+
+--- radial_collection --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from RadialCollectionTest
+[ RUN      ] RadialCollectionTest.BuildAndGet
+[       OK ] RadialCollectionTest.BuildAndGet (2 ms)
+... [8 lines omitted] ...
+[----------] 5 tests from RadialCollectionTest (12 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (12 ms total)
+[  PASSED  ] 5 tests.
+[PASS] radial_collection — 0s
+
+--- real_gaunt_table --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from RealGauntTableTest
+[ RUN      ] RealGauntTableTest.LegacyConsistency
+[       OK ] RealGauntTableTest.LegacyConsistency (790 ms)
+[ RUN      ] RealGauntTableTest.SanityCheck
+[       OK ] RealGauntTableTest.SanityCheck (0 ms)
+[ RUN      ] RealGauntTableTest.Check2
+[       OK ] RealGauntTableTest.Check2 (0 ms)
+[ RUN      ] RealGauntTableTest.Check3
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:186: Failure
+The difference between 0 and 1 is 1, which exceeds tol, where
+0 evaluates to 0,
+1 evaluates to 1, and
+tol evaluates to 9.9999999999999998e-13.
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:254: Failure
+Expected equality of these values:
+  ga_func[i].l1
+    Which is: 0
+  ga_ref[i].l1
+    Which is: 1385101184
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:255: Failure
+Expected equality of these values:
+  ga_func[i].l2
+    Which is: 0
+  ga_ref[i].l2
+    Which is: 23530
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:260: Failure
+The difference between ga_func[i].gaunt and ga_ref[i].gaunt is 0.28209479177387814, which exceeds tol, where
+ga_func[i].gaunt evaluates to 0.28209479177387814,
+ga_ref[i].gaunt evaluates to 0, and
+tol evaluates to 9.9999999999999998e-13.
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:255: Failure
+Expected equality of these values:
+  ga_func[i].l2
+    Which is: 1
+  ga_ref[i].l2
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:256: Failure
+Expected equality of these values:
+  ga_func[i].l3
+    Which is: 1
+  ga_ref[i].l3
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:260: Failure
+The difference between ga_func[i].gaunt and ga_ref[i].gaunt is 0.28209479177387814, which exceeds tol, where
+ga_func[i].gaunt evaluates to 0.28209479177387814,
+ga_ref[i].gaunt evaluates to 0, and
+tol evaluates to 9.9999999999999998e-13.
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:255: Failure
+Expected equality of these values:
+  ga_func[i].l2
+    Which is: 2
+  ga_ref[i].l2
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:256: Failure
+Expected equality of these values:
+  ga_func[i].l3
+    Which is: 2
+  ga_ref[i].l3
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:258: Failure
+Expected equality of these values:
+  ga_func[i].m2
+    Which is: -2
+  ga_ref[i].m2
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:259: Failure
+Expected equality of these values:
+  ga_func[i].m3
+... [331877 lines omitted] ...
+  ga_ref[i].l2
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:256: Failure
+Expected equality of these values:
+  ga_func[i].l3
+    Which is: 20
+  ga_ref[i].l3
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:257: Failure
+Expected equality of these values:
+  ga_func[i].m1
+    Which is: 10
+  ga_ref[i].m1
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:258: Failure
+Expected equality of these values:
+  ga_func[i].m2
+    Which is: -10
+  ga_ref[i].m2
+    Which is: 0
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_basis/module_nao/test/real_gaunt_table_test.cpp:260: Failure
+The difference between ga_func[i].gaunt and ga_ref[i].gaunt is 1.2400098959661052e-06, which exceeds tol, where
+ga_func[i].gaunt evaluates to 1.2400098959661052e-06,
+ga_ref[i].gaunt evaluates to 0, and
+tol evaluates to 9.9999999999999998e-13.
+
+[  FAILED  ] RealGauntTableTest.Check3 (131 ms)
+[----------] 4 tests from RealGauntTableTest (921 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (921 ms total)
+[  PASSED  ] 3 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] RealGauntTableTest.Check3
+
+ 1 FAILED TEST
+[FAIL] real_gaunt_table — 1s (rc=1)
+
+--- sphbes_radials --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from SphbesRadialsTest
+[ RUN      ] SphbesRadialsTest.Build
+ 
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                         NOTICE                           
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+ Couldn't open orbital file: ../../../../../source/module_basis/module_nao/test/I_sphbes_coeff.txt
+ CHECK IN FILE : warning.log
+ 
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                         NOTICE                           
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+TIME STATISTICS
+-----------------------------------------------------
+ CLASS_NAME    NAME    TIME/s  CALLS   AVG/s  PER/%  
+-----------------------------------------------------
+            total      0.00   1        0.00   0.00   
+-----------------------------------------------------
+
+ See output information in : 
+[FAIL] sphbes_radials — 0s (rc=1)
+
+--- two_center_bundle --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TwoCenterBundleTest
+[ RUN      ] TwoCenterBundleTest.Build
+[       OK ] TwoCenterBundleTest.Build (0 ms)
+[----------] 1 test from TwoCenterBundleTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] two_center_bundle — 0s
+
+--- two_center_integrator --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from TwoCenterIntegratorTest
+[ RUN      ] TwoCenterIntegratorTest.FiniteDifference
+time elapsed = 0.188729 s
+... [3 lines omitted] ...
+[----------] 2 tests from TwoCenterIntegratorTest (1109 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (1109 ms total)
+[  PASSED  ] 2 tests.
+[PASS] two_center_integrator — 2s
+
+--- two_center_table --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TwoCenterTableTest
+[ RUN      ] TwoCenterTableTest.BuildOverlapAndKinetic
+time elapsed = 1.20359 s
+... [1 lines omitted] ...
+[----------] 1 test from TwoCenterTableTest (1272 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1273 ms total)
+[  PASSED  ] 1 test.
+[PASS] two_center_table — 1s
+
+--- pw_test --- (timeout=30s)
+[==========] Running 51 tests from 2 test suites.
+[----------] Global test environment set-up.
+[32m[ SET UP TESTS ][0m
+[32m[ 1 processors are used. ][0m
+[----------] 43 tests from PWTEST
+... [158 lines omitted] ...
+
+[----------] Global test environment tear-down
+[32m[ TEAR DOWN TESTS ][0m
+[==========] 51 tests from 2 test suites ran. (438 ms total)
+[  PASSED  ] 51 tests.
+[PASS] pw_test — 1s
+
+--- basis_pw_k_serial --- (timeout=30s)
+/tmp/run_tests.sh: line 115:  1475 Segmentation fault      timeout "$to" ./"$name" > "$out" 2>&1
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from PWBasisKTEST
+[ RUN      ] PWBasisKTEST.Constructor
+[       OK ] PWBasisKTEST.Constructor (0 ms)
+[ RUN      ] PWBasisKTEST.Initgrids1
+[       OK ] PWBasisKTEST.Initgrids1 (0 ms)
+[ RUN      ] PWBasisKTEST.Initgrids2
+[       OK ] PWBasisKTEST.Initgrids2 (0 ms)
+[ RUN      ] PWBasisKTEST.Initparameters
+[       OK ] PWBasisKTEST.Initparameters (2 ms)
+[ RUN      ] PWBasisKTEST.SetupTransform
+[FAIL] basis_pw_k_serial — 0s (rc=139)
+
+--- basis_pw_serial --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from PWBasisTEST
+[ RUN      ] PWBasisTEST.Constructor
+... [23 lines omitted] ...
+[----------] 12 tests from PWBasisTEST (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 12 tests.
+[PASS] basis_pw_serial — 0s
+
+--- cell_neighbor_sltk_atom --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from SltkAtomTest
+[ RUN      ] SltkAtomTest.SetterGetters
+... [1 lines omitted] ...
+[----------] 1 test from SltkAtomTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] cell_neighbor_sltk_atom — 0s
+
+--- cell_neighbor_sltk_atom_arrange --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from SltkAtomArrangeTest
+[ RUN      ] SltkAtomArrangeTest.setsrNL
+... [19 lines omitted] ...
+[----------] 3 tests from SltkAtomArrangeTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] cell_neighbor_sltk_atom_arrange — 0s
+
+--- cell_neighbor_sltk_grid --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from SltkGridTest
+[ RUN      ] SltkGridTest.Init
+... [3 lines omitted] ...
+[----------] 2 tests from SltkGridTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] cell_neighbor_sltk_grid — 0s
+
+--- symmetry_analysis --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from SymmetryTest
+[ RUN      ] SymmetryTest.AnalySys
+[       OK ] SymmetryTest.AnalySys (146 ms)
+... [50 lines omitted] ...
+[----------] 4 tests from SymmetryTest (410 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (410 ms total)
+[  PASSED  ] 4 tests.
+[PASS] symmetry_analysis — 1s
+
+--- symmetry_symtrz --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from SymmetryTest
+[ RUN      ] SymmetryTest.ForceSymmetry
+[       OK ] SymmetryTest.ForceSymmetry (257 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from SymmetryTest (510 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (510 ms total)
+[  PASSED  ] 2 tests.
+[PASS] symmetry_symtrz — 1s
+
+--- cell_ParaKpoints --- (timeout=30s)
+[==========] Running 8 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 8 tests from TESTPK/ParaKpoints
+[ RUN      ] TESTPK/ParaKpoints.GatherkvecTest/0
+
+... [30 lines omitted] ...
+[----------] 8 tests from TESTPK/ParaKpoints (5 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 1 test suite ran. (5 ms total)
+[  PASSED  ] 8 tests.
+[PASS] cell_ParaKpoints — 0s
+
+--- cell_atom_pseudo --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from AtomPseudoTest
+[ RUN      ] AtomPseudoTest.SetDSo
+[       OK ] AtomPseudoTest.SetDSo (5 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from AtomPseudoTest (11 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (11 ms total)
+[  PASSED  ] 2 tests.
+[PASS] cell_atom_pseudo — 0s
+
+--- cell_atom_spec --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from AtomSpecTest
+[ RUN      ] AtomSpecTest.PrintAtom
+[       OK ] AtomSpecTest.PrintAtom (0 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from AtomSpecTest (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (6 ms total)
+[  PASSED  ] 4 tests.
+[PASS] cell_atom_spec — 0s
+
+--- cell_index_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from CellIndexTest
+[ RUN      ] CellIndexTest.EmptyTest
+... [5 lines omitted] ...
+[----------] 3 tests from CellIndexTest (63 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (63 ms total)
+[  PASSED  ] 3 tests.
+[PASS] cell_index_test — 0s
+
+--- cell_klist_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 29 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 29 tests from KlistTest
+[ RUN      ] KlistTest.Construct
+... [57 lines omitted] ...
+[----------] 29 tests from KlistTest (185 ms total)
+
+[----------] Global test environment tear-down
+[==========] 29 tests from 1 test suite ran. (185 ms total)
+[  PASSED  ] 29 tests.
+[PASS] cell_klist_test — 1s
+
+--- cell_klist_test_para1 --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from KlistParaTest
+[ RUN      ] KlistParaTest.Set
+[       OK ] KlistParaTest.Set (45 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from KlistParaTest (89 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (89 ms total)
+[  PASSED  ] 2 tests.
+[PASS] cell_klist_test_para1 — 0s
+
+--- cell_pseudo_nc --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from NCPPTest
+[ RUN      ] NCPPTest.SetPseudoH
+... [7 lines omitted] ...
+[----------] 4 tests from NCPPTest (28 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (28 ms total)
+[  PASSED  ] 4 tests.
+[PASS] cell_pseudo_nc — 0s
+
+--- cell_read_pp --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 24 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 24 tests from ReadPPTest
+[ RUN      ] ReadPPTest.ReadUPF100_Coulomb
+... [68 lines omitted] ...
+[----------] 24 tests from ReadPPTest (260 ms total)
+
+[----------] Global test environment tear-down
+[==========] 24 tests from 1 test suite ran. (260 ms total)
+[  PASSED  ] 24 tests.
+[PASS] cell_read_pp — 1s
+
+--- cell_unitcell_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 51 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 12 tests from UcellDeathTest
+[ RUN      ] UcellDeathTest.SetupWarningQuit1
+... [136 lines omitted] ...
+[----------] 39 tests from UcellTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 51 tests from 2 test suites ran. (1090 ms total)
+[  PASSED  ] 51 tests.
+[PASS] cell_unitcell_test — 1s
+
+--- cell_unitcell_test_para --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from UcellTest
+[ RUN      ] UcellTest.BcastUnitcell2
+[       OK ] UcellTest.BcastUnitcell2 (8 ms)
+... [8 lines omitted] ...
+[----------] 5 tests from UcellTest (21 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (21 ms total)
+[  PASSED  ] 5 tests.
+[PASS] cell_unitcell_test_para — 0s
+
+--- cell_unitcell_test_readpp --- (timeout=30s)
+[==========] Running 32 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 8 tests from UcellDeathTest
+[ RUN      ] UcellDeathTest.ReadCellPPWarning1
+
+... [87 lines omitted] ...
+[----------] 24 tests from UcellTest (409 ms total)
+
+[----------] Global test environment tear-down
+[==========] 32 tests from 2 test suites ran. (871 ms total)
+[  PASSED  ] 32 tests.
+[PASS] cell_unitcell_test_readpp — 1s
+
+--- cell_unitcell_test_setupcell --- (timeout=30s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from UcellDeathTest
+[ RUN      ] UcellDeathTest.SetupCellWarning1
+
+... [17 lines omitted] ...
+[----------] 4 tests from UcellTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (139 ms total)
+[  PASSED  ] 6 tests.
+[PASS] cell_unitcell_test_setupcell — 1s
+
+--- cell_unitcell_test_pw --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from UcellTest
+[ RUN      ] UcellTest.ReadAtomSpecies
+[       OK ] UcellTest.ReadAtomSpecies (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from UcellTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] cell_unitcell_test_pw — 0s
+
+--- dm_cal_DMR_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from DMTest
+[ RUN      ] DMTest.cal_DMR_full
+my rank: 0 dim0: 1    dim1:1
+... [13 lines omitted] ...
+[----------] 3 tests from DMTest (46 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (46 ms total)
+[  PASSED  ] 3 tests.
+[PASS] dm_cal_DMR_test — 0s
+
+--- dm_constructor_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from DMTest
+[ RUN      ] DMTest.DMConstructor_GammaOnly
+dim0: 1    dim1:1
+... [10 lines omitted] ...
+[----------] 3 tests from DMTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 3 tests.
+[PASS] dm_constructor_test — 0s
+
+--- dm_init_test --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from DMTest
+[ RUN      ] DMTest.DMInit1
+dim0: 1    dim1:1
+... [14 lines omitted] ...
+[----------] 5 tests from DMTest (19 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (19 ms total)
+[  PASSED  ] 5 tests.
+[PASS] dm_init_test — 0s
+
+--- dm_io_test_serial --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from DMTest
+[ RUN      ] DMTest.DMConstructor1
+2626
+... [1 lines omitted] ...
+[----------] 1 test from DMTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1 ms total)
+[  PASSED  ] 1 test.
+[PASS] dm_io_test_serial — 1s
+
+--- Elecstate_Op_UTs --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from TestModuleElecstateMultiDevice
+[ RUN      ] TestModuleElecstateMultiDevice.elecstate_pw_op_cpu
+... [3 lines omitted] ...
+[----------] 2 tests from TestModuleElecstateMultiDevice (16 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (16 ms total)
+[  PASSED  ] 2 tests.
+[PASS] Elecstate_Op_UTs — 0s
+
+--- charge_extra --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from ChargeExtraTest
+[ RUN      ] ChargeExtraTest.InitCEWarningQuit
+... [21 lines omitted] ...
+[----------] 11 tests from ChargeExtraTest (89 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (89 ms total)
+[  PASSED  ] 11 tests.
+[PASS] charge_extra — 0s
+
+--- charge_mixing --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from ChargeMixingTest
+[ RUN      ] ChargeMixingTest.SetMixingTest
+... [23 lines omitted] ...
+[----------] 12 tests from ChargeMixingTest (195 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (195 ms total)
+[  PASSED  ] 12 tests.
+[PASS] charge_mixing — 1s
+
+--- charge_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from ChargeTest
+[ RUN      ] ChargeTest.Constructor
+... [19 lines omitted] ...
+[----------] 7 tests from ChargeTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 7 tests.
+[PASS] charge_test — 0s
+
+--- elecstate_base --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 16 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from ElecStateDeathTest
+[ RUN      ] ElecStateDeathTest.FixedWeightsWarning1
+... [34 lines omitted] ...
+[----------] 13 tests from ElecStateTest (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 16 tests from 2 test suites ran. (209 ms total)
+[  PASSED  ] 16 tests.
+[PASS] elecstate_base — 0s
+
+--- elecstate_energy --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from ElecStateEnergyTest
+[ RUN      ] ElecStateEnergyTest.CalEnergiesHarris
+... [21 lines omitted] ...
+[----------] 11 tests from ElecStateEnergyTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 11 tests.
+[PASS] elecstate_energy — 0s
+
+--- elecstate_fp_energy --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from fenergy
+[ RUN      ] fenergy.calculate_etot
+... [11 lines omitted] ...
+[----------] 6 tests from fenergy (130 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (130 ms total)
+[  PASSED  ] 6 tests.
+[PASS] elecstate_fp_energy — 1s
+
+--- elecstate_magnetism --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from MagnetismTest
+[ RUN      ] MagnetismTest.Magnetism
+... [7 lines omitted] ...
+[----------] 4 tests from MagnetismTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 4 tests.
+[PASS] elecstate_magnetism — 0s
+
+--- elecstate_occupy --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 25 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 25 tests from OccupyTest
+[ RUN      ] OccupyTest.Occupy
+... [49 lines omitted] ...
+[----------] 25 tests from OccupyTest (259 ms total)
+
+[----------] Global test environment tear-down
+[==========] 25 tests from 1 test suite ran. (259 ms total)
+[  PASSED  ] 25 tests.
+[PASS] elecstate_occupy — 0s
+
+--- elecstate_print --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 10 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 10 tests from ElecStatePrintTest
+[ RUN      ] ElecStatePrintTest.PrintFormat
+... [31 lines omitted] ...
+[----------] 10 tests from ElecStatePrintTest (133 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test suite ran. (133 ms total)
+[  PASSED  ] 10 tests.
+[PASS] elecstate_print — 0s
+
+--- elecstate_pw --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from ElecStatePWTest
+[ RUN      ] ElecStatePWTest.ConstructorDouble
+... [11 lines omitted] ...
+[----------] 6 tests from ElecStatePWTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 6 tests.
+[PASS] elecstate_pw — 1s
+
+--- potentials_base --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from PotBaseTest
+[ RUN      ] PotBaseTest.CalVeff
+... [3 lines omitted] ...
+[----------] 2 tests from PotBaseTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] potentials_base — 0s
+
+--- potentials_new --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 25 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 25 tests from PotentialNewTest
+[ RUN      ] PotentialNewTest.ConstructorCPUDouble
+... [81 lines omitted] ...
+[----------] 25 tests from PotentialNewTest (76 ms total)
+
+[----------] Global test environment tear-down
+[==========] 25 tests from 1 test suite ran. (76 ms total)
+[  PASSED  ] 25 tests.
+[PASS] potentials_new — 0s
+
+--- charge_mpi_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from ChargeMpiTest
+[ RUN      ] ChargeMpiTest.reduce_diff_pools1
+[       OK ] ChargeMpiTest.reduce_diff_pools1 (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from ChargeMpiTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] charge_mpi_test — 0s
+
+--- esolver_dp_test --- (timeout=30s)
+/tmp/run_tests.sh: line 115:  2265 Segmentation fault      timeout "$to" ./"$name" > "$out" 2>&1
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from ESolverDPTest
+[ RUN      ] ESolverDPTest.InitCase1
+unknown file: Failure
+C++ exception with description "DeePMD-kit C API Error: DeePMD-kit Error: TensorFlow backend is not built" thrown in SetUp().
+
+[FAIL] esolver_dp_test — 0s (rc=139)
+
+--- surchem_cal_epsilon --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from cal_epsilon_test
+[ RUN      ] cal_epsilon_test.cal_epsilon
+[       OK ] cal_epsilon_test.cal_epsilon (14 ms)
+[----------] 1 test from cal_epsilon_test (14 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (14 ms total)
+[  PASSED  ] 1 test.
+[PASS] surchem_cal_epsilon — 0s
+
+--- surchem_cal_pseudo --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from cal_pseudo_test
+[ RUN      ] cal_pseudo_test.gauss_charge
+[       OK ] cal_pseudo_test.gauss_charge (6 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from cal_pseudo_test (9 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (10 ms total)
+[  PASSED  ] 2 tests.
+[PASS] surchem_cal_pseudo — 1s
+
+--- surchem_cal_totn --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from cal_totn_test
+[ RUN      ] cal_totn_test.cal_totn
+[       OK ] cal_totn_test.cal_totn (5 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from cal_totn_test (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (7 ms total)
+[  PASSED  ] 2 tests.
+[PASS] surchem_cal_totn — 0s
+
+--- surchem_cal_vcav --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from cal_vcav_test
+[ RUN      ] cal_vcav_test.lapl_rho
+[       OK ] cal_vcav_test.lapl_rho (5 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from cal_vcav_test (34 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (34 ms total)
+[  PASSED  ] 4 tests.
+[PASS] surchem_cal_vcav — 0s
+
+--- surchem_cal_vel --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from cal_vel_test
+[ RUN      ] cal_vel_test.shape_gradn
+[       OK ] cal_vel_test.shape_gradn (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from cal_vel_test (91 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (91 ms total)
+[  PASSED  ] 3 tests.
+[PASS] surchem_cal_vel — 0s
+
+--- vdwTest --- (timeout=30s)
+[==========] Running 29 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 14 tests from vdwd2Test
+[ RUN      ] vdwd2Test.D2Default
+[       OK ] vdwd2Test.D2Default (0 ms)
+... [102 lines omitted] ...
+[  PASSED  ] 28 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] vdwd2Test.OneAtomWarning
+
+ 1 FAILED TEST
+[PASS] vdwTest — 1s
+
+--- XCTest_GRADCORR --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_GRADCORR
+[ RUN      ] XCTest_GRADCORR.set_xc_type
+... [6 lines omitted] ...
+[----------] 1 test from XCTest_GRADWFC (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 2 test suites ran. (4 ms total)
+[  PASSED  ] 2 tests.
+[PASS] XCTest_GRADCORR — 0s
+
+--- XCTest_HSE --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 8 tests from 8 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_HSE
+[ RUN      ] XCTest_HSE.set_xc_type
+... [42 lines omitted] ...
+[----------] 1 test from XCTest_HF (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 8 test suites ran. (0 ms total)
+[  PASSED  ] 8 tests.
+[PASS] XCTest_HSE — 0s
+
+--- XCTest_PBE --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 23 tests from 23 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_PBE
+[ RUN      ] XCTest_PBE.set_xc_type
+... [114 lines omitted] ...
+[----------] 1 test from XCTest_PBE_LibXC (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 23 tests from 23 test suites ran. (0 ms total)
+[  PASSED  ] 23 tests.
+[PASS] XCTest_PBE — 0s
+
+--- XCTest_PZ_SPN --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 11 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_PBE_SPN
+[ RUN      ] XCTest_PBE_SPN.set_xc_type
+... [55 lines omitted] ...
+[----------] 1 test from XCTest_PZ_SPN_LibXC (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 11 test suites ran. (0 ms total)
+[  PASSED  ] 11 tests.
+[PASS] XCTest_PZ_SPN — 0s
+
+--- XCTest_SCAN --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_SCAN
+[ RUN      ] XCTest_SCAN.set_xc_type
+... [1 lines omitted] ...
+[----------] 1 test from XCTest_SCAN (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] XCTest_SCAN — 0s
+
+--- XCTest_VXC --- (timeout=30s)
+[==========] Running 3 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from XCTest_VXC
+[ RUN      ] XCTest_VXC.set_xc_type
+[       OK ] XCTest_VXC.set_xc_type (43 ms)
+... [12 lines omitted] ...
+[----------] 1 test from XCTest_VXC_meta (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 3 test suites ran. (43 ms total)
+[  PASSED  ] 3 tests.
+[PASS] XCTest_VXC — 1s
+
+--- ewald_dnrm2 --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from EwaldTest
+[ RUN      ] EwaldTest.Dnrm2Test
+... [1 lines omitted] ...
+[----------] 1 test from EwaldTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] ewald_dnrm2 — 0s
+
+--- deltaspin_basic_func_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from BasicFuncsTest
+[ RUN      ] BasicFuncsTest.MaxvalAbs2d
+... [21 lines omitted] ...
+[----------] 11 tests from BasicFuncsTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 11 tests.
+[PASS] deltaspin_basic_func_test — 0s
+
+--- deltaspin_spin_constrain_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 14 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 7 tests from SpinConstrainTest/0, where TypeParam = double
+[ RUN      ] SpinConstrainTest/0.CheckAtomCounts
+... [30 lines omitted] ...
+[----------] 7 tests from SpinConstrainTest/1 (519 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 2 test suites ran. (1031 ms total)
+[  PASSED  ] 14 tests.
+[PASS] deltaspin_spin_constrain_test — 1s
+
+--- deltaspin_template_helpers --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from SpinConstrainTest
+[ RUN      ] SpinConstrainTest.TemplatHelpers
+... [1 lines omitted] ...
+[----------] 1 test from SpinConstrainTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] deltaspin_template_helpers — 0s
+
+--- hcontainer_complex_test --- (timeout=30s)
+[==========] Running 10 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 10 tests from HContainerTest
+[ RUN      ] HContainerTest.insert_pair
+[       OK ] HContainerTest.insert_pair (1 ms)
+... [23 lines omitted] ...
+[----------] 10 tests from HContainerTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 10 tests.
+[PASS] hcontainer_complex_test — 0s
+
+--- hcontainer_cost_test --- (timeout=30s)
+[==========] Running 3 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from single_test_hcontainer
+[ RUN      ] single_test_hcontainer.insert_pair
+total atom pairs: 6292
+... [21 lines omitted] ...
+[----------] 1 test from HContainerTest (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 3 test suites ran. (15 ms total)
+[  PASSED  ] 3 tests.
+[PASS] hcontainer_cost_test — 1s
+
+--- hcontainer_folding_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from FoldingTest
+[ RUN      ] FoldingTest.folding_HR_cd2cd
+... [11 lines omitted] ...
+[----------] 3 tests from FoldingTest (31 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (32 ms total)
+[  PASSED  ] 3 tests.
+[PASS] hcontainer_folding_test — 0s
+
+--- hcontainer_output_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from OutputHContainerTest
+[ RUN      ] OutputHContainerTest.Write
+... [1 lines omitted] ...
+[----------] 1 test from OutputHContainerTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] hcontainer_output_test — 0s
+
+--- hcontainer_readCSR_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ReadHContainerTest
+[ RUN      ] ReadHContainerTest.ReadAndOutputHContainer
+... [1 lines omitted] ...
+[----------] 1 test from ReadHContainerTest (26 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (27 ms total)
+[  PASSED  ] 1 test.
+[PASS] hcontainer_readCSR_test — 0s
+
+--- hcontainer_test --- (timeout=30s)
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from HContainerTest
+[ RUN      ] HContainerTest.insert_pair
+[       OK ] HContainerTest.insert_pair (7 ms)
+... [25 lines omitted] ...
+[----------] 11 tests from HContainerTest (41 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (41 ms total)
+[  PASSED  ] 11 tests.
+[PASS] hcontainer_test — 0s
+
+--- hcontainer_transfer_test --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from TransferTest
+[ RUN      ] TransferTest.serialToPara
+rank: 0 HR init time: 0.00910104 transfer_s2p time: 0.000685257 check time: 4.838e-05 seconds.
+... [10 lines omitted] ...
+[----------] 4 tests from TransferTest (10 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (10 ms total)
+[  PASSED  ] 4 tests.
+[PASS] hcontainer_transfer_test — 1s
+
+--- tddft_bandenergy_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from BandEnergyTest
+[ RUN      ] BandEnergyTest.testBandEnergy
+[       OK ] BandEnergyTest.testBandEnergy (0 ms)
+[----------] 1 test from BandEnergyTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] tddft_bandenergy_test — 0s
+
+--- tddft_middle_hamilt_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from MiddleHamiltTest
+[ RUN      ] MiddleHamiltTest.testMiddleHamilt
+[       OK ] MiddleHamiltTest.testMiddleHamilt (0 ms)
+[----------] 1 test from MiddleHamiltTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] tddft_middle_hamilt_test — 0s
+
+--- tddft_norm_psi_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from NormPsiTest
+[ RUN      ] NormPsiTest.testNormPsi
+[       OK ] NormPsiTest.testNormPsi (0 ms)
+[----------] 1 test from NormPsiTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] tddft_norm_psi_test — 0s
+
+--- tddft_propagator_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from PropagatorTest
+[ RUN      ] PropagatorTest.testPropagatorCN
+[       OK ] PropagatorTest.testPropagatorCN (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from PropagatorTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] tddft_propagator_test — 0s
+
+--- tddft_upsi_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from UpsiTest
+[ RUN      ] UpsiTest.testUpsi1
+[       OK ] UpsiTest.testUpsi1 (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from UpsiTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] tddft_upsi_test — 1s
+
+--- pwdft_soc --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from FcoefTest
+[ RUN      ] FcoefTest.Create
+... [15 lines omitted] ...
+[----------] 4 tests from SocTest (395 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (396 ms total)
+[  PASSED  ] 6 tests.
+[PASS] pwdft_soc — 0s
+
+--- radial_proj_test --- (timeout=30s)
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from RadialProjectionTest
+[ RUN      ] RadialProjectionTest.BuildBackwardMapTest
+[       OK ] RadialProjectionTest.BuildBackwardMapTest (0 ms)
+... [8 lines omitted] ...
+[----------] 5 tests from RadialProjectionTest (15 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (15 ms total)
+[  PASSED  ] 5 tests.
+[PASS] radial_proj_test — 0s
+
+--- Sto_Hamilt_UTs --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from TestHamiltSto
+[ RUN      ] TestHamiltSto.hPsi
+... [3 lines omitted] ...
+[----------] 2 tests from TestHamiltSto (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 2 tests.
+[PASS] Sto_Hamilt_UTs — 0s
+
+--- Sto_Tool_UTs --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from TestStoTool
+[ RUN      ] TestStoTool.parallel_distribution
+... [5 lines omitted] ...
+[----------] 3 tests from TestStoTool (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] Sto_Tool_UTs — 1s
+
+--- HSolver_LCAO --- (timeout=120s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from DiagoTest/DiagoGammaOnlyTest
+[ RUN      ] DiagoTest/DiagoGammaOnlyTest.LCAO/0
+H/S matrix are read from H-GammaOnly-Si64.dat, S-GammaOnly-Si64.dat
+... [27 lines omitted] ...
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (9595 ms total)
+[  PASSED  ] 6 tests.
+ WARNING elpa_setup: MPI threading level MPI_THREAD_SERALIZED or MPI_THREAD_MULTIPLE required but your implementation does not support this! The number of OpenMP threads within ELPA will be limited to 1
+ WARNING elpa_setup: MPI threading level MPI_THREAD_SERALIZED or MPI_THREAD_MULTIPLE required but your implementation does not support this! The number of OpenMP threads within ELPA will be limited to 1
+[PASS] HSolver_LCAO — 9s
+
+--- HSolver_LCAO_PEXSI --- (timeout=120s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from DiagoTest/PexsiGammaOnlyTest
+[ RUN      ] DiagoTest/PexsiGammaOnlyTest.LCAO/0
+H/S matrix are read from PEXSI-H-GammaOnly-Si2.dat, PEXSI-S-GammaOnly-Si2.dat
+Density matrix are read from PEXSI-DM-GammaOnly-Si2.dat
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_hsolver/test/diago_pexsi_test.cpp:451: Failure
+Value of: pass
+  Actual: false
+Expected: true
+Maximum difference between ks_hsolver and ref is 0.00308888, the pass threshold is 0.0005
+
+
+[  FAILED  ] DiagoTest/PexsiGammaOnlyTest.LCAO/0, where GetParam() = 1032-byte object <01-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 02-00 00-00 00-00 00-00 A0-1F 00-00 FF-FF 00-00 91-BA 99-9C 1B-7C 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 30-6D 9C-56 19-58 00-00 ... 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00> (10 ms)
+[ RUN      ] DiagoTest/PexsiGammaOnlyTest.LCAO/1
+H/S matrix are read from PEXSI-H-GammaOnly-Si2.dat, PEXSI-S-GammaOnly-Si2.dat
+Density matrix are read from PEXSI-DM-GammaOnly-Si2.dat
+
+/tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/source/module_hsolver/test/diago_pexsi_test.cpp:451: Failure
+Value of: pass
+  Actual: false
+Expected: true
+Maximum difference between ks_hsolver and ref is 0.00308888, the pass threshold is 0.0005
+
+
+[  FAILED  ] DiagoTest/PexsiGammaOnlyTest.LCAO/1, where GetParam() = 1032-byte object <01-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 01-00 00-00 00-00 00-00 6A-C9 A1-9C 1B-7C 00-00 40-5A 55-D0 FE-7F 00-00 A8-59 55-D0 FE-7F 00-00 00-00 00-00 00-00 00-00 50-6C 9C-56 19-58 00-00 ... 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00> (8 ms)
+[----------] 2 tests from DiagoTest/PexsiGammaOnlyTest (18 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (18 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 2 tests, listed below:
+[  FAILED  ] DiagoTest/PexsiGammaOnlyTest.LCAO/0, where GetParam() = 1032-byte object <01-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 02-00 00-00 00-00 00-00 A0-1F 00-00 FF-FF 00-00 91-BA 99-9C 1B-7C 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 30-6D 9C-56 19-58 00-00 ... 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00>
+[  FAILED  ] DiagoTest/PexsiGammaOnlyTest.LCAO/1, where GetParam() = 1032-byte object <01-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 01-00 00-00 00-00 00-00 6A-C9 A1-9C 1B-7C 00-00 40-5A 55-D0 FE-7F 00-00 A8-59 55-D0 FE-7F 00-00 00-00 00-00 00-00 00-00 50-6C 9C-56 19-58 00-00 ... 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00 00-00>
+
+ 2 FAILED TESTS
+ERROR:some tests are not passed
+[FAIL] HSolver_LCAO_PEXSI — 1s (rc=1)
+
+--- HSolver_base --- (timeout=120s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+[PASS] HSolver_base — 0s
+
+--- HSolver_bpcg --- (timeout=120s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from DiagoBPCGTest
+[ RUN      ] DiagoBPCGTest.Hamilt
+[       OK ] DiagoBPCGTest.Hamilt (0 ms)
+... [13 lines omitted] ...
+[----------] 4 tests from VerifyCG/DiagoBPCGTest (10964 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (12510 ms total)
+[  PASSED  ] 6 tests.
+[PASS] HSolver_bpcg — 13s
+
+--- HSolver_cg --- (timeout=120s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from DiagoCGTest
+[ RUN      ] DiagoCGTest.Hamilt
+[       OK ] DiagoCGTest.Hamilt (0 ms)
+... [13 lines omitted] ...
+[----------] 4 tests from VerifyCG/DiagoCGTest (33234 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (37249 ms total)
+[  PASSED  ] 6 tests.
+[PASS] HSolver_cg — 37s
+
+--- HSolver_cg_float --- (timeout=120s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from DiagoCGFloatTest
+[ RUN      ] DiagoCGFloatTest.Hamilt
+[       OK ] DiagoCGFloatTest.Hamilt (0 ms)
+... [13 lines omitted] ...
+[----------] 4 tests from VerifyCG/DiagoCGFloatTest (2317 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (4390 ms total)
+[  PASSED  ] 6 tests.
+[PASS] HSolver_cg_float — 5s
+
+--- HSolver_cg_real --- (timeout=120s)
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from DiagoCGFloatTest
+[ RUN      ] DiagoCGFloatTest.Hamilt
+[       OK ] DiagoCGFloatTest.Hamilt (0 ms)
+... [13 lines omitted] ...
+[----------] 4 tests from VerifyCG/DiagoCGFloatTest (2367 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (5733 ms total)
+[  PASSED  ] 6 tests.
+[PASS] HSolver_cg_real — 5s
+
+--- HSolver_dav --- (timeout=120s)
+[==========] Running 3 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from DiagoDavRealSystemTest
+[ RUN      ] DiagoDavRealSystemTest.dataH
+[       OK ] DiagoDavRealSystemTest.dataH (1859 ms)
+... [7 lines omitted] ...
+[----------] 2 tests from VerifyDiag/DiagoDavTest (689 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 2 test suites ran. (2548 ms total)
+[  PASSED  ] 3 tests.
+[PASS] HSolver_dav — 3s
+
+--- HSolver_dav_float --- (timeout=120s)
+[==========] Running 3 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from DiagoDavRealSystemTest
+[ RUN      ] DiagoDavRealSystemTest.dataH
+[       OK ] DiagoDavRealSystemTest.dataH (1047 ms)
+... [7 lines omitted] ...
+[----------] 2 tests from VerifyDiag/DiagoDavTest (418 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 2 test suites ran. (1466 ms total)
+[  PASSED  ] 3 tests.
+[PASS] HSolver_dav_float — 2s
+
+--- HSolver_dav_real --- (timeout=120s)
+[==========] Running 3 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from DiagoDavRealSystemTest
+[ RUN      ] DiagoDavRealSystemTest.dataH
+[       OK ] DiagoDavRealSystemTest.dataH (926 ms)
+... [7 lines omitted] ...
+[----------] 2 tests from VerifyDiag/DiagoDavTest (401 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 2 test suites ran. (1328 ms total)
+[  PASSED  ] 3 tests.
+[PASS] HSolver_dav_real — 1s
+
+--- HSolver_pw --- (timeout=120s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TestHSolverPW
+[ RUN      ] TestHSolverPW.SolveLcaoInPW
+... [1 lines omitted] ...
+[----------] 1 test from TestHSolverPW (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1 ms total)
+[  PASSED  ] 1 test.
+[PASS] HSolver_pw — 1s
+
+--- HSolver_sdft --- (timeout=120s)
+[==========] Running 0 tests from 0 test suites.
+[==========] 0 tests from 0 test suites ran. (0 ms total)
+[  PASSED  ] 0 tests.
+[PASS] HSolver_sdft — 0s
+
+--- hsolver_parak2d_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from TESTPK/ParallelK2DTest
+[ RUN      ] TESTPK/ParallelK2DTest.DividePools/0
+
+... [2 lines omitted] ...
+[----------] 1 test from TESTPK/ParallelK2DTest (65 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (65 ms total)
+[  PASSED  ] 1 test.
+[PASS] hsolver_parak2d_test — 0s
+
+--- binstream_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from BinstreamTest
+[ RUN      ] BinstreamTest.variable
+... [3 lines omitted] ...
+[----------] 2 tests from BinstreamTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 2 tests.
+[PASS] binstream_test — 0s
+
+--- cif_io_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from CifParserTest
+[ RUN      ] CifParserTest.ReadSimpleTest
+[       OK ] CifParserTest.ReadSimpleTest (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from CifParserTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] cif_io_test — 0s
+
+--- io_bessel_basis_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from TestBesselBasis
+[ RUN      ] TestBesselBasis.InitTest
+... [6 lines omitted] ...
+[----------] 3 tests from TestBesselBasis (11 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (11 ms total)
+[  PASSED  ] 3 tests.
+[PASS] io_bessel_basis_test — 0s
+
+--- io_cal_dos --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from DosTest
+[ RUN      ] DosTest.Dos
+[       OK ] DosTest.Dos (92 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from DosTest (93 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (93 ms total)
+[  PASSED  ] 4 tests.
+[PASS] io_cal_dos — 1s
+
+--- io_csr_reader_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from csrFileReaderTest
+[ RUN      ] csrFileReaderTest.CsrReader
+... [1 lines omitted] ...
+[----------] 1 test from csrFileReaderTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_csr_reader_test — 0s
+
+--- io_dmk_io --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from DMKTest
+[ RUN      ] DMKTest.GenFileName
+
+... [6 lines omitted] ...
+[----------] 3 tests from DMKTest (64 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (64 ms total)
+[  PASSED  ] 3 tests.
+[PASS] io_dmk_io — 0s
+
+--- io_file_reader_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from FileReaderTest
+[ RUN      ] FileReaderTest.Constructor
+... [3 lines omitted] ...
+[----------] 2 tests from FileReaderTest (64 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (64 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_file_reader_test — 0s
+
+--- io_input_test_para --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from InputParaTest
+[ RUN      ] InputParaTest.ParaRead
+[       OK ] InputParaTest.ParaRead (0 ms)
+... [4 lines omitted] ...
+[----------] 2 tests from InputParaTest (69 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (69 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_input_test_para — 1s
+
+--- io_mulliken_test --- (timeout=30s)
+[==========] Running 8 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 4 tests from OutputMullikenTest/0, where TypeParam = double
+[ RUN      ] OutputMullikenTest/0.OrbInfo
+[       OK ] OutputMullikenTest/0.OrbInfo (0 ms)
+... [17 lines omitted] ...
+[----------] 4 tests from OutputMullikenTest/1 (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 2 test suites ran. (1 ms total)
+[  PASSED  ] 8 tests.
+[PASS] io_mulliken_test — 0s
+
+--- io_output_log_test --- (timeout=30s)
+[==========] Running 9 tests from 6 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from OutputConvergenceAfterSCFTest
+[ RUN      ] OutputConvergenceAfterSCFTest.TestConvergence
+[       OK ] OutputConvergenceAfterSCFTest.TestConvergence (0 ms)
+... [53 lines omitted] ...
+[----------] 1 test from PrintStress (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 6 test suites ran. (1 ms total)
+[  PASSED  ] 9 tests.
+[PASS] io_output_log_test — 0s
+
+--- io_output_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from OutputTest
+[ RUN      ] OutputTest.Printr1_d
+... [11 lines omitted] ...
+[----------] 6 tests from OutputTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 6 tests.
+[PASS] io_output_test — 0s
+
+--- io_parse_args --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from ParseArgsTest
+[ RUN      ] ParseArgsTest.OutVersionTest
+... [3 lines omitted] ...
+[----------] 2 tests from ParseArgsTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_parse_args — 0s
+
+--- io_print_info --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from PrintInfoTest
+[ RUN      ] PrintInfoTest.SetupParameters
+... [5 lines omitted] ...
+[----------] 3 tests from PrintInfoTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] io_print_info — 0s
+
+--- io_read_wfc_nao_test --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from ReadWfcNaoTest
+[ RUN      ] ReadWfcNaoTest.ReadWfcNao
+[       OK ] ReadWfcNaoTest.ReadWfcNao (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from ReadWfcNaoTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_read_wfc_nao_test — 0s
+
+--- io_single_R_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ModuleIOTest
+[ RUN      ] ModuleIOTest.OutputSingleR
+[       OK ] ModuleIOTest.OutputSingleR (0 ms)
+[----------] 1 test from ModuleIOTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_single_R_test — 0s
+
+--- io_sparse_matrix_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from SparseMatrixTest/0, where TypeParam = double
+[ RUN      ] SparseMatrixTest/0.Insert
+... [14 lines omitted] ...
+[----------] 3 tests from SparseMatrixTest/1 (253 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 2 test suites ran. (512 ms total)
+[  PASSED  ] 6 tests.
+[PASS] io_sparse_matrix_test — 0s
+
+--- io_winput_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from WInputTest
+[ RUN      ] WInputTest.Read
+... [3 lines omitted] ...
+[----------] 2 tests from WInputTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_winput_test — 1s
+
+--- io_write_dos_pw --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from DosPWTest
+[ RUN      ] DosPWTest.Dos1
+[       OK ] DosPWTest.Dos1 (92 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from DosPWTest (176 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (176 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_write_dos_pw — 0s
+
+--- io_write_istate_info_test --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from IstateInfoTest
+[ RUN      ] IstateInfoTest.OutIstateInfoS1
+[       OK ] IstateInfoTest.OutIstateInfoS1 (0 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from IstateInfoTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_write_istate_info_test — 0s
+
+--- io_write_orb_info --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from OrbInfo
+[ RUN      ] OrbInfo.WriteOrbInfo
+[       OK ] OrbInfo.WriteOrbInfo (1 ms)
+[----------] 1 test from OrbInfo (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_write_orb_info — 0s
+
+--- io_write_wfc_nao --- (timeout=30s)
+[==========] Running 9 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from GenWfcLcaoFnameTest
+[ RUN      ] GenWfcLcaoFnameTest.OutType1GammaOnlyOutAppFlagTrue
+[       OK ] GenWfcLcaoFnameTest.OutType1GammaOnlyOutAppFlagTrue (0 ms)
+... [22 lines omitted] ...
+[----------] 4 tests from ModuleIOTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 3 test suites ran. (0 ms total)
+[  PASSED  ] 9 tests.
+[PASS] io_write_wfc_nao — 0s
+
+--- numerical_basis_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from NumericalBasisTest
+[ RUN      ] NumericalBasisTest.indexgen
+... [5 lines omitted] ...
+[----------] 3 tests from NumericalBasisTest (3236 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (3236 ms total)
+[  PASSED  ] 3 tests.
+[PASS] numerical_basis_test — 4s
+
+--- orb_io_test --- (timeout=30s)
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from OrbIOTest
+[ RUN      ] OrbIOTest.ReadAbacusOrb
+[       OK ] OrbIOTest.ReadAbacusOrb (1 ms)
+... [2 lines omitted] ...
+[----------] 2 tests from OrbIOTest (5 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (5 ms total)
+[  PASSED  ] 2 tests.
+[PASS] orb_io_test — 0s
+
+--- read_exit_file_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ReadStopFileTest
+[ RUN      ] ReadStopFileTest.read_exit_file
+
+... [27 lines omitted] ...
+[----------] 1 test from ReadStopFileTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] read_exit_file_test — 0s
+
+--- read_rhog_test --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from ReadRhogTest
+[ RUN      ] ReadRhogTest.ReadRhog
+[       OK ] ReadRhogTest.ReadRhog (3 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from ReadRhogTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 4 tests.
+[PASS] read_rhog_test — 0s
+
+--- read_wfc_lcao_test --- (timeout=30s)
+Current working dir: /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/share/abacus/tests/module_io/test
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from ReadWfcLcaoTest
+[ RUN      ] ReadWfcLcaoTest.ReadAbacusLowfComplex
+... [28 lines omitted] ...
+[  SKIPPED ] 3 tests, listed below:
+[  SKIPPED ] ReadWfcLcaoTest.Cpzgemr2dUseTest
+[  SKIPPED ] ReadWfcLcaoTest.Cpdgemr2dUseTest
+[  SKIPPED ] ReadWfcLcaoTest.RestartFromFileParallel
+Unittest read_wfc_lcao_test exits with status 0
+[PASS] read_wfc_lcao_test — 1s
+
+--- read_wfc_pw_test --- (timeout=30s)
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from ReadWfcPwTest
+[ RUN      ] ReadWfcPwTest.ReadWfcPw
+[       OK ] ReadWfcPwTest.ReadWfcPw (0 ms)
+... [24 lines omitted] ...
+[----------] 6 tests from ReadWfcPwTest (459 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (459 ms total)
+[  PASSED  ] 6 tests.
+[PASS] read_wfc_pw_test — 0s
+
+--- read_wfc_to_rho_test --- (timeout=30s)
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ReadWfcRhoTest
+[ RUN      ] ReadWfcRhoTest.ReadWfcRho
+[       OK ] ReadWfcRhoTest.ReadWfcRho (2 ms)
+[----------] 1 test from ReadWfcRhoTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (2 ms total)
+[  PASSED  ] 1 test.
+[PASS] read_wfc_to_rho_test — 0s
+
+--- to_qo_test --- (timeout=30s)
+Current getcwd: /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/share/abacus/tests/module_io/test
+[==========] Running 34 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 34 tests from toQOTest
+[ RUN      ] toQOTest.Constructor
+... [1252 lines omitted] ...
+[----------] 34 tests from toQOTest (133 ms total)
+
+[----------] Global test environment tear-down
+[==========] 34 tests from 1 test suite ran. (133 ms total)
+[  PASSED  ] 34 tests.
+[PASS] to_qo_test — 1s
+
+--- io_nscf_band --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from BandTest
+[ RUN      ] BandTest.nscf_band
+... [1 lines omitted] ...
+[----------] 1 test from BandTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_nscf_band — 0s
+
+--- io_read_input_serial --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from InputTest
+[ RUN      ] InputTest.Selfconsistent_Read
+... [3 lines omitted] ...
+[----------] 2 tests from InputTest (67 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (67 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_read_input_serial — 0s
+
+--- io_read_input_tool --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ReadInputTool
+[ RUN      ] ReadInputTool.parse_expression
+... [1 lines omitted] ...
+[----------] 1 test from ReadInputTool (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_read_input_tool — 0s
+
+--- io_read_item_serial --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from InputTest
+[ RUN      ] InputTest.Item_test
+... [3 lines omitted] ...
+[----------] 2 tests from InputTest (7150 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (7150 ms total)
+[  PASSED  ] 2 tests.
+[PASS] io_read_item_serial — 7s
+
+--- io_rho_io --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from RhoIOTest
+[ RUN      ] RhoIOTest.Read
+... [12 lines omitted] ...
+[----------] 2 tests from CubeIOTest (15 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 2 test suites ran. (46 ms total)
+[  PASSED  ] 5 tests.
+[PASS] io_rho_io — 1s
+
+--- io_system_variable_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from InputTest
+[ RUN      ] InputTest.Item_test
+... [1 lines omitted] ...
+[----------] 1 test from InputTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+[PASS] io_system_variable_test — 0s
+
+--- AX_test --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from AXTest
+[ RUN      ] AXTest.DoubleSerial
+[       OK ] AXTest.DoubleSerial (0 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from AXTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 4 tests.
+[PASS] AX_test — 0s
+
+--- dm_trans_test --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from DMTransTest
+[ RUN      ] DMTransTest.DoubleSerial
+[       OK ] DMTransTest.DoubleSerial (1 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from DMTransTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 4 tests.
+[PASS] dm_trans_test — 0s
+
+--- ri_benchmark_test --- (timeout=30s)
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from RI_Benchmark
+[ RUN      ] RI_Benchmark.SlicePsi
+[       OK ] RI_Benchmark.SlicePsi (0 ms)
+... [4 lines omitted] ...
+[----------] 3 tests from RI_Benchmark (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] ri_benchmark_test — 0s
+
+--- lr_util_algo_test --- (timeout=30s)
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from LR_Util
+[ RUN      ] LR_Util.PsiWrapper
+[       OK ] LR_Util.PsiWrapper (0 ms)
+... [6 lines omitted] ...
+[----------] 4 tests from LR_Util (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 4 tests.
+[PASS] lr_util_algo_test — 1s
+
+--- lr_util_phys_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from LR_Util
+[ RUN      ] LR_Util.cal_nelec
+... [5 lines omitted] ...
+[----------] 3 tests from LR_Util (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 3 tests.
+[PASS] lr_util_phys_test — 0s
+
+--- md_LJ_pot --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from LJ_pot_test
+[ RUN      ] LJ_pot_test.potential
+... [11 lines omitted] ...
+[----------] 6 tests from LJ_pot_test (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 6 tests.
+[PASS] md_LJ_pot — 0s
+
+--- md_fire --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from FIREtest
+[ RUN      ] FIREtest.Setup
+... [70 lines omitted] ...
+[----------] 6 tests from FIREtest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 6 tests.
+[PASS] md_fire — 0s
+
+--- md_func --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 15 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 15 tests from MD_func_test
+[ RUN      ] MD_func_test.gaussrand
+... [61 lines omitted] ...
+[----------] 15 tests from MD_func_test (62 ms total)
+
+[----------] Global test environment tear-down
+[==========] 15 tests from 1 test suite ran. (62 ms total)
+[  PASSED  ] 15 tests.
+[PASS] md_func — 0s
+
+--- md_lgv --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from Langevin_test
+[ RUN      ] Langevin_test.setup
+... [69 lines omitted] ...
+[----------] 6 tests from Langevin_test (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 6 tests.
+[PASS] md_lgv — 0s
+
+--- md_msst --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from MSST_test
+[ RUN      ] MSST_test.setup
+... [75 lines omitted] ...
+[----------] 6 tests from MSST_test (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 6 tests.
+[PASS] md_msst — 1s
+
+--- md_nhc --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from NHC_test
+[ RUN      ] NHC_test.setup
+... [69 lines omitted] ...
+[----------] 6 tests from NHC_test (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 6 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 6 tests.
+[PASS] md_nhc — 0s
+
+--- md_verlet --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 10 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 10 tests from Verlet_test
+[ RUN      ] Verlet_test.setup
+... [113 lines omitted] ...
+[----------] 10 tests from Verlet_test (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 10 tests.
+[PASS] md_verlet — 0s
+
+--- psi_UT --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 8 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 8 tests from TestPsi
+[ RUN      ] TestPsi.get_val
+... [15 lines omitted] ...
+[----------] 8 tests from TestPsi (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 8 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 8 tests.
+[PASS] psi_UT — 0s
+
+--- psi_initializer_unit_test --- (timeout=30s)
+[==========] Running 16 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 16 tests from PsiIntializerUnitTest
+[ RUN      ] PsiIntializerUnitTest.ConstructorRandom
+[       OK ] PsiIntializerUnitTest.ConstructorRandom (0 ms)
+... [30 lines omitted] ...
+[----------] 16 tests from PsiIntializerUnitTest (1215 ms total)
+
+[----------] Global test environment tear-down
+[==========] 16 tests from 1 test suite ran. (1215 ms total)
+[  PASSED  ] 16 tests.
+[PASS] psi_initializer_unit_test — 2s
+
+--- relax_new_line_search --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from TestTO
+[ RUN      ] TestTO.LineSearch
+... [6 lines omitted] ...
+[----------] 1 test from TestLS (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 2 test suites ran. (1 ms total)
+[  PASSED  ] 2 tests.
+[PASS] relax_new_line_search — 0s
+
+--- relax_new_relax --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from Test_SETGRAD
+[ RUN      ] Test_SETGRAD.relax_new
+... [216 lines omitted] ...
+[----------] 1 test from Test_RELAX (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 2 test suites ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] relax_new_relax — 0s
+
+--- bfgs_basic_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from BFGSBasicTest
+[ RUN      ] BFGSBasicTest.TestAllocate
+... [27 lines omitted] ...
+[----------] 14 tests from BFGSBasicTest (152 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (152 ms total)
+[  PASSED  ] 14 tests.
+[PASS] bfgs_basic_test — 0s
+
+--- bfgs_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from BFGSTest
+[ RUN      ] BFGSTest.AllocateTest
+... [3 lines omitted] ...
+[----------] 2 tests from BFGSTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[PASS] bfgs_test — 0s
+
+--- ions_move_basic_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 12 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 12 tests from IonsMoveBasicTest
+[ RUN      ] IonsMoveBasicTest.SetupGradient
+... [23 lines omitted] ...
+[----------] 12 tests from IonsMoveBasicTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 12 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 12 tests.
+[PASS] ions_move_basic_test — 0s
+
+--- ions_move_bfgs_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 11 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 11 tests from IonsMoveBFGSTest
+[ RUN      ] IonsMoveBFGSTest.AllocateCase1
+... [45 lines omitted] ...
+[----------] 11 tests from IonsMoveBFGSTest (194 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 1 test suite ran. (194 ms total)
+[  PASSED  ] 11 tests.
+[PASS] ions_move_bfgs_test — 1s
+
+--- ions_move_cg_test --- (timeout=120s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 22 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 22 tests from IonsMoveCGTest
+[ RUN      ] IonsMoveCGTest.TestAllocate
+... [73 lines omitted] ...
+[----------] 22 tests from IonsMoveCGTest (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 22 tests from 1 test suite ran. (6 ms total)
+[  PASSED  ] 22 tests.
+[PASS] ions_move_cg_test — 0s
+
+--- ions_move_sd_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from IonsMoveSDTest
+[ RUN      ] IonsMoveSDTest.TestAllocate
+... [24 lines omitted] ...
+[----------] 9 tests from IonsMoveSDTest (73 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (73 ms total)
+[  PASSED  ] 9 tests.
+[PASS] ions_move_sd_test — 0s
+
+--- lattice_change_basic_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 15 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 15 tests from LatticeChangeBasicTest
+[ RUN      ] LatticeChangeBasicTest.SetupGradientVolume
+... [29 lines omitted] ...
+[----------] 15 tests from LatticeChangeBasicTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 15 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 15 tests.
+[PASS] lattice_change_basic_test — 0s
+
+--- lattice_change_cg_test --- (timeout=120s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 22 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 22 tests from LatticeChangeCGTest
+[ RUN      ] LatticeChangeCGTest.TestAllocate
+... [43 lines omitted] ...
+[----------] 22 tests from LatticeChangeCGTest (5 ms total)
+
+[----------] Global test environment tear-down
+[==========] 22 tests from 1 test suite ran. (5 ms total)
+[  PASSED  ] 22 tests.
+[PASS] lattice_change_cg_test — 1s
+
+--- lattice_change_methods_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from LatticeChangeMethodsTest
+[ RUN      ] LatticeChangeMethodsTest.Allocate
+... [9 lines omitted] ...
+[----------] 5 tests from LatticeChangeMethodsTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.
+[PASS] lattice_change_methods_test — 0s
+
+--- symmetry_rotation --- (timeout=30s)
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from SymmetryRotationTest
+[ RUN      ] SymmetryRotationTest.Wignerd
+[       OK ] SymmetryRotationTest.Wignerd (0 ms)
+... [12 lines omitted] ...
+[----------] 7 tests from SymmetryRotationTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 7 tests.
+[PASS] symmetry_rotation — 0s
+
+--- dm_mixing_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from DM_Mixing_Test
+[ RUN      ] DM_Mixing_Test.Mix_Matrix
+... [3 lines omitted] ...
+[----------] 2 tests from DM_Mixing_Test (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (2 ms total)
+[  PASSED  ] 2 tests.
+[PASS] dm_mixing_test — 0s
+
+--- ri_cv_io_test --- (timeout=30s)
+Running main() from /tmp/spack-build/root/spack-stage-abacus-3.10.1-lts-imzxfnoqcyvxqvmm5zsesvzqaqzk6cug/spack-src/third_party/googletest/googletest/src/gtest_main.cc
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from LRI_CV_Tools
+[ RUN      ] LRI_CV_Tools.ReadCs
+... [1 lines omitted] ...
+[----------] 1 test from LRI_CV_Tools (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1 ms total)
+[  PASSED  ] 1 test.
+[PASS] ri_cv_io_test — 0s
 
 ================================================================
-  Summary (blocker)
+  Summary
 ================================================================
-  Total:     0 (not executable on this image)
-  Passed:    0
-  Failed:    0
-  Status:    BLOCKED
-  Image:     localhost/abacus_opensource:3.10.1-force-avx512
-  Also tried: -installed, -builder (no share/abacus/tests)
-  Spec:      abacus@3.10.1-lts tests=false
-  Need:      rebuild OCI with abacus +tests to install MODULE_* binaries
+  Total:     221
+  Passed:    213
+  Failed:    8
+  Time:      145s
+
+  Failed tests:
+
+  base_matrix3
+  clebsch_gordan_coeff_test
+  cubic_spline
+  real_gaunt_table
+  sphbes_radials
+  basis_pw_k_serial
+  esolver_dp_test
+  HSolver_LCAO_PEXSI
 ================================================================
