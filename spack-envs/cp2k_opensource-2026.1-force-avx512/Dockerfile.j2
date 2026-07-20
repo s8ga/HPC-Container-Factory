@@ -30,21 +30,27 @@ LABEL stage="builder-installed" \
 # Fetch CP2K source — only the directories needed for regtesting.
 # Uses sparse checkout to avoid downloading the full ~1GB+ repo.
 # The actual build comes from spack (source mirror), not this clone.
+# Branch {{ cp2k_branch }} is pinned at {{ cp2k_dev_repo_commit }} (env.yaml).
 
-RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
+RUN git clone --filter=blob:none --no-checkout \
         https://github.com/cp2k/cp2k.git /opt/cp2k && \
     cd /opt/cp2k && \
+    git fetch --depth 1 origin "{{ cp2k_dev_repo_commit }}" && \
+    git fetch --depth 1 origin "{{ cp2k_branch }}:refs/remotes/origin/{{ cp2k_branch }}" && \
     git sparse-checkout init --cone && \
     git sparse-checkout set tests src/grid/sample_tasks tools/regtesting tools && \
-    git checkout && \
+    git checkout "{{ cp2k_dev_repo_commit }}" && \
+    git merge-base --is-ancestor HEAD "origin/{{ cp2k_branch }}" || \
+      { echo "ERROR: pinned commit $(git rev-parse HEAD) is not on {{ cp2k_branch }}"; exit 1; } && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
-# Fetch the force-AVX512 package overrides declared in env.yaml.
-RUN git clone --depth 1 --filter=blob:none --sparse \
-        -b "{{ force_avx512_repo_branch }}" \
+# Fetch the force-AVX512 package overrides at the pinned s8ga monorepo commit.
+RUN git clone --filter=blob:none --sparse --no-checkout \
         "{{ force_avx512_repo_url }}" /opt/s8ga-spack-packages && \
     cd /opt/s8ga-spack-packages && \
-    git sparse-checkout set "{{ force_avx512_repo_path }}"
+    git fetch --depth 1 origin "{{ s8ga_repo_commit }}" && \
+    git sparse-checkout set "{{ force_avx512_repo_path }}" && \
+    git checkout "{{ s8ga_repo_commit }}"
 
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
@@ -64,6 +70,7 @@ RUN mkdir -p /opt/spack-repo/spack_repo/ && \
 {% include 'partials/spack_buildcache_config.j2' %}
 
 {% if spack_buildcache_policy in ['auto', 'only'] %}
+{% set libint_parallel_cap = 12 %}
 {% include 'partials/spack_buildcache_install.j2' %}
 {% else %}
 # Prefers factory buildcache when policy=auto/only. Source path: memory-cap libint, then rest.

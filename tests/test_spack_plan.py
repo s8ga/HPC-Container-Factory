@@ -39,6 +39,7 @@ from hpc_cf.config import SPACK_ENVS_DIR
 _DUAL_WRITE_FIELDS: tuple[tuple[str, str], ...] = (
     ("cp2k_branch", "branch"),
     ("cp2k_dev_repo_path", "sparse_path"),
+    ("cp2k_dev_repo_commit", "commit"),
 )
 
 
@@ -309,7 +310,19 @@ def test_all_spack_envs_plan_matches_rendered_dockerfile(env_dir: Path) -> None:
     last = -1
     for repo in plan.image.repos:
         needle = repo.image_path.rstrip("/")
-        idx = rendered.find(needle)
+        # Bound the match so "/.../repos" does not hit "/.../repos_cp2k_dev".
+        terminators = frozenset("/ \"'\n\t&")
+        idx = -1
+        start = 0
+        while True:
+            cand = rendered.find(needle, start)
+            if cand < 0:
+                break
+            end = cand + len(needle)
+            if end >= len(rendered) or rendered[end] in terminators:
+                idx = cand
+                break
+            start = cand + 1
         assert idx >= 0, (
             f"{env_dir.name}: image repo {repo.namespace!r} path {needle!r} "
             f"missing from rendered Dockerfile"
@@ -352,6 +365,53 @@ def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
     assert image_ns.index("s8_overrides") < image_ns.index("cp2k-env")
     assert plan.image.repo_scope is RepoScope.ENV
     assert plan.image.scope_flag() == "env:cp2k-env"
+
+
+@pytest.mark.parametrize(
+    ("env_name", "cp2k_sha"),
+    [
+        ("cp2k_opensource-2025.2", "c3a8adfec55aed817436b8b681645390fd0dd801"),
+        (
+            "cp2k_opensource-2025.2-force-avx512",
+            "c3a8adfec55aed817436b8b681645390fd0dd801",
+        ),
+        (
+            "cp2k_opensource-2026.1-force-avx512",
+            "757bb76a80be37bef49d7383b4f7fce122940895",
+        ),
+        (
+            "cp2k_opensource-2026.2-force-avx512",
+            "67b5da876dd6a76b8b021d5a04d1c81ba79a4c50",
+        ),
+    ],
+)
+def test_opensource_cp2k_pins_repo_commits(env_name: str, cp2k_sha: str) -> None:
+    """Opensource CP2K pins cp2k git tip; force envs also pin shared s8ga SHA."""
+    s8ga_pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    env_dir = SPACK_ENVS_DIR / env_name
+    spec = load_environment_spec(env_dir)
+    rendered = _render_env_dockerfile(env_dir)
+    cp2k_repo = _cp2k_git_repo(spec)
+    assert cp2k_repo is not None
+    assert cp2k_repo.commit == cp2k_sha
+    assert spec.template_vars["cp2k_dev_repo_commit"] == cp2k_sha
+    assert f'git checkout "{cp2k_sha}"' in rendered
+    # Commit pin must still exercise {{ cp2k_branch }} (not comment-only).
+    branch = spec.template_vars["cp2k_branch"]
+    assert "git merge-base --is-ancestor HEAD" in rendered
+    assert f"origin/{branch}" in rendered
+
+    s8ga_repos = [
+        repo
+        for repo in spec.spack.custom_repos
+        if repo.type == "git" and "s8ga" in (repo.url or "").lower()
+    ]
+    if not s8ga_repos:
+        assert "s8ga_repo_commit" not in spec.template_vars
+        return
+    assert all(repo.commit == s8ga_pin for repo in s8ga_repos)
+    assert spec.template_vars["s8ga_repo_commit"] == s8ga_pin
+    assert f'git checkout "{s8ga_pin}"' in rendered
 
 
 def test_vasp_image_skips_builtin_update() -> None:

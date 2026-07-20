@@ -7,6 +7,10 @@
    spec is on disk, the stage exits 0 so the image is tagged and the publisher
    can push those binaries even when the full env install did not finish.
 
+   Optional libint_parallel_cap (int): install libint first with -j capped at
+   that value (peak-memory guard for CP2K), then install remaining packages
+   with -j $(nproc). When unset, install the full concrete env in one step.
+
    Never emit bash array-length expansions that contain a hash character in this
    Dockerfile fragment: the Dockerfile lexer treats hash as a line comment even
    inside shell quotes. #}
@@ -17,12 +21,30 @@ RUN --mount=type=bind,source=assets/spack-buildcache,target=/opt/spack-buildcach
     bash -o pipefail -c 'set -euo pipefail; \
     spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache \
         file:///opt/spack-buildcache; \
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    libint_jobs="$(nproc)"; \
+    if [ "${libint_jobs}" -gt {{ libint_parallel_cap | int }} ]; then libint_jobs={{ libint_parallel_cap | int }}; fi; \
+{% endif %}
 {% if spack_buildcache_producer %}
     set +e; \
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "${libint_jobs}" -p 20 libint; \
+    _hpc_cf_libint_rc=$?; \
+    echo "Installing remaining packages with -j $(nproc)..."; \
     spack -e {{ spack_env_name }} install --only-concrete \
         --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
         -j "$(nproc)" -p 20; \
     _hpc_cf_install_rc=$?; \
+    if [ "${_hpc_cf_libint_rc}" -ne 0 ]; then _hpc_cf_install_rc="${_hpc_cf_libint_rc}"; fi; \
+{% else %}
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+    _hpc_cf_install_rc=$?; \
+{% endif %}
     mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
         "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
     if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
@@ -50,9 +72,20 @@ RUN --mount=type=bind,source=assets/spack-buildcache,target=/opt/spack-buildcach
         exit 0; \
     fi'
 {% else %}
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "${libint_jobs}" -p 20 libint; \
+    echo "Installing remaining packages with -j $(nproc)..."; \
     spack -e {{ spack_env_name }} install --only-concrete \
         --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
         -j "$(nproc)" -p 20; \
+{% else %}
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+{% endif %}
     mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
         "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
     if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
