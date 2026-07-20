@@ -1,0 +1,51 @@
+================================================================
+  ABACUS 3.10.1 Module Unit Tests (evidence run)
+  image: localhost/abacus_opensource:3.10.1-force-avx512
+  digest: c84d1299f5f017eb956c6adbd8f254f355ca7149c88e009a45b7257e857c4b38
+  started: 2026-07-21T03:36:16+08:00
+================================================================
+
+Probe: looking for tests under /opt/spack ...
+abacus prefix: /opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/abacus-3.10.1-lts-qy7qdu27cs2xrwk5sy4hr7ydwtstinak
+total 20
+drwxr-sr-x 1 hpc hpc  4096 Jul 19 01:50 .
+drwxr-xr-x 1 hpc hpc 12288 Jul 19 01:49 ..
+drwxr-sr-x 2 hpc hpc  4096 Jul 19 01:49 bin
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "/opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/python-3.12.13-67eeethn27zlgjd7vswtkftpr46pv4sj/lib/python3.12/pathlib.py", line 1027, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spack/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_path_placeholder__/__spack_p/linux-x86_64_v3/python-3.12.13-67eeethn27zlgjd7vswtkftpr46pv4sj/lib/python3.12/pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '.spack/spec.json'
+
+--- Running abacus_run_module_tests.sh (expected fail: no test dir) ---
+ERROR: Cannot find test dir under /opt/spack/linux-x86_64_v3/
+SCRIPT_EXIT=1
+
+BLOCKER: Module unit tests cannot run on existing image
+  - Image tag: localhost/abacus_opensource:3.10.1-force-avx512 (c84d1299f5f017eb956c6adbd8f254f355ca7149c88e009a45b7257e857c4b38)
+  - Also checked: localhost/abacus_opensource:3.10.1-force-avx512-installed, localhost/abacus_opensource:3.10.1-force-avx512-builder (no share/abacus/tests)
+  - Concrete spec has tests=false; MODULE_* binaries only install with +tests
+  - Full OCI rebuild with abacus +tests required for module evidence
+  - Integration evidence uses mounted 3.10.1-lts source tests/integrate instead
+finished: 2026-07-21T03:36:16+08:00
+[('3.10.1-lts', False)]
+[('3.10.1-lts', False)]
+[('3.10.1-lts', False)]
+[('3.10.1-lts', False)]
+
+================================================================
+  Summary (blocker)
+================================================================
+  Total:     0 (not executable on this image)
+  Passed:    0
+  Failed:    0
+  Status:    BLOCKED
+  Image:     localhost/abacus_opensource:3.10.1-force-avx512
+  Also tried: -installed, -builder (no share/abacus/tests)
+  Spec:      abacus@3.10.1-lts tests=false
+  Need:      rebuild OCI with abacus +tests to install MODULE_* binaries
+================================================================
