@@ -2,20 +2,24 @@
 #
 # abacus_run_module_tests.sh — Batch run ABACUS MODULE_* unit tests
 #
-# Auto-discovers the ABACUS install under /opt/spack/linux-x86_64_v3/
-# and runs all unit-test executables. Each test runs from its own module
-# directory so ./support/ resolves correctly.
+# Auto-discovers share/abacus/tests under /opt/spack (short or padded
+# install prefix) and runs all unit-test executables. Each test runs from
+# its own module directory so ./support/ resolves correctly.
 #
 # Usage (inside container):
 #   podman run --rm --network=host \
-#     -v $PWD/scripts/abacus_run_module_tests.sh:/tmp/run_tests.sh:ro \
+#     -v $PWD/abacus_run_module_tests.sh:/tmp/run_tests.sh:ro \
 #     abacus_opensource:3.10.1-force-avx512 bash /tmp/run_tests.sh
 
 set -eu
 
 TESTS="$(ls -d /opt/spack/linux-x86_64_v3/abacus-*/share/abacus/tests 2>/dev/null | head -1)"
 if [[ -z "$TESTS" ]]; then
-    echo "ERROR: Cannot find test dir under /opt/spack/linux-x86_64_v3/" >&2
+    # padded_length installs nest under /opt/spack/__spack_path_placeholder__/...
+    TESTS="$(find /opt/spack -type d -path '*/share/abacus/tests' 2>/dev/null | head -1)"
+fi
+if [[ -z "$TESTS" ]]; then
+    echo "ERROR: Cannot find share/abacus/tests under /opt/spack/" >&2
     exit 1
 fi
 
