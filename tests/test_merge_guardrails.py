@@ -214,6 +214,49 @@ def test_dual_write_guard_rejects_drift(tmp_path: Path) -> None:
     assert "correct-branch" in result.stdout
 
 
+def test_dual_write_guard_rejects_comment_only_cp2k_branch(tmp_path: Path) -> None:
+    """Comment-only {{ cp2k_branch }} must not satisfy the dual-write guard."""
+    env_yaml = (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: cp2k-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: support/v2026.2\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
+        "template_vars:\n"
+        "  cp2k_branch: support/v2026.2\n"
+        "  cp2k_dev_repo_path: tools/spack/spack_repo/cp2k_dev\n"
+    )
+    dockerfile = (
+        "# Branch {{ cp2k_branch }} is pinned at deadbeef\n"
+        "RUN git clone --filter=blob:none --no-checkout "
+        "https://github.com/cp2k/cp2k.git /opt/cp2k && "
+        "git checkout deadbeef\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=env_yaml,
+        dockerfile=dockerfile,
+        name="cp2k-comment-only-branch",
+    )
+
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "cp2k_branch" in result.stdout
+    assert "does not use" in result.stdout
+
+
 @pytest.mark.parametrize(
     "template_vars, missing_key",
     [
@@ -410,3 +453,183 @@ def test_dual_write_guard_ignores_non_cp2k_env(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_dual_write_guard_rejects_s8ga_commit_drift(tmp_path: Path) -> None:
+    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    wrong = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    env_yaml = (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: abacus-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {pin}\n"
+        "      sparse_path: spack_repo/abacus\n"
+        "      namespace: abacus\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {wrong}\n"
+        "      sparse_path: spack_repo/s8_overrides\n"
+        "      namespace: s8_overrides\n"
+        "template_vars:\n"
+        f"  s8ga_repo_commit: {pin}\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=env_yaml,
+        dockerfile="FROM debian:trixie\n",
+        name="abacus-s8ga-drift",
+    )
+
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "s8ga_repo_commit" in result.stdout
+    assert "s8_overrides" in result.stdout
+    assert wrong in result.stdout
+
+
+def test_dual_write_guard_skips_s8ga_when_neither_side_pinned(
+    tmp_path: Path,
+) -> None:
+    """s8ga custom_repos without commit or template var are skipped."""
+    env_yaml = (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: cp2k-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: support/v2026.2\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        "      sparse_path: spack_repo/s8_overrides\n"
+        "      namespace: s8_overrides\n"
+        "template_vars:\n"
+        "  cp2k_branch: support/v2026.2\n"
+        "  cp2k_dev_repo_path: tools/spack/spack_repo/cp2k_dev\n"
+    )
+    dockerfile = (
+        "RUN git clone -b {{ cp2k_branch }} "
+        "https://github.com/cp2k/cp2k.git /opt/cp2k\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=env_yaml,
+        dockerfile=dockerfile,
+        name="cp2k-s8ga-unpinned",
+    )
+
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_dual_write_guard_rejects_s8ga_commit_without_template_var(
+    tmp_path: Path,
+) -> None:
+    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    env_yaml = (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: cp2k-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: support/v2026.2\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {pin}\n"
+        "      sparse_path: spack_repo/s8_overrides\n"
+        "      namespace: s8_overrides\n"
+        "template_vars:\n"
+        "  cp2k_branch: support/v2026.2\n"
+        "  cp2k_dev_repo_path: tools/spack/spack_repo/cp2k_dev\n"
+    )
+    dockerfile = (
+        "RUN git clone -b {{ cp2k_branch }} "
+        "https://github.com/cp2k/cp2k.git /opt/cp2k\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=env_yaml,
+        dockerfile=dockerfile,
+        name="cp2k-s8ga-commit-only",
+    )
+
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "s8ga_repo_commit" in result.stdout
+    assert "missing" in result.stdout
+
+
+def test_dual_write_guard_accepts_matching_s8ga_commit(tmp_path: Path) -> None:
+    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    env_yaml = (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: abacus-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {pin}\n"
+        "      sparse_path: spack_repo/abacus\n"
+        "      namespace: abacus\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {pin}\n"
+        "      sparse_path: spack_repo/s8_overrides\n"
+        "      namespace: s8_overrides\n"
+        "template_vars:\n"
+        f"  s8ga_repo_commit: {pin}\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=env_yaml,
+        dockerfile="FROM debian:trixie\n",
+        name="abacus-s8ga-ok",
+    )
+
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "dual-write guard passed" in result.stdout

@@ -61,10 +61,18 @@ If check/coverage is incomplete, sidecar health stays unhealthy with
 `HPC_CF_PARTIAL_PUBLISH=1`); binaries that did push must not be discarded.
 If the Docker stage fails with no usable tag, the temporary tag is removed
 best-effort and is not recoverable. If a tag exists despite a reported build
-failure, the factory still attempts this partial push. Once
-`builder-installed` succeeds, any later failure preserves the run-unique image
-and records its immutable digest and recovery identity in unhealthy state. A
-normal `build` continues to write `{tag}-installed`.
+failure, the factory still runs the full publish sequence
+(push → update-index → check → promote → coverage). When that sequence
+succeeds end-to-end, the store is marked **healthy** (not left as a
+docker-build / partial-publish failure). Only a failed publish step keeps
+unhealthy/`partial_publish` state while retaining the run-unique image.
+Once `builder-installed` succeeds, any later publication failure preserves
+the run-unique image and records its immutable digest and recovery identity
+in unhealthy state. A normal `build` continues to write `{tag}-installed`.
+
+Producer Docker builds always pass `--no-cache` so soft-fail install layers
+cannot reuse a stale `builder-installed` stage. Additional engine flags may
+be appended with CLI `--build-opt`.
 
 The service takes the exclusive host lock, resolves the local producer-image
 digest under that lock, and runs this Spack-owned sequence in a dedicated
@@ -87,6 +95,23 @@ spec in the active environment. Spack external specs are deliberately excluded
 because they have no binary package to push. The publisher does not use
 `--force`; package deduplication and internal layout remain Spack's
 responsibility.
+
+### Unsigned trust boundary
+
+Publication uses `spack buildcache push --unsigned`. That is intentional for a
+**single-tenant trusted host**: the buildcache root is local filesystem state
+written only by this factory under the exclusive publisher flock, and consumers
+on the same host mount it read-only. There is no multi-tenant or remote-mirror
+integrity model yet; GPG signing remains out of scope (see deferred work
+below). Do not treat an unsigned local cache as safe to share across untrusted
+machines or users.
+
+To inspect which packages are present in the opaque cache (operator inventory,
+not a factory API), use Spack's own listing against the mount, for example:
+
+```bash
+spack buildcache list -l file:///path/to/assets/spack-buildcache
+```
 
 Any push, index, or check failure marks the global sidecar health unhealthy
 (partial publish is unhealthy until full-lock check passes). A successful
@@ -140,6 +165,15 @@ The environment must explicitly set `spack.buildcache.enabled: true`; an
 `auto` request for any other environment becomes `never`, while `only` is
 rejected.
 
+### Policy gate: global health vs lock-SHA coverage
+
+`resolve_consumer_policy` admits `auto`/`only` when **either** global
+`health.json` is healthy **or** the consumer's current `spack.lock` already
+has a successful non-external coverage record. Another environment's failed
+publish may leave the global store unhealthy without blocking a covered
+consumer. Without that coverage (and without healthy global state), `auto`
+falls back to `never` (source path) and `only` fails closed.
+
 ### `auto` — production default
 
 ```bash
@@ -147,7 +181,7 @@ rejected.
   --env cp2k_opensource-2025.2 --buildcache auto
 ```
 
-When the global store is healthy, the install RUN gets two independent
+When the policy gate admits `auto`, the install RUN gets two independent
 read-only mounts:
 
 - `assets/spack-buildcache` → `/opt/spack-buildcache`
@@ -156,8 +190,9 @@ read-only mounts:
 Spack installs with
 `--only-concrete --use-buildcache auto --fail-fast`. Binary hits are used;
 cache misses and Spack-recoverable binary errors may fall back to the source
-mirror. If the store is absent or unhealthy, the Factory does not register it
-and performs the normal source path.
+mirror. If the store is absent, or global health is unhealthy **and** this
+lock has no successful coverage, the Factory does not register the cache and
+performs the normal source path.
 
 Fallback is not guaranteed for every malformed binary. In particular, the
 tested Spack 1.2.0 client treats an archive SHA256 mismatch as fatal under
@@ -172,12 +207,13 @@ with integrity failures must be marked unhealthy and repaired or republished.
 ```
 
 `only` mounts only the buildcache read-only; it does not mount the source
-mirror or render the source-install branch. Before building, it requires:
+mirror or render the source-install branch. The policy gate above must admit
+`only` (healthy global **or** successful lock-SHA coverage). Before building,
+it still requires (live, as coded):
 
-- healthy global state;
-- a coverage record for the exact lock SHA;
-- matching Spack version, dedicated producer-image digest, padding, and
-  available lock/environment provenance;
+- a coverage record for the exact lock SHA (with matching Spack version,
+  dedicated producer-image digest, padding, and available lock/environment
+  provenance);
 - successful live `buildcache check` of explicit non-external hashes.
 
 Any mismatch fails closed. `--buildcache only` cannot be combined with

@@ -77,7 +77,7 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   app templates (do not assume plan alone registers image repos).
 - `mirror_scope` is intentionally fixed to **site** in the plan (not configurable from
   env.yaml). Custom `repo_scope` must not leak into `spack mirror add --scope`.
-- `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars)
+- `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars); opensource commit-pin clones still run a non-comment `git merge-base --is-ancestor` check against `origin/{{ cp2k_branch }}`
 - `{{ cp2k_dev_repo_path }}` parametrized — cp2k's spack repo path (changes between versions: `tools/spack/cp2k_dev_repo` → `tools/spack/spack_repo/cp2k_dev`)
 - `spack repo update builtin` is the **assets** default and the common image default via
   `spack.image.update_builtin` — but not universal (e.g. VASP sets `image.update_builtin: false`
@@ -106,9 +106,14 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
  Production policy defaults come from each env's `spack.buildcache.policy`;
  CLI `--buildcache` is an override. `auto` mounts buildcache and source mirror read-only and permits
   source fallback; strict `only` mounts buildcache alone and fails closed.
+ Consumer `auto`/`only` are admitted when global health is healthy **or** the
+ env already has successful lock-SHA coverage (another env's failed publish
+ must not block a covered consumer). Without coverage, keep prior fail-closed /
+ `auto`→`never` behavior. `only` still runs live verify/provenance as coded.
  Producer installs use `--use-buildcache auto` (with padding) so published
- hashes can be reused; misses fall back to the source mirror. Publication uses
- run-unique temporary tags, then
+ hashes can be reused; misses fall back to the source mirror. Producer Docker
+ builds always pass `--no-cache` (CLI `--build-opt` may append more flags).
+ Publication uses run-unique temporary tags, then
  promote only after a successful check under the publisher lock; coverage,
  verify, and `only` use the stable
  `{tag}-buildcache-producer` image. Normal builds keep `{tag}-installed`
@@ -121,8 +126,9 @@ on disk so a partial install still yields a tagged image. Publication pushes
 Incomplete coverage stays unhealthy/`partial_publish` but must not discard
 already-pushed binaries. If the Docker stage fails with no usable tag, the
 temporary tag is removed best-effort and is not recoverable; if a tag exists
-despite a reported build failure, the factory still attempts partial push.
-After `builder-installed` succeeds, publication failures preserve the
+despite a reported build failure, the factory still runs full publish — success
+promotes + writes coverage + marks healthy (not left as docker-build-only
+partial). After `builder-installed` succeeds, publication failures preserve the
 run-unique image. Resume only with `hpc_cf buildcache resume --env <env>`
 from the latest unhealthy state; it validates environment, current lock SHA,
 Spack version, image existence, and immutable digest under the publisher lock.
@@ -153,7 +159,15 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
   `custom_repos` / `template_vars.s8ga_repo_commit`. Align shared math/MPI/ML
   pins across both envs, then **publish** (`buildcache build`) from the
   authority env and **consume** (`build --buildcache auto|only`) on the other.
-  Do not assume ABACUS shares DAG hashes with the CP2K track.
+  Do not assume ABACUS shares DAG hashes with the CP2K track. The dual-write
+  guard (`scripts/check-dual-write.py`) fails when either
+  `template_vars.s8ga_repo_commit` or s8ga `custom_repos[].commit` is set and
+  the two sides disagree or one side is missing (neither side pinned → skip).
+- **Buildcache signing**: producer push is `--unsigned` by design for a
+  single-tenant trusted host (local flock-owned cache, same-host read-only
+  consumers). Not a multi-tenant/remote trust boundary; GPG signing is deferred.
+  Operator package inventory: `spack buildcache list` against the cache URL
+  (see `docs/buildcache.md`).
 - CLI does **not** expose a custom `ProjectLayout`; services accept layout injection mainly
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
