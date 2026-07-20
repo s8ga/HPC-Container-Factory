@@ -153,20 +153,48 @@ def _healthy(store: SharedBuildcacheStore) -> bool:
     return health.get("healthy") is True
 
 
+def _has_successful_lock_coverage(
+    store: SharedBuildcacheStore,
+    lock_path: Path | None,
+) -> bool:
+    """True when this lock has a successful non-external coverage record."""
+    if lock_path is None or not lock_path.is_file():
+        return False
+    if not store.layout.spack_buildcache_dir.is_dir():
+        return False
+    path = coverage_path_for_lock(store.layout, lock_path)
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return False
+    return (
+        record.get("schema_version") == 2
+        and record.get("check_returncode") == 0
+        and record.get("coverage") == "non_external"
+        and record.get("external_specs_excluded") is True
+    )
+
+
 def resolve_consumer_policy(
     requested: BuildcachePolicy,
     store: SharedBuildcacheStore,
     *,
     enabled: bool = True,
+    lock_path: Path | None = None,
 ) -> BuildcachePolicy:
-    """Resolve auto fallback and strict only fail-closed behavior."""
+    """Resolve auto fallback and strict only fail-closed behavior.
+
+    Global ``health.json`` unhealthy still allows ``auto``/``only`` when the
+    current environment has successful lock-SHA coverage (another env's failed
+    publish must not block a covered consumer).
+    """
     if requested is BuildcachePolicy.NEVER:
         return requested
     if not enabled:
         if requested is BuildcachePolicy.AUTO:
             return BuildcachePolicy.NEVER
         raise RuntimeError("buildcache is not enabled for this environment")
-    if _healthy(store):
+    if _healthy(store) or _has_successful_lock_coverage(store, lock_path):
         return requested
     if requested is BuildcachePolicy.AUTO:
         logger.warning("Buildcache missing or unhealthy; falling back to source install")

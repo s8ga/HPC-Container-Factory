@@ -267,10 +267,19 @@ class BuildService:
             )
         store = SharedBuildcacheStore(self.layout)
         buildcache_enabled = bool(spec and spec.spack.buildcache.enabled)
+        consumer_lock_path = resolved.environment_dir / "spack.lock"
+        if not consumer_lock_path.is_file():
+            consumer_lock_path = (
+                resolved.environment_dir / "spack-env-file" / "spack.lock"
+            )
+        policy_lock = (
+            consumer_lock_path if consumer_lock_path.is_file() else None
+        )
         effective_policy = resolve_consumer_policy(
             requested_policy,
             store,
             enabled=buildcache_enabled,
+            lock_path=policy_lock,
         )
         # dockerfile and build both use build-input so missing/empty
         # spack.lock fails closed unless --allow-reconcretize.
@@ -324,6 +333,7 @@ class BuildService:
                 requested_policy,
                 store,
                 enabled=buildcache_enabled,
+                lock_path=policy_lock,
             )
             dockerfile = generate_dockerfile(
                 template=request.template,
@@ -821,6 +831,9 @@ class BuildcacheService:
         temporary_image_ref = temporary_producer_image_ref(
             image, tag, run.run_id
         )
+        # Producer builds always disable layer cache so soft-fail installs
+        # cannot reuse a stale builder-installed stage. CLI --build-opt appends.
+        producer_build_opts = ["--no-cache", *list(request.build_opts)]
         try:
             with store.consumer_lock():
                 build_docker_stage(
@@ -830,19 +843,12 @@ class BuildcacheService:
                     engine=request.engine,
                     network_host=request.network_host,
                     build_args=list(request.build_args),
-                    build_opts=list(request.build_opts),
+                    build_opts=producer_build_opts,
                 )
         except Exception as docker_build_error:
             # Soft-fail producer installs normally tag the image (exit 0).
-            # If the engine still reports failure but a tag exists, push any
-            # installed specs before discarding the run.
-            from hpc_cf.buildcache import (
-                failed_publish_output,
-                failed_publish_step,
-                publish,
-                publish_output_markers,
-            )
-
+            # If the engine still reports failure but a tag exists, attempt
+            # full publish; success → healthy (do not mark docker-build dead).
             try:
                 image_digest = inspect_image_digest(
                     engine=request.engine,
@@ -866,64 +872,35 @@ class BuildcacheService:
 
             logger.warning(
                 "Producer docker-build reported failure but image %s exists; "
-                "pushing installed specs into the buildcache (partial publish)",
+                "attempting publish of installed specs",
                 temporary_image_ref,
             )
-            recovery: dict[str, object] = {
-                "recoverable": True,
-                "env": request.env,
-                "lock_sha256": lock_sha256,
-                "spack_version": spec.spack.version,
-                "recovery_image_ref": temporary_image_ref,
-                "recovery_image_digest": image_digest,
-                "stable_image_ref": stable_image_ref,
-                "partial_publish": True,
-                "partial_publish_attempt": True,
-                "docker_build_error": str(docker_build_error),
-            }
             with store.publisher_lock():
                 store.ensure_store_root()
                 try:
-                    result, _checked_count = publish(
-                        engine=request.engine,
-                        image_ref=temporary_image_ref,
-                        env_name=spec.spack.env_name,
-                        layout=self.layout,
-                        timeout_seconds=request.operation_timeout_seconds,
-                    )
-                    run.log_path("publish").write_text(
-                        result.stdout or "", encoding="utf-8"
-                    )
-                    recovery.update(
-                        publish_output_markers(result.stdout or "")
-                    )
-                    recovery["partial_publish"] = True
-                    self._record_failure(
+                    self._complete_producer(
                         store=store,
                         run=run,
-                        failed_step="docker-build",
-                        exc=docker_build_error,
-                        provenance=provenance,
-                        recovery=recovery,
+                        request=request,
+                        spec=spec,
+                        lock_path=lock_path,
+                        environment_provenance=environment_provenance,
+                        temporary_image_ref=temporary_image_ref,
+                        image_digest=image_digest,
+                        stable_image_ref=stable_image_ref,
+                        provenance={
+                            **provenance,
+                            "docker_build_error": str(docker_build_error),
+                        },
                     )
                 except Exception as publish_exc:
-                    failed_step = failed_publish_step(publish_exc)
-                    recovery.update(
-                        publish_output_markers(
-                            failed_publish_output(publish_exc)
-                        )
-                    )
-                    recovery["partial_publish"] = True
-                    self._record_failure(
-                        store=store,
-                        run=run,
-                        failed_step=failed_step,
-                        exc=publish_exc,
-                        provenance=provenance,
-                        recovery=recovery,
-                    )
                     raise publish_exc from docker_build_error
-            raise docker_build_error
+            remove_temporary_image(
+                engine=request.engine,
+                image_ref=temporary_image_ref,
+                layout=self.layout,
+            )
+            return 0
 
         with store.publisher_lock():
             store.ensure_store_root()

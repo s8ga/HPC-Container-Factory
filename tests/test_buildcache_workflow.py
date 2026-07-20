@@ -69,7 +69,6 @@ def test_only_consumer_has_no_source_mount_or_source_install_branch() -> None:
     )
     assert "source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly" in install
     assert "spack-mirror" not in install
-    assert "libint" not in install
     assert "mirror add --scope env:cp2k-env --unsigned binary-cache" in install
     assert install.index("mirror add") < install.index("install --only-concrete")
     assert "--only-concrete" in install
@@ -86,7 +85,46 @@ def test_producer_auto_install_reuses_buildcache_with_padding() -> None:
     assert "source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly" in install
     assert "source=assets/spack-mirror,target=/opt/spack-mirror,readonly" in install
     assert "--use-buildcache never" not in install
-    assert "libint" not in install
+
+
+def test_cp2k_buildcache_install_caps_libint_parallelism() -> None:
+    """Opensource CP2K BC path installs libint first with -j capped at 12."""
+    opensource = sorted(
+        p
+        for p in (ROOT / "spack-envs").iterdir()
+        if p.is_dir()
+        and p.name.startswith("cp2k_opensource-")
+        and (p / "Dockerfile.j2").is_file()
+    )
+    assert opensource, "expected cp2k_opensource-* Dockerfiles"
+    for env_dir in opensource:
+        template = env_dir / "Dockerfile.j2"
+        for policy, producer in (("auto", False), ("auto", True), ("only", False)):
+            rendered = render_template(
+                template,
+                build_context(
+                    use_mirror=True,
+                    build_only=False,
+                    app_version=env_dir.name,
+                    template_path=template,
+                    buildcache_policy=policy,
+                    buildcache_producer=producer,
+                ),
+            )
+            install = next(
+                block
+                for block in rendered.split("RUN ")
+                if f"--use-buildcache {policy}" in block
+            )
+            assert 'if [ "${libint_jobs}" -gt 12 ]; then libint_jobs=12; fi' in install, (
+                env_dir.name
+            )
+            assert "Installing libint with -j ${libint_jobs} (memory-capped)" in install
+            assert " -p 20 libint" in install
+            assert "Installing remaining packages with -j $(nproc)" in install
+            assert install.index("libint") < install.index(
+                "Installing remaining packages"
+            )
 
 
 def test_buildcache_build_renders_producer_with_auto_policy(
@@ -787,6 +825,46 @@ def test_auto_missing_or_unhealthy_store_uses_source_but_only_fails(
     store.mark_healthy(run_id="r2", coverage_path=coverage)
     assert resolve_consumer_policy(BuildcachePolicy.AUTO, store) is BuildcachePolicy.AUTO
     assert resolve_consumer_policy(BuildcachePolicy.ONLY, store) is BuildcachePolicy.ONLY
+
+
+def test_unhealthy_global_allows_auto_only_when_lock_coverage_exists(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.buildcache import coverage_path_for_lock, resolve_consumer_policy
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    store.ensure_store_root()
+    store.mark_unhealthy(run_id="other-env", failed_step="check", error="bad")
+
+    lock = tmp_path / "spack.lock"
+    lock.write_text('{"lock": true}\n', encoding="utf-8")
+    assert resolve_consumer_policy(
+        BuildcachePolicy.AUTO, store, lock_path=lock
+    ) is BuildcachePolicy.NEVER
+    with pytest.raises(RuntimeError, match="unhealthy"):
+        resolve_consumer_policy(BuildcachePolicy.ONLY, store, lock_path=lock)
+
+    path = coverage_path_for_lock(layout, lock)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "check_returncode": 0,
+                "coverage": "non_external",
+                "external_specs_excluded": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert resolve_consumer_policy(
+        BuildcachePolicy.AUTO, store, lock_path=lock
+    ) is BuildcachePolicy.AUTO
+    assert resolve_consumer_policy(
+        BuildcachePolicy.ONLY, store, lock_path=lock
+    ) is BuildcachePolicy.ONLY
 
 
 def test_disabled_environment_never_uses_global_buildcache(tmp_path: Path) -> None:
@@ -1508,6 +1586,31 @@ def test_success_removes_temporary_image_only_after_healthy_state(
     assert len(removed) == 1
 
 
+def test_producer_build_injects_no_cache_and_keeps_cli_build_opts(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, _, resolved = _producer_service_inputs(tmp_path)
+    with (
+        _producer_patches(resolved),
+        patch("hpc_cf.sif.build_docker_stage") as build_stage,
+        patch("hpc_cf.buildcache.remove_temporary_image"),
+    ):
+        assert BuildcacheService(layout).run(
+            BuildcacheRequest(
+                action="build",
+                env=PILOT,
+                build_opts=("--pull",),
+            )
+        ) == 0
+
+    build_stage.assert_called_once()
+    opts = build_stage.call_args.kwargs["build_opts"]
+    assert opts[0] == "--no-cache"
+    assert "--pull" in opts
+
+
 def test_docker_stage_failure_cleans_partial_tag_without_recovery(
     tmp_path: Path,
 ) -> None:
@@ -1539,6 +1642,34 @@ def test_docker_stage_failure_cleans_partial_tag_without_recovery(
     health = SharedBuildcacheStore(layout).read_health()
     assert health["failed_step"] == "docker-build"
     assert "recovery_image_ref" not in health
+
+
+def test_docker_stage_failure_full_publish_marks_healthy(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, _, resolved = _producer_service_inputs(tmp_path)
+    removed: list[str] = []
+    with (
+        _producer_patches(resolved),
+        patch(
+            "hpc_cf.sif.build_docker_stage",
+            side_effect=RuntimeError("docker build failed"),
+        ),
+        patch(
+            "hpc_cf.buildcache.remove_temporary_image",
+            side_effect=lambda *, image_ref, **_: removed.append(image_ref),
+        ),
+    ):
+        assert BuildcacheService(layout).run(
+            BuildcacheRequest(action="build", env=PILOT)
+        ) == 0
+
+    assert len(removed) == 1
+    health = SharedBuildcacheStore(layout).read_health()
+    assert health["healthy"] is True
+    assert health.get("failed_step") is None
 
 
 def test_docker_stage_failure_with_image_attempts_partial_publish(
