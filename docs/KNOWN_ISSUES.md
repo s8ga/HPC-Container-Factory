@@ -20,3 +20,29 @@
 
 - [CP2K 2026.2 发布说明](releases/CP2K_2026.2.md)
 - [CP2K regtest 日志](../spack-envs/cp2k_opensource-2026.2-force-avx512/cp2k-regtest.log)
+
+## ABACUS 3.9.0.27：Module unit tests 部分失败
+
+已入库 [abacus-module-test.log](../spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus-module-test.log)：227/241 passed，14 failed。主要类别：
+
+- `INPUT` / `KPT` / `STRU`：非 gtest 可执行文件（rc=127），不应当作单元测试二进制。
+- `MODULE_HSOLVER_*`（`LCAO`、`cg`、`dav*`）：runner 默认 `timeout 30` 超时（rc=124）。
+- `MODULE_HSOLVER_LCAO_PEXSI`：PEXSI 与参考差值超阈值。
+- `MODULE_ESOLVER_esolver_dp_test` / `test_deepks`：DeePMD TensorFlow 后端未构建或 DeePKS 相关失败。
+- `MODULE_BASE_*`：`clebsch_gordan`、`cubic_spline`（assert abort）、`matrix3` 数值/断言失败。
+
+Integration（`abacus_run_integration_tests.sh`）仍为 10/10。完整清单见 [ABACUS 3.9.0.27 发布说明](releases/ABACUS_3.9.0.27.md)。
+
+## ABACUS 3.10.1：Module unit tests BLOCKED
+
+现有镜像 concrete spec 为 `abacus@3.10.1-lts tests=false`，无 `share/abacus/tests` / `MODULE_*` 二进制。证据日志标记 Status=BLOCKED；需以 `+tests` 重建 OCI 后才能补跑。见 [abacus-module-test.log](../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-module-test.log) 与 [发布说明](releases/ABACUS_3.10.1.md)。
+
+## ABACUS 3.10.1：Integration Autotest 8 项失败
+
+挂载上游 `tests/integrate/Autotest.sh`（`CASES_CPU.txt`，356 cases）结果为 348/356。已知失败：
+
+- `101_PW_15_paw`：未编译 PAW（`USE_PAW`）。
+- `101_PW_upf201_uspp_NaCl`、`102_PW_BPCG`、`102_PW_PINT_UKS`、`107_PW_outWfcR`：属性/数值检查失败。
+- `212_NO_wfc_get_wf`、`312_NO_GO_wfc_get_wf`、`312_NO_GO_wfc_get_pchg`：harness 缺少 `sum_ENV_H2_cube`（Fatal Error in catch_properties.sh）。
+
+原始结果见 [abacus-integration-test.log](../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-integration-test.log) 与 [发布说明](releases/ABACUS_3.10.1.md)。

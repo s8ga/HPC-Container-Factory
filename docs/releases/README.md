@@ -26,3 +26,5 @@
 ## 当前发布
 
 - [CP2K 2026.2（opensource，force-avx512）](CP2K_2026.2.md)
+- [ABACUS 3.9.0.27（opensource，force-avx512；producer）](ABACUS_3.9.0.27.md)
+- [ABACUS 3.10.1（opensource，force-avx512；consumer）](ABACUS_3.10.1.md)
