@@ -25,17 +25,17 @@
 ./venv/bin/python -m hpc_cf build --app-version abacus_opensource-3.10.1-force-avx512 --buildcache auto
 ```
 
-默认 build-input 校验要求环境声明的 assets 可用，并只读消费现有非空 `spack.lock`。不要删除 lock 后直接构建；需要重新 concretize 时应通过 assets 工作流显式执行。
+默认 build-input 校验要求环境声明的 assets 可用，并只读消费现有非空 `spack.lock`。不要删除 lock 后直接构建；需要重新 concretize 时应通过 assets 工作流显式执行（先移除旧 `spack.lock`，再 `--allow-concretize`）。
 
 ## 应用测试入口
 
-本环境 spec **未启用 `+tests`**，现有镜像无 `share/abacus/tests`；module 证据为 BLOCKED。Integration 证据使用挂载的 3.10.1-lts 源码 `tests/integrate/Autotest.sh`（见已入库日志），不是 `01_PW`…`10_others` 分组脚本。
+本环境 abacus spec 已启用 `+tests`；OCI 含 `share/abacus/tests`（含 padded install 前缀）。Module 证据已入库（213/221；日志经 harness 截断，约百 KB 级）；Integration 证据使用挂载的 3.10.1-lts 源码 `tests/integrate/Autotest.sh`（见已入库日志），不是 `01_PW`…`10_others` 分组脚本。
 
 ```bash
-# Module unit tests（当前镜像会因缺少 tests 目录而失败 / BLOCKED）
+# Module unit tests
 podman run --rm --network=host \
   -v "$PWD/spack-envs/abacus_opensource-3.10.1-force-avx512/abacus_run_module_tests.sh:/tmp/run_tests.sh:ro" \
   abacus_opensource:3.10.1-force-avx512 bash /tmp/run_tests.sh
 ```
 
-通过/失败数字、Autotest 失败清单与 module blocker 见[发布说明](../../docs/releases/ABACUS_3.10.1.md)。
+通过/失败数字、Autotest 失败清单与 module 失败清单见[发布说明](../../docs/releases/ABACUS_3.10.1.md)。

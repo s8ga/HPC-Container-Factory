@@ -49,4 +49,4 @@ podman run --rm --network=host \
   abacus_opensource:3.9.0.27-force-avx512 bash /tmp/run_tests.sh
 ```
 
-已提交日志：integration 10/10；module 227/241（14 fail）。详细结果与失败清单见[发布说明](../../docs/releases/ABACUS_3.9.0.27.md)。
+已提交日志：integration 10/10；module 232/238（6 fail，上游/依赖限制）。Harness 已跳过假二进制并分级超时/截断日志。详细结果与失败清单见[发布说明](../../docs/releases/ABACUS_3.9.0.27.md)。

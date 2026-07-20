@@ -23,19 +23,28 @@
 
 ## ABACUS 3.9.0.27：Module unit tests 部分失败
 
-已入库 [abacus-module-test.log](../spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus-module-test.log)：227/241 passed，14 failed。主要类别：
+已入库 [abacus-module-test.log](../spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus-module-test.log)：232/238 passed，6 failed。主要类别（均为上游/依赖限制，非 harness 假失败）：
 
-- `INPUT` / `KPT` / `STRU`：非 gtest 可执行文件（rc=127），不应当作单元测试二进制。
-- `MODULE_HSOLVER_*`（`LCAO`、`cg`、`dav*`）：runner 默认 `timeout 30` 超时（rc=124）。
 - `MODULE_HSOLVER_LCAO_PEXSI`：PEXSI 与参考差值超阈值。
-- `MODULE_ESOLVER_esolver_dp_test` / `test_deepks`：DeePMD TensorFlow 后端未构建或 DeePKS 相关失败。
+- `MODULE_ESOLVER_esolver_dp_test` / `test_deepks`：DeePMD TensorFlow 后端未构建或 DeePKS 相关失败（本轨不重建 `deepmdkit+tensorflow`）。
 - `MODULE_BASE_*`：`clebsch_gordan`、`cubic_spline`（assert abort）、`matrix3` 数值/断言失败。
+
+Harness 已修复项（不再计入失败）：跳过 `INPUT`/`KPT`/`STRU` 假二进制；`HSolver`/`dav`/`cg` 分级超时 120s；失败输出头尾截断（避免单测刷屏撑爆日志）。
 
 Integration（`abacus_run_integration_tests.sh`）仍为 10/10。完整清单见 [ABACUS 3.9.0.27 发布说明](releases/ABACUS_3.9.0.27.md)。
 
-## ABACUS 3.10.1：Module unit tests BLOCKED
+## ABACUS 3.10.1：Module unit tests 部分失败
 
-现有镜像 concrete spec 为 `abacus@3.10.1-lts tests=false`，无 `share/abacus/tests` / `MODULE_*` 二进制。证据日志标记 Status=BLOCKED；需以 `+tests` 重建 OCI 后才能补跑。见 [abacus-module-test.log](../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-module-test.log) 与 [发布说明](releases/ABACUS_3.10.1.md)。
+已入库 [abacus-module-test.log](../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-module-test.log)：213/221 passed，8 failed（spec 含 `+tests`，OCI digest `d096573b…`）。主要类别：
+
+- `base_matrix3` / `clebsch_gordan_coeff_test` / `cubic_spline` / `real_gaunt_table` / `sphbes_radials`：数值或 assertion 失败（`cubic_spline` 为 abort）。
+- `basis_pw_k_serial`：`PWBasisKTEST.SetupTransform` segfault（rc=139）。
+- `esolver_dp_test`：DeePMD TensorFlow 后端未构建后 segfault（本轨不重建 TF）。
+- `HSolver_LCAO_PEXSI`：PEXSI 与参考差值超阈值。
+
+说明：曾入库的 ~14MB module 日志由失败用例 `real_gaunt_table` 的 gtest 刷屏造成；runner 已截断失败输出，本地历史中的巨 blob 已剔除。原 `HSolver_cg` 30s 超时在分级超时后已通过。
+
+Integration Autotest 仍为 348/356。完整清单见 [ABACUS 3.10.1 发布说明](releases/ABACUS_3.10.1.md)。
 
 ## ABACUS 3.10.1：Integration Autotest 8 项失败
 
