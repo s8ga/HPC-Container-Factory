@@ -2,12 +2,13 @@
    Expects plan_context keys: spack_env_name, spack_repo_scope, spack_image_repos.
    Does not COPY/clone sources — application templates must stage image_path first.
 
-   STATUS: NOT wired into any shipped app Dockerfile.j2. Image custom repos today
-   still come from per-env templates + template_vars (e.g. cp2k_branch /
-   cp2k_dev_repo_path). Keep this partial as an optional merge-guardrail only. #}
+   STATUS: Wired into ABACUS opensource Dockerfile.j2 (pilot). Other shipped apps
+   still register image custom repos via per-env templates + template_vars
+   (e.g. cp2k_branch / cp2k_dev_repo_path) until migrated. #}
 {% if spack_image_repos %}
 RUN set -euo pipefail; \
-{%- for repo in spack_image_repos %}
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} {{ repo.image_path }}{% if not loop.last %} && \{% endif %}
-{%- endfor %}
+{% for repo in spack_image_repos %}
+    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} {{ repo.image_path }}{% if not loop.last %} && \{% endif %}{{ "" }}
+{% endfor %}
+
 {% endif %}

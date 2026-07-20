@@ -3,8 +3,8 @@
 Dual-write must stay in sync: when a git ``custom_repos`` entry's branch / url /
 sparse_path is also exposed via ``template_vars`` (e.g. ``cp2k_branch``,
 ``cp2k_dev_repo_path``), both sides must match and the rendered Dockerfile must
-contain those values. Prefer a single source later; until image-repos wiring
-lands, tests enforce the sync.
+contain those values. ABACUS opensource wires ``spack_image_repos`` for image
+registration; other apps may still hand-write ``spack repo add`` until migrated.
 """
 
 from __future__ import annotations
@@ -462,6 +462,51 @@ def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
     assert "/opt/s8ga-spack-packages/spack_repo/s8_overrides" in rendered
     assert "/opt/spack-env-file/repos/" not in rendered
     assert "abacus_run_integration_tests.sh" in rendered
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    [
+        "abacus_opensource-3.9.0.27-force-avx512",
+        "abacus_opensource-3.10.1-force-avx512",
+    ],
+)
+def test_abacus_dockerfile_wires_spack_image_repos_partial(env_name: str) -> None:
+    """ABACUS pilot: image repos come from plan partial, not handwritten dual add."""
+    env_dir = SPACK_ENVS_DIR / env_name
+    src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
+    assert "{% include 'partials/spack_image_repos.j2' %}" in src
+    # Sparse clone may still use template_vars paths; repo add must not.
+    assert '/opt/s8ga-spack-packages/{{ s8ga_abacus_repo_path }}' not in src
+    assert '/opt/s8ga-spack-packages/{{ s8ga_overrides_repo_path }}' not in src
+
+    spec = load_environment_spec(env_dir)
+    plan = build_spack_environment_plan(spec)
+    rendered = _render_env_dockerfile(env_dir)
+
+    assert plan.env_name == "abacus-env"
+    assert plan.image.scope_flag() == "env:abacus-env"
+    assert [r.image_path for r in plan.image.repos] == [
+        "/opt/s8ga-spack-packages/spack_repo/abacus",
+        "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
+    ]
+
+    abacus_add = (
+        "spack -e abacus-env repo add --scope env:abacus-env "
+        "/opt/s8ga-spack-packages/spack_repo/abacus"
+    )
+    overrides_add = (
+        "spack -e abacus-env repo add --scope env:abacus-env "
+        "/opt/s8ga-spack-packages/spack_repo/s8_overrides"
+    )
+    assert abacus_add in rendered
+    assert overrides_add in rendered
+    assert rendered.count(abacus_add) == 1
+    assert rendered.count(overrides_add) == 1
+    assert rendered.index(abacus_add) < rendered.index(overrides_add)
+    # Sparse clone staging remains in the per-env template.
+    assert "git sparse-checkout set" in rendered
+    assert "s8ga-spack-packages" in rendered
 
 
 def _cp2k_git_repo(spec: EnvironmentSpec) -> CustomRepo | None:

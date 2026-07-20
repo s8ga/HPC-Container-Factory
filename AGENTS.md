@@ -72,9 +72,10 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 
 - `method: spack|no_spack` in env.yaml — discriminator for build mode (default: spack)
 - **SpackEnvironmentPlan**: reliable contract for **assets** (prepare/register/mirror scripts).
-  Image-side custom repos are still driven by **per-env Dockerfile.j2 + `template_vars`**
-  today; `templates/partials/spack_image_repos.j2` exists but is **not** wired into shipped
-  app templates (do not assume plan alone registers image repos).
+  Image-side custom repos: ABACUS opensource Dockerfiles include
+  `templates/partials/spack_image_repos.j2` (plan-driven `custom_repos[].image_path`);
+  other apps still use **per-env Dockerfile.j2 + `template_vars`** handwritten
+  `spack repo add` lines (do not assume plan alone registers image repos for every env).
 - `mirror_scope` is intentionally fixed to **site** in the plan (not configurable from
   env.yaml). Custom `repo_scope` must not leak into `spack mirror add --scope`.
 - `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars); opensource commit-pin clones still run a non-comment `git merge-base --is-ancestor` check against `origin/{{ cp2k_branch }}`
@@ -84,8 +85,8 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   and `repo_scope: site`). Do not document “every pipeline / every env” as identical.
 - Custom repos for assets are fetched before environment creation, then registered per
   `spack.assets.repo_scope` (often `env:<name>` so overrides beat `repos.builtin.commit`).
-  Image Dockerfiles still emit their own `spack repo add` lines until the image-repos partial
-  is wired.
+  ABACUS opensource image Dockerfiles wire `spack_image_repos`; other apps still emit
+  their own `spack repo add` lines until migrated.
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
