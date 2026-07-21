@@ -4,6 +4,10 @@
 Checks:
 - CP2K: ``template_vars.cp2k_branch`` / ``cp2k_dev_repo_path`` vs CP2K git
   ``custom_repos`` (and Dockerfile usage).
+- CP2K force-avx512: when ``template_vars.force_avx512_repo_path`` is set,
+  require a matching s8ga ``custom_repos`` entry whose ``sparse_path`` and
+  ``image_path`` agree (Dockerfile still stages via the template var until
+  ``spack_image_repos`` is wired for CP2K).
 - s8ga: when either ``template_vars.s8ga_repo_commit`` or any s8ga git
   ``custom_repos[].commit`` is present, both sides must exist and match.
   Envs with s8ga repos but no commit pin on either side are skipped (Track B
@@ -24,6 +28,8 @@ DUAL_WRITE_FIELDS = (
 )
 
 S8GA_REPO_COMMIT_KEY = "s8ga_repo_commit"
+FORCE_AVX512_REPO_PATH_KEY = "force_avx512_repo_path"
+S8GA_IMAGE_ROOT = "/opt/s8ga-spack-packages"
 
 
 def _environment_dirs(project_root: Path) -> list[Path]:
@@ -154,6 +160,100 @@ def _check_cp2k_dual_write(
     return errors
 
 
+def _normalize_repo_path(path: str) -> str:
+    return path.strip().rstrip("/")
+
+
+def _expected_s8ga_image_path(force_path: str) -> str:
+    return f"{S8GA_IMAGE_ROOT}/{_normalize_repo_path(force_path).lstrip('/')}"
+
+
+def _s8ga_repos_for_force_path(spec: object, force_path: str) -> list[object]:
+    """Prefer sparse_path match; fall back to s8_overrides identity."""
+    s8ga_repos = _s8ga_git_repos(spec)
+    exact = [
+        repo
+        for repo in s8ga_repos
+        if _normalize_repo_path(repo.sparse_path or "")
+        == _normalize_repo_path(force_path)
+    ]
+    if exact:
+        return exact
+    return [
+        repo
+        for repo in s8ga_repos
+        if (repo.namespace or "").lower() == "s8_overrides"
+        or _normalize_repo_path(repo.sparse_path or "").endswith("s8_overrides")
+    ]
+
+
+def _check_force_avx512_image_path(
+    *,
+    env_name: str,
+    spec: object,
+    dockerfile_text: str,
+) -> list[str]:
+    """Keep force_avx512_repo_path dual-write aligned with plan image_path.
+
+    CP2K force-avx512 Dockerfiles still clone/register via
+    ``{{ force_avx512_repo_path }}``; ``custom_repos[].image_path`` is the
+    plan-side SoT for a future ``spack_image_repos`` migration. Without this
+    check, ``image_path`` can drift unnoticed (dead config).
+    """
+    if FORCE_AVX512_REPO_PATH_KEY not in spec.template_vars:
+        return []
+
+    errors: list[str] = []
+    force_path = spec.template_vars[FORCE_AVX512_REPO_PATH_KEY]
+    if not isinstance(force_path, str) or not force_path.strip():
+        errors.append(
+            f"{env_name}: template_vars.{FORCE_AVX512_REPO_PATH_KEY} must be "
+            "a non-empty string"
+        )
+        return errors
+
+    if not _uses_template_var(dockerfile_text, FORCE_AVX512_REPO_PATH_KEY):
+        errors.append(
+            f"{env_name}: Dockerfile.j2 does not use "
+            f"template_vars.{FORCE_AVX512_REPO_PATH_KEY}"
+        )
+
+    matches = _s8ga_repos_for_force_path(spec, force_path)
+    if not matches:
+        errors.append(
+            f"{env_name}: template_vars.{FORCE_AVX512_REPO_PATH_KEY}="
+            f"{force_path!r} but no matching s8ga git custom_repos entry found"
+        )
+        return errors
+
+    expected_image = _expected_s8ga_image_path(force_path)
+    for repo in matches:
+        identity = repo.namespace or repo.url or "<unknown>"
+        sparse = repo.sparse_path or ""
+        if _normalize_repo_path(sparse) != _normalize_repo_path(force_path):
+            errors.append(
+                f"{env_name}: template_vars.{FORCE_AVX512_REPO_PATH_KEY}="
+                f"{force_path!r} != custom_repos[{identity!r}].sparse_path="
+                f"{sparse!r}"
+            )
+        if not repo.image_path:
+            errors.append(
+                f"{env_name}: custom_repos[{identity!r}] missing image_path "
+                f"(expected {expected_image!r} from "
+                f"template_vars.{FORCE_AVX512_REPO_PATH_KEY})"
+            )
+            continue
+        if _normalize_repo_path(repo.image_path) != _normalize_repo_path(
+            expected_image
+        ):
+            errors.append(
+                f"{env_name}: custom_repos[{identity!r}].image_path="
+                f"{repo.image_path!r} != expected {expected_image!r} from "
+                f"template_vars.{FORCE_AVX512_REPO_PATH_KEY}"
+            )
+    return errors
+
+
 def _check_s8ga_repo_commit(*, env_name: str, spec: object) -> list[str]:
     """When either side pins s8ga, require both sides present and equal."""
     s8ga_repos = _s8ga_git_repos(spec)
@@ -211,6 +311,13 @@ def check_project(project_root: Path) -> list[str]:
         dockerfile_text = _dockerfile_text(env_dir)
         errors.extend(
             _check_cp2k_dual_write(
+                env_name=env_dir.name,
+                spec=spec,
+                dockerfile_text=dockerfile_text,
+            )
+        )
+        errors.extend(
+            _check_force_avx512_image_path(
                 env_name=env_dir.name,
                 spec=spec,
                 dockerfile_text=dockerfile_text,

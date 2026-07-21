@@ -633,3 +633,145 @@ def test_dual_write_guard_accepts_matching_s8ga_commit(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dual-write guard passed" in result.stdout
+
+
+def _cp2k_force_avx512_env_yaml(
+    *,
+    force_path: str = "spack_repo/s8_overrides",
+    image_path: str | None = "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
+    include_image_path: bool = True,
+) -> str:
+    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    image_line = ""
+    if include_image_path:
+        image_line = f"      image_path: {image_path}\n"
+    return (
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.0'\n"
+        "  env_name: cp2k-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: support/v2026.2\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
+        "    - url: https://github.com/s8ga/s8ga-spack-packages.git\n"
+        "      branch: master\n"
+        f"      commit: {pin}\n"
+        f"      sparse_path: {force_path}\n"
+        "      namespace: s8_overrides\n"
+        f"{image_line}"
+        "template_vars:\n"
+        "  cp2k_branch: support/v2026.2\n"
+        "  cp2k_dev_repo_path: tools/spack/spack_repo/cp2k_dev\n"
+        f"  force_avx512_repo_path: {force_path}\n"
+        f"  s8ga_repo_commit: {pin}\n"
+    )
+
+
+def _cp2k_force_avx512_dockerfile() -> str:
+    return (
+        "RUN git clone -b {{ cp2k_branch }} "
+        "https://github.com/cp2k/cp2k.git /opt/cp2k\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo\n"
+        "RUN git sparse-checkout set \"{{ force_avx512_repo_path }}\"\n"
+        "RUN spack repo add "
+        '"/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}"\n'
+    )
+
+
+def test_dual_write_guard_accepts_matching_force_avx512_image_path(
+    tmp_path: Path,
+) -> None:
+    _write_synth_env(
+        tmp_path,
+        env_yaml=_cp2k_force_avx512_env_yaml(),
+        dockerfile=_cp2k_force_avx512_dockerfile(),
+        name="cp2k-force-image-ok",
+    )
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "dual-write guard passed" in result.stdout
+
+
+def test_dual_write_guard_rejects_force_avx512_image_path_drift(
+    tmp_path: Path,
+) -> None:
+    _write_synth_env(
+        tmp_path,
+        env_yaml=_cp2k_force_avx512_env_yaml(
+            image_path="/opt/s8ga-spack-packages/spack_repo/WRONG",
+        ),
+        dockerfile=_cp2k_force_avx512_dockerfile(),
+        name="cp2k-force-image-drift",
+    )
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "image_path" in result.stdout
+    assert "WRONG" in result.stdout
+    assert "force_avx512_repo_path" in result.stdout
+
+
+def test_dual_write_guard_rejects_missing_force_avx512_image_path(
+    tmp_path: Path,
+) -> None:
+    _write_synth_env(
+        tmp_path,
+        env_yaml=_cp2k_force_avx512_env_yaml(include_image_path=False),
+        dockerfile=_cp2k_force_avx512_dockerfile(),
+        name="cp2k-force-image-missing",
+    )
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "missing image_path" in result.stdout
+    assert "force_avx512_repo_path" in result.stdout
+
+
+def test_dual_write_guard_rejects_unused_force_avx512_repo_path(
+    tmp_path: Path,
+) -> None:
+    dockerfile = (
+        "RUN git clone -b {{ cp2k_branch }} "
+        "https://github.com/cp2k/cp2k.git /opt/cp2k\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo\n"
+        "# {{ force_avx512_repo_path }} comment-only must not count\n"
+        "RUN spack repo add /opt/s8ga-spack-packages/spack_repo/s8_overrides\n"
+    )
+    _write_synth_env(
+        tmp_path,
+        env_yaml=_cp2k_force_avx512_env_yaml(),
+        dockerfile=dockerfile,
+        name="cp2k-force-path-unused",
+    )
+    script = PROJECT_ROOT / "scripts" / "check-dual-write.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--project-root", str(tmp_path)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "force_avx512_repo_path" in result.stdout
+    assert "does not use" in result.stdout

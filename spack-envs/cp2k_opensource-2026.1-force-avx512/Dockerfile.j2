@@ -12,6 +12,7 @@ ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 # ============================================================================
 # STAGE 1: BUILDER-INSTALLED - CP2K compilation environment before cleanup
 # ============================================================================
+# builder_base_image comes from env.yaml images.builder (prefer tag@sha256:…).
 FROM {{ builder_base_image }} AS builder-installed
 
 LABEL stage="builder-installed" \

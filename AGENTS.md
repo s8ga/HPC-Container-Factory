@@ -165,6 +165,10 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
   guard (`scripts/check-dual-write.py`) fails when either
   `template_vars.s8ga_repo_commit` or s8ga `custom_repos[].commit` is set and
   the two sides disagree or one side is missing (neither side pinned → skip).
+  For CP2K force-avx512 (until `spack_image_repos` is wired), it also requires
+  `template_vars.force_avx512_repo_path` to match the s8ga
+  `custom_repos[].sparse_path` / `image_path`
+  (`/opt/s8ga-spack-packages/<force_avx512_repo_path>`) and Dockerfile usage.
 - **Buildcache signing**: producer push is `--unsigned` by design for a
   single-tenant trusted host (local flock-owned cache, same-host read-only
   consumers). Not a multi-tenant/remote trust boundary; GPG signing is deferred.

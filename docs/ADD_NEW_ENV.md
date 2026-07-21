@@ -32,7 +32,10 @@ method: spack                  # 或 no_spack
 
 # ── Container Images ──
 images:
-  builder: debian:trixie        # 构建阶段基础镜像
+  # Prefer tag@sha256:… pins for reproducible FROM (floating tags drift).
+  # Example authority pins: cp2k_opensource-2026.2-force-avx512.
+  # Refresh: podman pull <tag> && podman image inspect <tag> --format '{{.Digest}}'
+  builder: debian:trixie        # 构建阶段基础镜像（可写 debian:trixie@sha256:…）
   runtime: debian:trixie-slim   # 运行阶段基础镜像
 
 # ── Mirror Builder ──
@@ -53,6 +56,9 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
 
 **关键点**：
 - `images.builder` / `images.runtime` → `{{ builder_base_image }}` / `{{ runtime_base_image }}`
+- **基础镜像 digest pin**：浮动 tag 会随上游滚动；权威环境应写成
+  `debian:trixie@sha256:<digest>`（CP2K opensource force-avx512 的 2026.1 / 2026.2 已示范）。
+  刷新：`podman pull debian:trixie && podman image inspect debian:trixie --format '{{.Digest}}'`
 - `spack.env_name` → `SpackEnvironmentPlan` → 模板与 assets 共用
 - `mirror_builder.system_pkgs` → 容器运行时安装（不是 bake 进镜像）
 - `template_vars` → 如 `cp2k_branch`、`amdgpu_targets`
@@ -63,6 +69,10 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
   - 若同一 git repo 的 branch/url 也出现在 `template_vars`（如 `cp2k_branch`），
     **短期双写必须同步**；ABACUS opensource 的 image 注册已走 `spack_image_repos`
     partial（`custom_repos[].image_path`）；其他应用仍可能手写 `spack repo add`
+  - CP2K force-avx512：Dockerfile 仍用 `force_avx512_repo_path` 时，
+    `custom_repos[].image_path` 必须等于
+    `/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}`（由
+    `scripts/check-dual-write.py` 守卫，避免 `image_path` 死配置）
 
 ### Step 3: 修改 `spack-env-file/spack.yaml`
 
