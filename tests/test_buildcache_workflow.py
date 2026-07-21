@@ -205,13 +205,31 @@ def test_publisher_script_pushes_indexes_then_checks_explicit_non_external_hashe
     assert "spec.installed" in script
     assert '"${installed_hashes[@]}"' in script
     assert '"${spec_hashes[@]}"' in script
-    assert "HPC_CF_PUSHED_SPEC_COUNT=" in script
     assert "HPC_CF_PARTIAL_PUBLISH=1" in script
     assert (
         "spack buildcache update-index "
         "file:///work/assets/spack-buildcache"
     ) in script
     assert "--mirror-url file:///work/assets/spack-buildcache" in script
+
+
+def test_publisher_script_splits_planned_and_pushed_spec_counts() -> None:
+    """Pushed count must follow a successful push; planned precedes it."""
+    from hpc_cf.buildcache_ops import build_publish_script
+
+    script = build_publish_script(
+        env_name="cp2k-env",
+        store_path="/work/assets/spack-buildcache",
+    )
+    planned = script.index("HPC_CF_PLANNED_SPEC_COUNT=")
+    push = script.index("buildcache push")
+    pushed = script.index("HPC_CF_PUSHED_SPEC_COUNT=")
+    index = script.index("buildcache update-index")
+    assert planned < push < pushed < index
+    # With set -e, a failed push exits before the PUSHED marker.
+    assert script.startswith("set -e\n")
+    assert script.count("HPC_CF_PUSHED_SPEC_COUNT=") == 1
+    assert script.count("HPC_CF_PLANNED_SPEC_COUNT=") == 1
 
 
 def test_producer_install_soft_fails_to_keep_partial_image() -> None:

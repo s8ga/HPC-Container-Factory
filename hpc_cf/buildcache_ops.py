@@ -40,7 +40,7 @@ def _installed_non_external_hashes(env_name: str) -> str:
         '    echo "No installed non-external concrete specs to push" >&2\n'
         "    exit 1\n"
         "fi\n"
-        'echo "HPC_CF_PUSHED_SPEC_COUNT=${#installed_hashes[@]}"\n'
+        'echo "HPC_CF_PLANNED_SPEC_COUNT=${#installed_hashes[@]}"\n'
     )
 
 
@@ -113,6 +113,7 @@ def build_publish_script(
         "fi\n"
         f"spack -e {env} buildcache push --unsigned --fail-fast {path} "
         '"${installed_hashes[@]}"\n'
+        'echo "HPC_CF_PUSHED_SPEC_COUNT=${#installed_hashes[@]}"\n'
         'echo "HPC_CF_BUILDCACHE_STEP=update-index"\n'
         f"spack buildcache update-index {url}\n"
         'echo "HPC_CF_BUILDCACHE_STEP=check"\n'
