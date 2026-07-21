@@ -15,10 +15,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 {% include 'partials/locale_c_utf8.j2' %}
 
-# APT mirror
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+{% if apt_mirror and apt_mirror != 'official' %}
+# APT mirror (template_vars.apt_mirror; empty/official → Debian upstream)
+RUN sed -i 's|deb.debian.org|{{ apt_mirror }}|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|{{ apt_mirror }}|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|{{ apt_mirror }}/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+{% endif %}
 
 # User build script (runs in builder stage)
 RUN {{ script | trim | replace("\n", " && \\\n    ") }}
@@ -43,11 +45,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 {% include 'partials/locale_c_utf8.j2' %}
 
-# APT mirror + runtime packages
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true && \
-    apt-get update -qq && apt-get install -y --no-install-recommends \
+{% if apt_mirror and apt_mirror != 'official' %}
+# APT mirror (template_vars.apt_mirror; empty/official → Debian upstream)
+RUN sed -i 's|deb.debian.org|{{ apt_mirror }}|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
+    sed -i 's|deb.debian.org|{{ apt_mirror }}|g' /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i 's|security.debian.org|{{ apt_mirror }}/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+{% endif %}
+
+# Runtime packages
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     ca-certificates bash python3 curl tar \
 {% for p in runtime_extra_pkgs %}    {{ p }} \
 {% endfor %}    && apt-get clean && rm -rf /var/lib/apt/lists/*

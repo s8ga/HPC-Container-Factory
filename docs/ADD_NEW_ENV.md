@@ -61,7 +61,7 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
   刷新：`podman pull debian:trixie && podman image inspect debian:trixie --format '{{.Digest}}'`
 - `spack.env_name` → `SpackEnvironmentPlan` → 模板与 assets 共用
 - `mirror_builder.system_pkgs` → 容器运行时安装（不是 bake 进镜像）
-- `template_vars` → 如 `cp2k_branch`、`amdgpu_targets`
+- `template_vars` → 如 `cp2k_branch`、`amdgpu_targets`；`apt_mirror` 默认 `mirrors.ustc.edu.cn`，设为空或 `official` 则保留 Debian 官方源
 - `custom_repos`：
   - **git**: 有 `url` → sparse clone + register
   - **local**: 有 `path` → 直接 register（相对 `spack-env-file/`）

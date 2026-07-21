@@ -19,6 +19,10 @@ IMAGE_SPACK_SETUP_SCRIPT = f"{IMAGE_SPACK_ROOT}/share/spack/setup-env.sh"
 # (Previously scattered across env.py, spack_ops.py, template.py.)
 DEFAULT_SPACK_VERSION = "1.1.1"
 
+# Default Debian APT mirror host for Dockerfile templates (template_vars.apt_mirror).
+# Empty string or "official" skips mirror rewrite and keeps Debian upstream.
+DEFAULT_APT_MIRROR = "mirrors.ustc.edu.cn"
+
 APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"
 APPTAINER_LOCAL_PREFIX = TOOLS_DIR / "apptainer"
 

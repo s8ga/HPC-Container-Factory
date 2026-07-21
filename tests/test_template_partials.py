@@ -6,7 +6,9 @@ import hashlib
 import re
 from pathlib import Path
 
-from hpc_cf.config import SPACK_ENVS_DIR, TEMPLATES_DIR
+import pytest
+
+from hpc_cf.config import DEFAULT_APT_MIRROR, SPACK_ENVS_DIR, TEMPLATES_DIR
 from hpc_cf.template import build_context, render_template, select_template
 
 PARTIALS_DIR = TEMPLATES_DIR / "partials"
@@ -201,3 +203,142 @@ def test_pilot_build_only_skips_runtime() -> None:
     assert "AS runtime" not in rendered
     assert "spack env create cp2k-env" in rendered
     assert "local-mirror" not in rendered
+
+
+def test_build_context_defaults_apt_mirror() -> None:
+    """Unset apt_mirror becomes USTC default in build_context."""
+    tpl = select_template(PILOT_ENV)
+    ctx = build_context(
+        use_mirror=True,
+        build_only=False,
+        app_version=PILOT_ENV,
+        template_path=tpl,
+    )
+    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR
+
+
+def test_pilot_render_uses_default_apt_mirror() -> None:
+    rendered = _render_pilot(use_mirror=True, build_only=False)
+    assert "deb.debian.org|mirrors.ustc.edu.cn" in rendered
+    assert "security.debian.org|mirrors.ustc.edu.cn/debian-security" in rendered
+
+
+def _render_apt_partial(
+    tmp_path: Path, name: str, *, apt_mirror: str
+) -> str:
+    """Render a single APT partial via ChoiceLoader (tmp wrapper + global partials)."""
+    stub = tmp_path / "Dockerfile.j2"
+    stub.write_text(f"{{% include 'partials/{name}' %}}\n", encoding="utf-8")
+    return render_template(
+        stub,
+        {"apt_mirror": apt_mirror, "runtime_extra_apt_pkgs": []},
+    )
+
+
+@pytest.mark.parametrize(
+    "partial",
+    ("builder_apt_debian.j2", "runtime_apt_debian.j2"),
+)
+def test_apt_partial_default_ustc_mirror(tmp_path: Path, partial: str) -> None:
+    out = _render_apt_partial(tmp_path, partial, apt_mirror=DEFAULT_APT_MIRROR)
+    assert "deb.debian.org|mirrors.ustc.edu.cn" in out
+    assert "security.debian.org|mirrors.ustc.edu.cn/debian-security" in out
+
+
+@pytest.mark.parametrize(
+    "partial",
+    ("builder_apt_debian.j2", "runtime_apt_debian.j2"),
+)
+def test_apt_partial_custom_mirror(tmp_path: Path, partial: str) -> None:
+    out = _render_apt_partial(
+        tmp_path, partial, apt_mirror="mirrors.example.com"
+    )
+    assert "deb.debian.org|mirrors.example.com" in out
+    assert "mirrors.ustc.edu.cn" not in out
+
+
+@pytest.mark.parametrize(
+    "partial,skip_value",
+    [
+        ("builder_apt_debian.j2", ""),
+        ("builder_apt_debian.j2", "official"),
+        ("runtime_apt_debian.j2", ""),
+        ("runtime_apt_debian.j2", "official"),
+    ],
+)
+def test_apt_partial_empty_or_official_skips_sed(
+    tmp_path: Path, partial: str, skip_value: str
+) -> None:
+    out = _render_apt_partial(tmp_path, partial, apt_mirror=skip_value)
+    assert "sed -i" not in out
+    assert "deb.debian.org" not in out
+    assert "apt-get update" in out
+
+
+def test_nospack_dockerfile_honors_apt_mirror(tmp_path: Path) -> None:
+    """Shared no_spack template rewrites or skips APT mirror like Debian partials."""
+    import shutil
+
+    from hpc_cf.execution import ProjectLayout
+    from hpc_cf.template import resolve_build_input
+
+    layout = ProjectLayout(project_root=tmp_path)
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    shutil.copy2(
+        TEMPLATES_DIR / "Dockerfile.nospack.j2",
+        templates / "Dockerfile.nospack.j2",
+    )
+    partials = templates / "partials"
+    partials.mkdir()
+    shutil.copy2(
+        TEMPLATES_DIR / "partials" / "locale_c_utf8.j2",
+        partials / "locale_c_utf8.j2",
+    )
+
+    env_name = "nospack-apt"
+    env_dir = tmp_path / "spack-envs" / env_name
+    env_dir.mkdir(parents=True)
+
+    def _write_env(apt_block: str) -> None:
+        (env_dir / "env.yaml").write_text(
+            "schema_version: 1\nmethod: no_spack\n"
+            "images:\n  builder: debian:trixie\n  runtime: debian:trixie-slim\n"
+            "spack:\n  version: '1.1.1'\n  env_name: e\n"
+            "script: echo hi\n"
+            f"{apt_block}",
+            encoding="utf-8",
+        )
+
+    def _render(apt_block: str) -> tuple[dict, str]:
+        _write_env(apt_block)
+        resolved = resolve_build_input(env_name, None, layout=layout)
+        ctx = build_context(
+            use_mirror=False,
+            build_only=False,
+            app_version=env_name,
+            template_path=resolved.render_template,
+            resolved=resolved,
+            layout=layout,
+        )
+        out = render_template(resolved.render_template, ctx, layout=layout)
+        return ctx, out
+
+    ctx, out = _render("")
+    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR
+    assert out.count("mirrors.ustc.edu.cn") >= 2
+
+    ctx, out = _render("template_vars:\n  apt_mirror: mirrors.example.com\n")
+    assert ctx["apt_mirror"] == "mirrors.example.com"
+    assert "mirrors.example.com" in out
+    assert "mirrors.ustc.edu.cn" not in out
+
+    ctx, out = _render("template_vars:\n  apt_mirror: official\n")
+    assert ctx["apt_mirror"] == "official"
+    assert "sed -i" not in out
+    assert "deb.debian.org" not in out
+
+    ctx, out = _render('template_vars:\n  apt_mirror: ""\n')
+    assert ctx["apt_mirror"] == ""
+    assert "sed -i" not in out
+    assert "deb.debian.org" not in out

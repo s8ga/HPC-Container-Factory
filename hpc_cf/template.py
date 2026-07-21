@@ -20,7 +20,7 @@ try:
 except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install jinja2") from exc
 
-from hpc_cf.config import DEFAULT_SPACK_VERSION
+from hpc_cf.config import DEFAULT_APT_MIRROR, DEFAULT_SPACK_VERSION
 from hpc_cf.env import list_available_envs
 from hpc_cf.environment import (
     BuildMethod,
@@ -486,6 +486,10 @@ def build_context(
         context["runtime_extra_pkgs"] = (
             list(spec.runtime.extra_pkgs) if spec is not None else []
         )
+
+    # APT mirror for Debian templates; unset → USTC. Empty/"official" skip sed.
+    if "apt_mirror" not in context or context["apt_mirror"] is None:
+        context["apt_mirror"] = DEFAULT_APT_MIRROR
 
     logger.debug("Build context keys: %s", list(context.keys()))
     return context
