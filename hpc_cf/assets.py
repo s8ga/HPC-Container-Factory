@@ -6,7 +6,7 @@ Orchestrates ``Container`` and ``SpackOps`` to replace:
   - ``scripts/prepare-bootstrap-cache.sh``
   - ``scripts/spack-common.sh`` (streamline_dispatch)
 
-The CLI builds an :class:`~hpc_cf.workflows.AssetsRequest` and calls
+The CLI builds an :class:`~hpc_cf.requests.AssetsRequest` and calls
 :class:`~hpc_cf.workflows.AssetsService`; this module owns the domain steps.
 """
 
@@ -18,6 +18,7 @@ from pathlib import Path
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
+from hpc_cf.requests import AssetsRequest
 from hpc_cf.spack_ops import (
     EnvConfig,
     SpackConfig,
@@ -27,7 +28,6 @@ from hpc_cf.spack_ops import (
 )
 from hpc_cf.template import detect_non_host_network
 from hpc_cf.validation import BootstrapContract, is_nonempty_spack_lock
-from hpc_cf.workflows import AssetsRequest
 
 logger = logging.getLogger(__name__)
 
