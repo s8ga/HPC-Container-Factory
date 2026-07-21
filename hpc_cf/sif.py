@@ -247,6 +247,74 @@ def _find_def_template(
 # ── Build helpers ────────────────────────────────────────────────────────
 
 
+def _oci_tar_id_sidecar(tar_path: Path) -> Path:
+    """Sidecar path recording the OCI image Id that produced *tar_path*."""
+    return tar_path.with_name(tar_path.name + ".id")
+
+
+def _read_oci_tar_image_id(tar_path: Path) -> str | None:
+    sidecar = _oci_tar_id_sidecar(tar_path)
+    if not sidecar.is_file():
+        return None
+    recorded = sidecar.read_text(encoding="utf-8").strip()
+    return recorded or None
+
+
+def _write_oci_tar_image_id(tar_path: Path, image_id: str) -> None:
+    sidecar = _oci_tar_id_sidecar(tar_path)
+    sidecar.write_text(f"{image_id}\n", encoding="utf-8")
+
+
+def inspect_local_image_id(
+    engine: str,
+    image_ref: str,
+    *,
+    cwd: Path | None = None,
+) -> str | None:
+    """Return the local image Id for *image_ref*, or None if missing."""
+    try:
+        result = subprocess.run(
+            [engine, "image", "inspect", "--format", "{{.Id}}", image_ref],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    image_id = result.stdout.strip()
+    return image_id or None
+
+
+def select_engine_with_image(
+    image_ref: str,
+    *,
+    cwd: Path | None = None,
+) -> tuple[str, str]:
+    """Pick podman/docker that actually has *image_ref*.
+
+    Returns ``(engine, image_id)``. Prefers podman when both have the image.
+    """
+    candidates = [cmd for cmd in ("podman", "docker") if check_command_exists(cmd)]
+    if not candidates:
+        raise RuntimeError(
+            "Neither podman nor docker found. "
+            "Install one to export OCI images for SIF conversion."
+        )
+
+    tried: list[str] = []
+    for engine in candidates:
+        image_id = inspect_local_image_id(engine, image_ref, cwd=cwd)
+        if image_id:
+            return engine, image_id
+        tried.append(engine)
+
+    raise RuntimeError(
+        f"Image {image_ref!r} not found locally in: {', '.join(tried)}. "
+        "Build or pull the image first, then retry build-sif."
+    )
+
+
 def build_apptainer(*, definition_file: Path, image: str, tag: str) -> None:
     if check_command_exists("apptainer"):
         tool = "apptainer"
@@ -409,22 +477,27 @@ def build_sif(
         artifacts_dir / tar_name, artifacts_dir, what="OCI tar"
     )
 
-    engine = None
-    for cmd in ("podman", "docker"):
-        if check_command_exists(cmd):
-            engine = cmd
-            break
-    if not engine:
-        raise RuntimeError(
-            "Neither podman nor docker found. "
-            "Install one to export OCI images for SIF conversion."
-        )
+    engine, image_id = select_engine_with_image(oci_ref, cwd=project_root)
+    logger.info("Using %s image Id %s for %s", engine, image_id, oci_ref)
 
-    if tar_path.exists():
-        logger.info("Reusing existing OCI tar: %s", tar_path)
+    recorded_id = _read_oci_tar_image_id(tar_path) if tar_path.exists() else None
+    if tar_path.exists() and recorded_id == image_id:
+        logger.info(
+            "Reusing existing OCI tar (image Id match): %s", tar_path
+        )
     else:
+        if tar_path.exists():
+            logger.info(
+                "OCI tar stale or missing Id sidecar "
+                "(recorded=%s, current=%s); re-exporting",
+                recorded_id,
+                image_id,
+            )
+            tar_path.unlink(missing_ok=True)
+            _oci_tar_id_sidecar(tar_path).unlink(missing_ok=True)
         logger.info("Exporting %s via %s ...", oci_ref, engine)
         run_cmd([engine, "save", "-o", str(tar_path), oci_ref], layout=root)
+        _write_oci_tar_image_id(tar_path, image_id)
 
     tar_size = _human_size(tar_path.stat().st_size)
     logger.info("OCI tar: %s (%s)", tar_path, tar_size)

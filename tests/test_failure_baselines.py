@@ -448,7 +448,9 @@ def test_build_sif_resolves_relative_output_before_stat(
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
+    image_id = "sha256:rel-output"
     (artifacts / "demo_tag.tar").write_bytes(b"oci-tar")
+    (artifacts / "demo_tag.tar.id").write_text(f"{image_id}\n", encoding="utf-8")
 
     def fake_run(
         cmd: list[str],
@@ -466,7 +468,11 @@ def test_build_sif_resolves_relative_output_before_stat(
 
     with (
         patch.object(sif_mod, "ensure_apptainer", return_value="/usr/bin/apptainer"),
-        patch.object(sif_mod, "check_command_exists", return_value=True),
+        patch.object(
+            sif_mod,
+            "select_engine_with_image",
+            return_value=("podman", image_id),
+        ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
         patch.object(sif_mod, "_find_def_template", return_value=None),
     ):
@@ -491,8 +497,12 @@ def test_build_sif_mock_contract_uses_archive_and_requested_options(
 
     layout = ProjectLayout(project_root=tmp_path)
     layout.artifacts_dir.mkdir()
+    image_id = "sha256:mock-contract"
     tar_path = layout.artifacts_dir / "demo_tag.tar"
     tar_path.write_bytes(b"oci-tar")
+    (layout.artifacts_dir / "demo_tag.tar.id").write_text(
+        f"{image_id}\n", encoding="utf-8"
+    )
     output = tmp_path / "result.sif"
     calls: list[tuple[list[str], Path | None]] = []
 
@@ -508,7 +518,11 @@ def test_build_sif_mock_contract_uses_archive_and_requested_options(
 
     with (
         patch.object(sif_mod, "ensure_apptainer", return_value="/usr/bin/apptainer"),
-        patch.object(sif_mod, "check_command_exists", side_effect=lambda c: c == "podman"),
+        patch.object(
+            sif_mod,
+            "select_engine_with_image",
+            return_value=("podman", image_id),
+        ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
         patch.object(sif_mod, "_find_def_template", return_value=None),
     ):

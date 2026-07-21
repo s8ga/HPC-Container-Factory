@@ -134,6 +134,7 @@ def test_build_sif_sanitizes_docker_tag_under_artifacts(
     layout.artifacts_dir.mkdir()
     calls: list[tuple[list[str], Path | None]] = []
     evil_tag = "../../outside"
+    image_id = "sha256:sanitize-demo"
 
     def fake_run(
         cmd: list[str],
@@ -153,7 +154,9 @@ def test_build_sif_sanitizes_docker_tag_under_artifacts(
     with (
         patch.object(sif_mod, "ensure_apptainer", return_value="/usr/bin/apptainer"),
         patch.object(
-            sif_mod, "check_command_exists", side_effect=lambda c: c == "podman"
+            sif_mod,
+            "select_engine_with_image",
+            return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
         patch.object(sif_mod, "_find_def_template", return_value=None),
@@ -170,6 +173,9 @@ def test_build_sif_sanitizes_docker_tag_under_artifacts(
     sif_path = layout.artifacts_dir / f"demo_{safe}.sif"
     assert tar_path.is_file()
     assert sif_path.is_file()
+    assert (layout.artifacts_dir / f"demo_{safe}.tar.id").read_text(
+        encoding="utf-8"
+    ).strip() == image_id
     assert not (tmp_path / "outside.tar").exists()
     assert calls[-1][1] == layout.artifacts_dir
     assert f"docker-archive://demo_{safe}.tar" in calls[-1][0]
@@ -180,13 +186,20 @@ def test_build_sif_rejects_output_outside_project_root(
 ) -> None:
     layout = ProjectLayout(project_root=tmp_path)
     layout.artifacts_dir.mkdir()
-    (layout.artifacts_dir / "demo_tag.tar").write_bytes(b"oci-tar")
+    image_id = "sha256:reject-outside"
+    tar_path = layout.artifacts_dir / "demo_tag.tar"
+    tar_path.write_bytes(b"oci-tar")
+    (layout.artifacts_dir / "demo_tag.tar.id").write_text(
+        f"{image_id}\n", encoding="utf-8"
+    )
     outside = tmp_path.parent / "escape.sif"
 
     with (
         patch.object(sif_mod, "ensure_apptainer", return_value="/usr/bin/apptainer"),
         patch.object(
-            sif_mod, "check_command_exists", side_effect=lambda c: c == "podman"
+            sif_mod,
+            "select_engine_with_image",
+            return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd"),
         patch.object(sif_mod, "_find_def_template", return_value=None),
