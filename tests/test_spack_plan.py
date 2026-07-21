@@ -3,8 +3,9 @@
 Dual-write must stay in sync: when a git ``custom_repos`` entry's branch / url /
 sparse_path is also exposed via ``template_vars`` (e.g. ``cp2k_branch``,
 ``cp2k_dev_repo_path``), both sides must match and the rendered Dockerfile must
-contain those values. ABACUS opensource wires ``spack_image_repos`` for image
-registration; other apps may still hand-write ``spack repo add`` until migrated.
+contain those values. ABACUS opensource and CP2K opensource force-avx512
+(2026.1 / 2026.2) wire ``spack_image_repos`` for image registration; other apps
+may still hand-write ``spack repo add`` until migrated.
 """
 
 from __future__ import annotations
@@ -507,6 +508,88 @@ def test_abacus_dockerfile_wires_spack_image_repos_partial(env_name: str) -> Non
     # Sparse clone staging remains in the per-env template.
     assert "git sparse-checkout set" in rendered
     assert "s8ga-spack-packages" in rendered
+
+
+@pytest.mark.parametrize(
+    ("env_name", "expected_image_paths"),
+    [
+        (
+            "cp2k_opensource-2026.1-force-avx512",
+            [
+                "/opt/spack-repo/spack_repo/cp2k_dev_repo",
+                "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
+                "/opt/spack-env-file/repos_cp2k_dev",
+                "/opt/spack-env-file/repos",
+            ],
+        ),
+        (
+            "cp2k_opensource-2026.2-force-avx512",
+            [
+                "/opt/spack-repo/spack_repo/cp2k_dev",
+                "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
+                "/opt/spack-env-file/repos",
+            ],
+        ),
+    ],
+)
+def test_cp2k_force_avx512_dockerfile_wires_spack_image_repos_partial(
+    env_name: str,
+    expected_image_paths: list[str],
+) -> None:
+    """CP2K force-avx512: image repos from plan partial; sparse clone stays local."""
+    env_dir = SPACK_ENVS_DIR / env_name
+    src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
+    assert "{% include 'partials/spack_image_repos.j2' %}" in src
+    # Sparse clone may still use force_avx512_repo_path; handwritten dual add must not.
+    assert (
+        '/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}' not in src
+    )
+    assert "repo add --scope {{ spack_repo_scope }}" not in src
+    assert "{{ cp2k_dev_repo_path }}" in src  # staging cp remains
+    assert "{{ force_avx512_repo_path }}" in src  # sparse-checkout remains
+
+    spec = load_environment_spec(env_dir)
+    plan = build_spack_environment_plan(spec)
+    rendered = _render_env_dockerfile(env_dir)
+
+    assert plan.env_name == "cp2k-env"
+    assert plan.image.scope_flag() == "env:cp2k-env"
+    assert [r.image_path for r in plan.image.repos] == expected_image_paths
+
+    force_path = spec.template_vars["force_avx512_repo_path"]
+    assert (
+        f"/opt/s8ga-spack-packages/{force_path}"
+        == "/opt/s8ga-spack-packages/spack_repo/s8_overrides"
+    )
+    s8ga = next(r for r in spec.spack.custom_repos if r.namespace == "s8_overrides")
+    assert s8ga.image_path == f"/opt/s8ga-spack-packages/{force_path}"
+    assert s8ga.sparse_path == force_path
+
+    last = -1
+    terminators = frozenset("/ \"'\n\t&")
+    for path in expected_image_paths:
+        prefix = f"spack -e cp2k-env repo add --scope env:cp2k-env {path}"
+        matches: list[int] = []
+        start = 0
+        while True:
+            cand = rendered.find(prefix, start)
+            if cand < 0:
+                break
+            end = cand + len(prefix)
+            if end >= len(rendered) or rendered[end] in terminators:
+                matches.append(cand)
+            start = cand + 1
+        assert len(matches) == 1, (
+            f"{env_name}: expected one bounded repo add for {path!r}, "
+            f"found {len(matches)}"
+        )
+        assert matches[0] > last
+        last = matches[0]
+
+    # Sparse clone + cp2k_dev staging remain in the per-env template.
+    assert "git sparse-checkout set" in rendered
+    assert "s8ga-spack-packages" in rendered
+    assert "cp -a /opt/cp2k/" in rendered
 
 
 def _cp2k_git_repo(spec: EnvironmentSpec) -> CustomRepo | None:

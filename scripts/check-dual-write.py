@@ -6,8 +6,8 @@ Checks:
   ``custom_repos`` (and Dockerfile usage).
 - CP2K force-avx512: when ``template_vars.force_avx512_repo_path`` is set,
   require a matching s8ga ``custom_repos`` entry whose ``sparse_path`` and
-  ``image_path`` agree (Dockerfile still stages via the template var until
-  ``spack_image_repos`` is wired for CP2K).
+  ``image_path`` agree (Dockerfile sparse-clones via the template var;
+  2026.1 / 2026.2 register via ``spack_image_repos`` / ``image_path``).
 - s8ga: when either ``template_vars.s8ga_repo_commit`` or any s8ga git
   ``custom_repos[].commit`` is present, both sides must exist and match.
   Envs with s8ga repos but no commit pin on either side are skipped (Track B
@@ -195,10 +195,10 @@ def _check_force_avx512_image_path(
 ) -> list[str]:
     """Keep force_avx512_repo_path dual-write aligned with plan image_path.
 
-    CP2K force-avx512 Dockerfiles still clone/register via
+    CP2K force-avx512 Dockerfiles sparse-clone via
     ``{{ force_avx512_repo_path }}``; ``custom_repos[].image_path`` is the
-    plan-side SoT for a future ``spack_image_repos`` migration. Without this
-    check, ``image_path`` can drift unnoticed (dead config).
+    plan-side SoT for ``spack_image_repos`` registration (2026.1 / 2026.2)
+    and must stay aligned so staging and registration cannot drift.
     """
     if FORCE_AVX512_REPO_PATH_KEY not in spec.template_vars:
         return []

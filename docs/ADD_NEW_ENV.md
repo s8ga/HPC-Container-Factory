@@ -67,9 +67,10 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
   - **local**: 有 `path` → 直接 register（相对 `spack-env-file/`）
   - **phases**: `both`（默认）/ `assets` / `image`（例如仅镜像构建用的 AVX512 override）
   - 若同一 git repo 的 branch/url 也出现在 `template_vars`（如 `cp2k_branch`），
-    **短期双写必须同步**；ABACUS opensource 的 image 注册已走 `spack_image_repos`
-    partial（`custom_repos[].image_path`）；其他应用仍可能手写 `spack repo add`
-  - CP2K force-avx512：Dockerfile 仍用 `force_avx512_repo_path` 时，
+    **短期双写必须同步**；ABACUS opensource 与 CP2K force-avx512（2026.1 /
+    2026.2）的 image 注册已走 `spack_image_repos` partial
+    （`custom_repos[].image_path`）；其他应用仍可能手写 `spack repo add`
+  - CP2K force-avx512：sparse clone 仍用 `force_avx512_repo_path`；
     `custom_repos[].image_path` 必须等于
     `/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}`（由
     `scripts/check-dual-write.py` 守卫，避免 `image_path` 死配置）

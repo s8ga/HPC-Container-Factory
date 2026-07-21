@@ -73,10 +73,11 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 
 - `method: spack|no_spack` in env.yaml — discriminator for build mode (default: spack)
 - **SpackEnvironmentPlan**: reliable contract for **assets** (prepare/register/mirror scripts).
-  Image-side custom repos: ABACUS opensource Dockerfiles include
-  `templates/partials/spack_image_repos.j2` (plan-driven `custom_repos[].image_path`);
-  other apps still use **per-env Dockerfile.j2 + `template_vars`** handwritten
-  `spack repo add` lines (do not assume plan alone registers image repos for every env).
+  Image-side custom repos: ABACUS opensource and CP2K opensource force-avx512
+  (2026.1 / 2026.2) Dockerfiles include `templates/partials/spack_image_repos.j2`
+  (plan-driven `custom_repos[].image_path`); other apps still use
+  **per-env Dockerfile.j2 + `template_vars`** handwritten `spack repo add` lines
+  (do not assume plan alone registers image repos for every env).
 - `mirror_scope` is intentionally fixed to **site** in the plan (not configurable from
   env.yaml). Custom `repo_scope` must not leak into `spack mirror add --scope`.
 - `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars); opensource commit-pin clones still run a non-comment `git merge-base --is-ancestor` check against `origin/{{ cp2k_branch }}`
@@ -86,8 +87,9 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   and `repo_scope: site`). Do not document “every pipeline / every env” as identical.
 - Custom repos for assets are fetched before environment creation, then registered per
   `spack.assets.repo_scope` (often `env:<name>` so overrides beat `repos.builtin.commit`).
-  ABACUS opensource image Dockerfiles wire `spack_image_repos`; other apps still emit
-  their own `spack repo add` lines until migrated.
+  ABACUS opensource and CP2K force-avx512 (2026.1 / 2026.2) image Dockerfiles
+  wire `spack_image_repos`; other apps still emit their own `spack repo add`
+  lines until migrated.
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
@@ -165,10 +167,10 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
   guard (`scripts/check-dual-write.py`) fails when either
   `template_vars.s8ga_repo_commit` or s8ga `custom_repos[].commit` is set and
   the two sides disagree or one side is missing (neither side pinned → skip).
-  For CP2K force-avx512 (until `spack_image_repos` is wired), it also requires
-  `template_vars.force_avx512_repo_path` to match the s8ga
-  `custom_repos[].sparse_path` / `image_path`
-  (`/opt/s8ga-spack-packages/<force_avx512_repo_path>`) and Dockerfile usage.
+  For CP2K force-avx512 it also requires `template_vars.force_avx512_repo_path`
+  to match the s8ga `custom_repos[].sparse_path` / `image_path`
+  (`/opt/s8ga-spack-packages/<force_avx512_repo_path>`) and Dockerfile sparse-clone
+  usage (2026.1 / 2026.2 register via `spack_image_repos`; 2025.2 still handwritten).
 - **Buildcache signing**: producer push is `--unsigned` by design for a
   single-tenant trusted host (local flock-owned cache, same-host read-only
   consumers). Not a multi-tenant/remote trust boundary; GPG signing is deferred.

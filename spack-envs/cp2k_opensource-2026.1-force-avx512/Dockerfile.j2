@@ -57,15 +57,17 @@ RUN git clone --filter=blob:none --sparse --no-checkout \
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
+# Stage CP2K spack recipes into the path expected by plan image_path
+# (default_image_path → /opt/spack-repo/spack_repo/<leaf>).
+RUN mkdir -p /opt/spack-repo/spack_repo/ && \
+    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/
+
 # Repo priority: builtin < CP2K 2026.1 dev < s8 < cp2k_dev(libint) < local cp2k.
 # repos_cp2k_dev provides libint under namespace cp2k_dev (Wave 0 authority hash).
-RUN mkdir -p /opt/spack-repo/spack_repo/ && \
-    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} "/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}" && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos_cp2k_dev/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
-    spack -e {{ spack_env_name }} repo ls
+# Paths come from plan (custom_repos[].image_path via spack_image_repos).
+{% include 'partials/spack_image_repos.j2' %}
+
+RUN spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
 {% include 'partials/spack_buildcache_config.j2' %}

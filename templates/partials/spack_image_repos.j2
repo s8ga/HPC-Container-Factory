@@ -2,9 +2,9 @@
    Expects plan_context keys: spack_env_name, spack_repo_scope, spack_image_repos.
    Does not COPY/clone sources — application templates must stage image_path first.
 
-   STATUS: Wired into ABACUS opensource Dockerfile.j2 (pilot). Other shipped apps
-   still register image custom repos via per-env templates + template_vars
-   (e.g. cp2k_branch / cp2k_dev_repo_path) until migrated.
+   STATUS: Wired into ABACUS opensource and CP2K opensource force-avx512
+   (2026.1 / 2026.2) Dockerfile.j2. Other shipped apps still register image
+   custom repos via per-env templates + template_vars until migrated.
 
    All tokens are shell_quote'd (Jinja filter → shlex.quote) so spaces / quotes /
    metacharacters in config cannot break the RUN line. #}

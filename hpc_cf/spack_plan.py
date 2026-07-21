@@ -74,8 +74,9 @@ class SpackEnvironmentPlan:
     """Authoritative Spack contract for one environment.
 
     The plan is the reliable shared contract for **assets** scripts
-    (prepare/register/mirror). For image Dockerfiles, ABACUS opensource
-    environments include ``templates/partials/spack_image_repos.j2`` (plan-driven
+    (prepare/register/mirror). For image Dockerfiles, ABACUS opensource and
+    CP2K opensource force-avx512 (2026.1 / 2026.2) include
+    ``templates/partials/spack_image_repos.j2`` (plan-driven
     ``custom_repos[].image_path``); other apps still stage/register custom repos
     via per-env Dockerfile.j2 + ``template_vars`` handwritten ``spack repo add``
     lines.
