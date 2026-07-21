@@ -6,15 +6,25 @@ import hashlib
 import json
 import logging
 import re
+import shlex
 import subprocess
+import uuid
+from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from hpc_cf.buildcache_ops import build_publish_script, build_verify_script
+from hpc_cf.config import IMAGE_SPACK_ROOT
 from hpc_cf.environment import BuildcachePolicy
-from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore
+from hpc_cf.execution import (
+    BuildcacheCoverageRecord,
+    BuildcacheRun,
+    ProjectLayout,
+    SharedBuildcacheStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +34,12 @@ _PUBLISH_STEP_RE = re.compile(
     r"^HPC_CF_BUILDCACHE_STEP=(publish|update-index|check)$",
     re.MULTILINE,
 )
+_IMAGE_LOCK_SHA_RE = re.compile(
+    r"^HPC_CF_IMAGE_LOCK_SHA256=([0-9a-f]{64})$",
+    re.MULTILINE,
+)
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 24 * 60 * 60
+_COVERAGE_PARTIAL_SUFFIX = ".partial"
 
 
 def publish_output_markers(output: str) -> dict[str, object]:
@@ -316,6 +331,126 @@ def require_coverage(
     ):
         raise RuntimeError(f"buildcache coverage is incompatible: {path}")
     return record
+
+
+def image_env_lock_path(env_name: str) -> str:
+    """Return the producer-image path for an environment ``spack.lock``."""
+    if not env_name or "/" in env_name or env_name in {".", ".."}:
+        raise ValueError(f"invalid Spack environment name: {env_name!r}")
+    return f"{IMAGE_SPACK_ROOT}/var/spack/environments/{env_name}/spack.lock"
+
+
+def inspect_image_lock_sha(
+    *,
+    engine: str,
+    image_ref: str,
+    env_name: str,
+    layout: ProjectLayout,
+    timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+) -> str:
+    """Return the SHA-256 of ``spack.lock`` inside a producer image."""
+    lock_path = image_env_lock_path(env_name)
+    script = (
+        "python3 -c "
+        + shlex.quote(
+            "import hashlib, pathlib, sys; "
+            f"p = pathlib.Path({lock_path!r}); "
+            "sys.stdout.write("
+            "'HPC_CF_IMAGE_LOCK_SHA256='"
+            "+ hashlib.sha256(p.read_bytes()).hexdigest()"
+            "+ chr(10)"
+            ")"
+        )
+        + "\n"
+    )
+    result = run_in_installed_image(
+        engine=engine,
+        image_ref=image_ref,
+        layout=layout,
+        script=script,
+        timeout_seconds=timeout_seconds,
+    )
+    match = _IMAGE_LOCK_SHA_RE.search(result.stdout or "")
+    if match is None:
+        raise RuntimeError(
+            f"could not resolve image lock SHA for {image_ref} ({lock_path})"
+        )
+    return match.group(1)
+
+
+def require_matching_image_lock(
+    *,
+    engine: str,
+    image_ref: str,
+    env_name: str,
+    layout: ProjectLayout,
+    lock_path: Path,
+    timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+) -> str:
+    """Fail closed when the producer image lock differs from the host lock."""
+    host_sha = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    image_sha = inspect_image_lock_sha(
+        engine=engine,
+        image_ref=image_ref,
+        env_name=env_name,
+        layout=layout,
+        timeout_seconds=timeout_seconds,
+    )
+    if image_sha != host_sha:
+        raise RuntimeError(
+            "producer image lock SHA does not match the host lock SHA: "
+            f"image={image_sha} host={host_sha}"
+        )
+    return host_sha
+
+
+def publish_success_state(
+    store: SharedBuildcacheStore,
+    *,
+    run: BuildcacheRun,
+    lock_path: Path,
+    record: BuildcacheCoverageRecord,
+    provenance: Mapping[str, object],
+) -> Path:
+    """Atomically publish coverage, provenance, and healthy store state.
+
+    Coverage is staged under a non-admitted name until provenance and health
+    succeed, then renamed into place. Any failure leaves no admitted coverage
+    record for this lock SHA.
+    """
+    lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    final_path = store.layout.buildcache_coverage_dir / f"{lock_sha256}.json"
+    staging_path = store.layout.buildcache_coverage_dir / (
+        f".{lock_sha256}.json.{uuid.uuid4().hex}{_COVERAGE_PARTIAL_SUFFIX}"
+    )
+    payload: dict[str, object] = {
+        "schema_version": 2,
+        "lock_sha256": lock_sha256,
+        "spack_version": record.spack_version,
+        "builder_image_digest": record.builder_image_digest,
+        "environment_provenance": dict(record.environment_provenance),
+        "padded_length": record.padded_length,
+        "signing_policy": record.signing_policy,
+        "check_returncode": record.check_returncode,
+        "checked_spec_count": record.checked_spec_count,
+        "coverage": "non_external",
+        "external_specs_excluded": True,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    staging_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        staging_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        store.write_provenance(run, provenance)
+        store.mark_healthy(run_id=run.run_id, coverage_path=final_path)
+        # Coverage becomes visible to consumers only after provenance + health.
+        staging_path.replace(final_path)
+        return final_path
+    except Exception:
+        staging_path.unlink(missing_ok=True)
+        raise
 
 
 def run_in_installed_image(

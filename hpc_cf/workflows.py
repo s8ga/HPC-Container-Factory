@@ -275,12 +275,6 @@ class BuildService:
         policy_lock = (
             consumer_lock_path if consumer_lock_path.is_file() else None
         )
-        effective_policy = resolve_consumer_policy(
-            requested_policy,
-            store,
-            enabled=buildcache_enabled,
-            lock_path=policy_lock,
-        )
         # dockerfile and build both use build-input so missing/empty
         # spack.lock fails closed unless --allow-reconcretize.
         run_static_checks(
@@ -291,17 +285,38 @@ class BuildService:
             allow_reconcretize=request.allow_reconcretize,
         )
 
-        if request.render_only:
-            generate_dockerfile(
-                template=request.template,
-                app_version=request.app_version,
-                output=request.output,
-                use_mirror=request.use_mirror,
-                build_only=request.build_only,
-                layout=self.layout,
-                allow_reconcretize=request.allow_reconcretize,
-                buildcache_policy=effective_policy.value,
+        # For requested auto/only, hold the shared consumer lock before the
+        # single policy resolve so health/coverage flips cannot upgrade a
+        # never decision onto an unlocked build path.
+        hold_consumer_lock = requested_policy in (
+            BuildcachePolicy.AUTO,
+            BuildcachePolicy.ONLY,
+        )
+
+        def _resolve_policy() -> BuildcachePolicy:
+            return resolve_consumer_policy(
+                requested_policy,
+                store,
+                enabled=buildcache_enabled,
+                lock_path=policy_lock,
             )
+
+        if request.render_only:
+            lock = (
+                store.consumer_lock() if hold_consumer_lock else nullcontext()
+            )
+            with lock:
+                effective_policy = _resolve_policy()
+                generate_dockerfile(
+                    template=request.template,
+                    app_version=request.app_version,
+                    output=request.output,
+                    use_mirror=request.use_mirror,
+                    build_only=request.build_only,
+                    layout=self.layout,
+                    allow_reconcretize=request.allow_reconcretize,
+                    buildcache_policy=effective_policy.value,
+                )
             logger.info("Done")
             return 0
 
@@ -320,21 +335,9 @@ class BuildService:
             )
 
         logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
-        lock = (
-            store.consumer_lock()
-            if effective_policy in (BuildcachePolicy.AUTO, BuildcachePolicy.ONLY)
-            else nullcontext()
-        )
+        lock = store.consumer_lock() if hold_consumer_lock else nullcontext()
         with lock:
-            # A publisher may have changed health after the initial policy
-            # decision but before this consumer acquired its shared lock.
-            # Resolve again under the lock before rendering any cache mounts.
-            effective_policy = resolve_consumer_policy(
-                requested_policy,
-                store,
-                enabled=buildcache_enabled,
-                lock_path=policy_lock,
-            )
+            effective_policy = _resolve_policy()
             dockerfile = generate_dockerfile(
                 template=request.template,
                 app_version=request.app_version,
@@ -460,6 +463,8 @@ class BuildcacheService:
             promote_producer_image,
             publish,
             publish_output_markers,
+            publish_success_state,
+            require_matching_image_lock,
         )
 
         recovery: dict[str, object] = {
@@ -515,8 +520,19 @@ class BuildcacheService:
                 raise RuntimeError(
                     "stable producer digest changed during promotion"
                 )
+            failed_step = "lock-bind"
+            require_matching_image_lock(
+                engine=request.engine,
+                image_ref=temporary_image_ref,
+                env_name=spec.spack.env_name,
+                layout=self.layout,
+                lock_path=lock_path,
+                timeout_seconds=request.operation_timeout_seconds,
+            )
             failed_step = "coverage"
-            coverage_path = store.write_coverage(
+            publish_success_state(
+                store,
+                run=run,
                 lock_path=lock_path,
                 record=BuildcacheCoverageRecord(
                     spack_version=spec.spack.version,
@@ -527,22 +543,13 @@ class BuildcacheService:
                     check_returncode=0,
                     checked_spec_count=checked_count,
                 ),
-            )
-            failed_step = "provenance"
-            store.write_provenance(
-                run,
-                {
+                provenance={
                     **provenance,
                     "producer_image": stable_image_ref,
                     "producer_image_digest": image_digest,
                     "environment_provenance": environment_provenance,
                     **markers,
                 },
-            )
-            failed_step = "state"
-            store.mark_healthy(
-                run_id=run.run_id,
-                coverage_path=coverage_path,
             )
         except Exception as exc:
             self._record_failure(
@@ -563,7 +570,9 @@ class BuildcacheService:
             collect_environment_provenance,
             inspect_image_digest,
             producer_image_ref,
+            publish_success_state,
             remove_temporary_image,
+            require_matching_image_lock,
             require_verified_source_mirror,
             temporary_producer_image_ref,
             verify,
@@ -695,8 +704,19 @@ class BuildcacheService:
                     run.log_path("verify").write_text(
                         result.stdout or "", encoding="utf-8"
                     )
+                    failed_step = "lock-bind"
+                    require_matching_image_lock(
+                        engine=request.engine,
+                        image_ref=stable_image_ref,
+                        env_name=spec.spack.env_name,
+                        layout=self.layout,
+                        lock_path=lock_path,
+                        timeout_seconds=request.operation_timeout_seconds,
+                    )
                     failed_step = "coverage"
-                    coverage_path = store.write_coverage(
+                    publish_success_state(
+                        store,
+                        run=run,
                         lock_path=lock_path,
                         record=BuildcacheCoverageRecord(
                             spack_version=spec.spack.version,
@@ -707,21 +727,12 @@ class BuildcacheService:
                             check_returncode=0,
                             checked_spec_count=checked_count,
                         ),
-                    )
-                    failed_step = "provenance"
-                    store.write_provenance(
-                        run,
-                        {
+                        provenance={
                             **provenance,
                             "producer_image": stable_image_ref,
                             "producer_image_digest": image_digest,
                             "environment_provenance": environment_provenance,
                         },
-                    )
-                    failed_step = "state"
-                    store.mark_healthy(
-                        run_id=run.run_id,
-                        coverage_path=coverage_path,
                     )
                 except Exception as exc:
                     self._record_failure(

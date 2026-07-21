@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import threading
@@ -12,13 +13,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore
+from hpc_cf.execution import (
+    BuildcacheCoverageRecord,
+    ProjectLayout,
+    SharedBuildcacheStore,
+)
 from hpc_cf.template import build_context, render_template
 
 
 ROOT = Path(__file__).resolve().parent.parent
 PILOT = "cp2k_opensource-2025.2"
 PILOT_TEMPLATE = ROOT / "spack-envs" / PILOT / "Dockerfile.j2"
+
+
+def _lock_sha(lock_path: Path) -> str:
+    return hashlib.sha256(lock_path.read_bytes()).hexdigest()
 
 
 def _render(policy: str, *, producer: bool = False) -> str:
@@ -144,15 +153,6 @@ def test_buildcache_build_renders_producer_with_auto_policy(
         _producer_patches(resolved),
         patch("hpc_cf.template.generate_dockerfile", side_effect=fake_generate),
         patch("hpc_cf.sif.build_docker_stage"),
-        patch(
-            "hpc_cf.buildcache.publish",
-            return_value=(subprocess.CompletedProcess([], 0, stdout=""), 1),
-        ),
-        patch("hpc_cf.buildcache.promote_producer_image"),
-        patch(
-            "hpc_cf.buildcache.inspect_image_digest",
-            return_value="sha256:installed",
-        ),
         patch("hpc_cf.buildcache.remove_temporary_image"),
     ):
         assert BuildcacheService(layout).run(
@@ -519,6 +519,10 @@ def test_buildcache_service_resolves_image_digest_under_publisher_lock(
         patch(
             "hpc_cf.buildcache.inspect_image_digest",
             side_effect=inspect_under_lock,
+        ),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=_lock_sha(env_dir / "spack.lock"),
         ),
         patch(
             "hpc_cf.buildcache.verify",
@@ -1256,6 +1260,10 @@ def test_producer_auto_only_lifecycle_preserves_producer_digest(
         patch("hpc_cf.sif.build_docker_like", side_effect=fake_build_consumer),
         patch("hpc_cf.buildcache.inspect_image_digest", side_effect=fake_inspect),
         patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=_lock_sha(env_dir / "spack.lock"),
+        ),
+        patch(
             "hpc_cf.buildcache.publish",
             return_value=(subprocess.CompletedProcess([], 0, stdout=""), 1),
         ),
@@ -1353,6 +1361,10 @@ def test_interleaved_producers_use_unique_temporary_tags_and_serial_promotions(
             side_effect=lambda *, image_ref, **_: images[image_ref],
         ),
         patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=_lock_sha(env_dir / "spack.lock"),
+        ),
+        patch(
             "hpc_cf.buildcache.publish",
             return_value=(completed, 1),
         ),
@@ -1448,6 +1460,10 @@ def test_failed_interleaved_producer_cleans_only_its_temporary_tag(
             "hpc_cf.buildcache.inspect_image_digest",
             side_effect=lambda *, image_ref, **_: images[image_ref],
         ),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=_lock_sha(env_dir / "spack.lock"),
+        ),
         patch("hpc_cf.buildcache.publish", side_effect=fake_publish),
         patch(
             "hpc_cf.buildcache.remove_temporary_image",
@@ -1495,6 +1511,10 @@ def _producer_service_inputs(tmp_path: Path):
 @contextmanager
 def _producer_patches(resolved, *, digest: str = "sha256:installed"):
     completed = subprocess.CompletedProcess([], 0, stdout="")
+    lock_path = resolved.environment_dir / "spack.lock"
+    if not lock_path.is_file():
+        lock_path = resolved.environment_dir / "spack-env-file" / "spack.lock"
+    image_lock_sha = _lock_sha(lock_path) if lock_path.is_file() else "0" * 64
     patchers = (
         patch("hpc_cf.template.resolve_build_input", return_value=resolved),
         patch(
@@ -1509,6 +1529,10 @@ def _producer_patches(resolved, *, digest: str = "sha256:installed"):
         ),
         patch("hpc_cf.sif.build_docker_stage"),
         patch("hpc_cf.buildcache.inspect_image_digest", return_value=digest),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=image_lock_sha,
+        ),
         patch("hpc_cf.buildcache.publish", return_value=(completed, 1)),
         patch("hpc_cf.buildcache.promote_producer_image"),
     )
@@ -1878,3 +1902,168 @@ def test_status_text_and_json_show_recovery_image(
     ) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["recovery_image_ref"].endswith("-recovery")
+
+
+def test_verify_rejects_producer_image_lock_mismatch_with_host(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.buildcache import coverage_path_for_lock
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, lock_path, resolved = _producer_service_inputs(tmp_path)
+    completed = subprocess.CompletedProcess([], 0, stdout="")
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.template.resolve_image_and_tag",
+            return_value=("cp2k", "2025.2"),
+        ),
+        patch(
+            "hpc_cf.buildcache.inspect_image_digest",
+            return_value="sha256:installed",
+        ),
+        patch(
+            "hpc_cf.buildcache.verify",
+            return_value=(completed, 1),
+        ),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value="a" * 64,
+        ),
+        pytest.raises(RuntimeError, match="does not match the host lock SHA"),
+    ):
+        BuildcacheService(layout).run(
+            BuildcacheRequest(action="verify", env=PILOT)
+        )
+
+    assert not coverage_path_for_lock(layout, lock_path).is_file()
+    health = SharedBuildcacheStore(layout).read_health()
+    assert health["healthy"] is False
+    assert health["failed_step"] == "lock-bind"
+
+
+def test_publish_success_state_is_atomic_against_half_commit(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.buildcache import (
+        coverage_path_for_lock,
+        publish_success_state,
+        resolve_consumer_policy,
+    )
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    store.ensure_store_root()
+    store.mark_unhealthy(run_id="prior", failed_step="check", error="bad")
+    lock = tmp_path / "spack.lock"
+    lock.write_text('{"lock": true}\n', encoding="utf-8")
+    run = store.begin_run("demo")
+    record = BuildcacheCoverageRecord(
+        spack_version="1.1.0",
+        builder_image_digest="sha256:builder",
+        environment_provenance={
+            "operating_systems": None,
+            "targets": None,
+            "compilers": None,
+            "repo_commits": None,
+        },
+        padded_length=128,
+        signing_policy="unsigned",
+        check_returncode=0,
+        checked_spec_count=1,
+    )
+    with patch.object(
+        store, "mark_healthy", side_effect=RuntimeError("health write failed")
+    ):
+        with pytest.raises(RuntimeError, match="health write failed"):
+            publish_success_state(
+                store,
+                run=run,
+                lock_path=lock,
+                record=record,
+                provenance={"env": "demo"},
+            )
+
+    assert not coverage_path_for_lock(layout, lock).is_file()
+    assert not list(layout.buildcache_coverage_dir.glob("*.json"))
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.AUTO, store, lock_path=lock
+        )
+        is BuildcachePolicy.NEVER
+    )
+
+
+def test_requested_auto_acquires_consumer_lock_before_single_resolve(
+    tmp_path: Path,
+) -> None:
+    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.workflows import BuildRequest, BuildService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    store.ensure_store_root()
+    store.mark_unhealthy(run_id="r0", failed_step="check", error="bad")
+    events: list[str] = []
+    original_lock = SharedBuildcacheStore.consumer_lock
+
+    @contextmanager
+    def tracking_lock():
+        events.append("lock")
+        coverage = layout.buildcache_coverage_dir / "lock.json"
+        coverage.parent.mkdir(parents=True, exist_ok=True)
+        coverage.write_text("{}\n", encoding="utf-8")
+        store.mark_healthy(run_id="r1", coverage_path=coverage)
+        with original_lock(store):
+            yield
+
+    def fake_build(**_: object) -> None:
+        events.append("build")
+        probe = subprocess.run(
+            [
+                "python3",
+                "-c",
+                (
+                    "import fcntl;"
+                    f"f=open({str(layout.buildcache_lock_path)!r},'a+');"
+                    "fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"
+                ),
+            ],
+            check=False,
+        )
+        assert probe.returncode != 0
+
+    from hpc_cf.buildcache import resolve_consumer_policy as real_resolve
+
+    def tracking_resolve(*args: object, **kwargs: object):
+        events.append("resolve")
+        return real_resolve(*args, **kwargs)
+
+    with (
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.template.resolve_build_input") as resolved,
+        patch("hpc_cf.template.resolve_image_and_tag", return_value=("img", "tag")),
+        patch("hpc_cf.template.generate_dockerfile", return_value=Path("Dockerfile")),
+        patch("hpc_cf.sif.build_docker_like", side_effect=fake_build),
+        patch.object(store, "consumer_lock", side_effect=tracking_lock),
+        patch(
+            "hpc_cf.buildcache.resolve_consumer_policy",
+            side_effect=tracking_resolve,
+        ),
+        patch("hpc_cf.workflows.SharedBuildcacheStore", return_value=store),
+    ):
+        resolved.return_value.environment_dir = tmp_path
+        resolved.return_value.environment_spec = SimpleNamespace(
+            spack=SimpleNamespace(
+                buildcache=SimpleNamespace(enabled=True),
+            )
+        )
+        BuildService(layout=layout).run(
+            BuildRequest(
+                app_version=PILOT,
+                buildcache=BuildcachePolicy.AUTO,
+            )
+        )
+
+    assert events == ["lock", "resolve", "build"]
