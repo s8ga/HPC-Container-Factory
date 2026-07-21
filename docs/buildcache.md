@@ -280,13 +280,14 @@ damaged-entry fallback, and strict `only` failure. Missing matrix assets
 **skip** (classified skip, not a false-green pass). Prefer reporting
 “N passed / M skipped with reasons” over bare green when assets are absent.
 
-L4 application delivery is an **opt-in ABACUS lightweight smoke**: consumer
-build of `abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`,
-then padded-aware discovery of `share/abacus/tests` and the flat
-`integrate/Autotest.sh` entrypoint (3.10 layout; not `01_PW`…`10_others`).
-Full Autotest/module suites stay release evidence, not L4 pass gates.
-Missing healthy buildcache admission, build assets, or installed ABACUS
-tests (`tests=false`) skips.
+L4 application delivery is an **opt-in ABACUS entrypoint probe** (not a full
+Autotest run): consumer build of `abacus_opensource-3.10.1-force-avx512` with
+`--buildcache auto`, then padded-aware discovery of `share/abacus/tests` and
+the flat `integrate/Autotest.sh` entrypoint (3.10 layout; not
+`01_PW`…`10_others`). L4 does **not** execute the 356-case Autotest suite or
+assert `Failed==0`. Full Autotest/module suites stay release evidence, not L4
+pass gates. Missing healthy buildcache admission, build assets, or installed
+ABACUS tests (`tests=false`) skips.
 
 ### Adversarial / path-safety coverage (partial)
 

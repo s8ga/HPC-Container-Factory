@@ -7,7 +7,7 @@
 # {{ builder_base_image }} and {{ runtime_base_image }} are injected from
 # spack-envs/{{ env_dir_name }}/env.yaml → images.builder / images.runtime.
 #
-# NOTE: 不要修改各 stage 内的 RUN 步骤，否则会破坏构建缓存。
+# NOTE: Do not reorder or edit RUN steps within each stage; that breaks Docker layer cache.
 
 ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
@@ -35,7 +35,7 @@ ARG SPACK_MAKE_JOBS=0
 # BUILDER BASE - ROCm/Ubuntu deps + shared Spack install/bootstrap/mirror
 # ============================================================================
 
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
+# Configure APT mirrors to use USTC for faster downloads in China
 # Note: Ubuntu uses .sources format in /etc/apt/sources.list.d/
 RUN sed -i 's|//.*archive.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|//security.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
@@ -213,7 +213,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 {% include 'partials/locale_c_utf8.j2' %}
 
-# Configure APT mirrors to use USTC (中科大) for faster downloads in China
+# Configure APT mirrors to use USTC for faster downloads in China
 RUN sed -i 's|//.*archive.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
     sed -i 's|//security.ubuntu.com|//mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
 

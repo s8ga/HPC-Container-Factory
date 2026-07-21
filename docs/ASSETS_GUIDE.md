@@ -11,9 +11,10 @@ assets 负责把构建中最耗时、最依赖网络的部分前置到本地。
 
 禁止在 `run_mirror` 缺 lock 时静默升到 `run_all_pipeline`。
 
-`SpackEnvironmentPlan` 对 assets 侧 repo/builtin/mirror 步骤是权威输入；image 侧
-自定义 repo 仍由 per-env Dockerfile + `template_vars` 负责（`spack_image_repos`
-partial 尚未接线）。`ProjectLayout` / `SharedMirrorStore` 由服务层使用，CLI 不暴露
+`SpackEnvironmentPlan` 对 assets 侧 repo/builtin/mirror 步骤是权威输入。image 侧
+自定义 repo：ABACUS opensource 与 CP2K opensource force-avx512（2026.1 / 2026.2）
+已走 `spack_image_repos` partial；其余应用仍由 per-env Dockerfile + `template_vars`
+手写 `spack repo add`。`ProjectLayout` / `SharedMirrorStore` 由服务层使用，CLI 不暴露
 自定义布局开关。
 
 ## 目录结构
