@@ -21,3 +21,14 @@ DEFAULT_SPACK_VERSION = "1.1.1"
 
 APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"
 APPTAINER_LOCAL_PREFIX = TOOLS_DIR / "apptainer"
+
+# Pinned Apptainer install-unprivileged.sh (release v1.5.2).
+# Prefer the immutable commit URL over floating ``main`` / moving tags.
+APPTAINER_INSTALL_SCRIPT_REF = "278038cd0562d281500a7c14940f2203632f67fc"
+APPTAINER_INSTALL_SCRIPT_URL = (
+    "https://raw.githubusercontent.com/apptainer/apptainer/"
+    f"{APPTAINER_INSTALL_SCRIPT_REF}/tools/install-unprivileged.sh"
+)
+APPTAINER_INSTALL_SCRIPT_SHA256 = (
+    "4d84a839a0d97177f2852b565ccbb60d8364a1ba7a6adaf00e654bfc229bba7e"
+)

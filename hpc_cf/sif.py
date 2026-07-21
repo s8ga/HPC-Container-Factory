@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from hpc_cf.config import (
-    APPTAINER_LOCAL_PREFIX,
     APPTAINER_INSTALL_SCRIPT,
+    APPTAINER_INSTALL_SCRIPT_SHA256,
+    APPTAINER_INSTALL_SCRIPT_URL,
+    APPTAINER_LOCAL_PREFIX,
     PROJECT_ROOT as _CONFIG_PROJECT_ROOT,
     SCRIPTS_DIR,
     TOOLS_DIR,
@@ -29,6 +33,9 @@ logger = logging.getLogger(__name__)
 # Prefer :class:`~hpc_cf.execution.ProjectLayout` for new call paths.
 PROJECT_ROOT = _CONFIG_PROJECT_ROOT
 
+# Filename-safe subset for artifact basenames derived from OCI image/tag.
+_SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._+-]+")
+
 
 def _layout() -> ProjectLayout:
     return ProjectLayout(project_root=PROJECT_ROOT)
@@ -44,6 +51,81 @@ def _resolve_output_path(output: Path) -> Path:
     if not path.is_absolute():
         path = Path.cwd() / path
     return path.resolve()
+
+
+def _safe_filename_component(value: str) -> str:
+    """Return a single path component safe for use under ``artifacts/``.
+
+    Rejects empty / ``.`` / ``..`` after stripping separators and other
+    characters that could escape the artifacts directory via ``Path`` joins.
+    """
+    cleaned = _SAFE_FILENAME_RE.sub("_", value.strip()).strip("_")
+    if not cleaned or cleaned in {".", ".."} or set(cleaned) <= {"."}:
+        raise ValueError(
+            f"unsafe filename component after sanitization: {value!r}"
+        )
+    return cleaned
+
+
+def _require_under(path: Path, root: Path, *, what: str) -> Path:
+    """Fail closed when *path* resolves outside *root*."""
+    resolved = path.resolve()
+    root_resolved = root.resolve()
+    if not resolved.is_relative_to(root_resolved):
+        raise ValueError(
+            f"{what} path escapes allowed root {root_resolved}: {resolved}"
+        )
+    return resolved
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fetch_and_verify_install_script() -> Path:
+    """Download the pinned install script and verify SHA256 (fail-closed)."""
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = APPTAINER_INSTALL_SCRIPT
+    expected = APPTAINER_INSTALL_SCRIPT_SHA256
+
+    if dest.is_file() and _sha256_file(dest) == expected:
+        logger.info(
+            "Using cached install-unprivileged.sh (sha256 verified)"
+        )
+    else:
+        logger.info(
+            "Downloading install-unprivileged.sh from pinned URL: %s",
+            APPTAINER_INSTALL_SCRIPT_URL,
+        )
+        subprocess.run(
+            ["curl", "-fsSL", "-o", str(dest), APPTAINER_INSTALL_SCRIPT_URL],
+            check=True,
+        )
+        actual = _sha256_file(dest)
+        if actual != expected:
+            dest.unlink(missing_ok=True)
+            raise RuntimeError(
+                "Apptainer install script SHA256 mismatch "
+                f"(expected {expected}, got {actual}). "
+                "Refusing to execute untrusted script."
+            )
+
+    # Re-check immediately before chmod/exec so a TOCTOU race or a stale
+    # cache write cannot skip verification.
+    actual = _sha256_file(dest)
+    if actual != expected:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Apptainer install script SHA256 mismatch "
+            f"(expected {expected}, got {actual}). "
+            "Refusing to execute untrusted script."
+        )
+    dest.chmod(0o755)
+    return dest
 
 
 # ── Command helpers ──────────────────────────────────────────────────────
@@ -93,18 +175,6 @@ def ensure_apptainer(*, auto_confirm: bool = False) -> str:
             f"  sudo {hint}"
         )
 
-    install_url = (
-        "https://raw.githubusercontent.com/apptainer/apptainer"
-        "/main/tools/install-unprivileged.sh"
-    )
-    logger.info("Downloading install-unprivileged.sh from upstream ...")
-    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["curl", "-fsSL", "-o", str(APPTAINER_INSTALL_SCRIPT), install_url],
-        check=True,
-    )
-    APPTAINER_INSTALL_SCRIPT.chmod(0o755)
-
     logger.info(
         "apptainer not found. Will install (unprivileged) to: %s",
         APPTAINER_LOCAL_PREFIX,
@@ -121,9 +191,10 @@ def ensure_apptainer(*, auto_confirm: bool = False) -> str:
         if answer not in ("y", "yes"):
             raise RuntimeError("apptainer installation cancelled by user")
 
+    install_script = _fetch_and_verify_install_script()
     APPTAINER_LOCAL_PREFIX.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["bash", str(APPTAINER_INSTALL_SCRIPT), str(APPTAINER_LOCAL_PREFIX)],
+        ["bash", str(install_script), str(APPTAINER_LOCAL_PREFIX)],
         check=True,
     )
 
@@ -325,14 +396,18 @@ def build_sif(
     root = layout or _layout()
     artifacts_dir = root.artifacts_dir
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    project_root = root.project_root
 
     # Step 1: Export OCI image to tar
     oci_ref = f"{docker_image}:{docker_tag}"
     # Use only the last segment of the image name for filenames
     # e.g. "localhost/cp2k-opensource" → "cp2k-opensource"
-    flat_image = docker_image.rsplit("/", 1)[-1]
-    tar_name = f"{flat_image}_{docker_tag}.tar"
-    tar_path = artifacts_dir / tar_name
+    flat_image = _safe_filename_component(docker_image.rsplit("/", 1)[-1])
+    safe_tag = _safe_filename_component(docker_tag)
+    tar_name = f"{flat_image}_{safe_tag}.tar"
+    tar_path = _require_under(
+        artifacts_dir / tar_name, artifacts_dir, what="OCI tar"
+    )
 
     engine = None
     for cmd in ("podman", "docker"):
@@ -377,17 +452,28 @@ def build_sif(
 
     # Resolve relative --output against process cwd *before* apptainer runs
     # with cwd=artifacts/ (otherwise post-build Path.stat looks in the wrong place).
+    # Explicit outputs must stay under the project root; default SIF under artifacts/.
     if output is not None:
-        sif_name = _resolve_output_path(output)
+        sif_name = _require_under(
+            _resolve_output_path(output), project_root, what="SIF output"
+        )
         sif_name.parent.mkdir(parents=True, exist_ok=True)
     else:
-        sif_name = artifacts_dir / f"{flat_image}_{docker_tag}.sif"
+        sif_name = _require_under(
+            artifacts_dir / f"{flat_image}_{safe_tag}.sif",
+            artifacts_dir,
+            what="SIF output",
+        )
 
     if def_template:
         logger.info("Rendering def template: %s", def_template)
         def_content = render_template(def_template, def_context, layout=root)
 
-        def_file = artifacts_dir / f"{flat_image}_{docker_tag}.def"
+        def_file = _require_under(
+            artifacts_dir / f"{flat_image}_{safe_tag}.def",
+            artifacts_dir,
+            what="definition file",
+        )
         def_file.write_text(def_content, encoding="utf-8")
         logger.info("Definition file written: %s", def_file)
 
@@ -433,17 +519,27 @@ def pack_apptainer(
     root = layout or _layout()
     artifacts_dir = root.artifacts_dir
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    project_root = root.project_root
 
     apptainer_ver = _get_apptainer_version()
     arch = os.uname().machine
-    default_name = f"apptainer-{apptainer_ver}-{arch}.run"
+    default_name = (
+        f"apptainer-{_safe_filename_component(apptainer_ver)}"
+        f"-{_safe_filename_component(arch)}.run"
+    )
     if output is not None:
-        output_path = _resolve_output_path(output)
+        output_path = _require_under(
+            _resolve_output_path(output), project_root, what="pack-apptainer output"
+        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
     else:
-        output_path = artifacts_dir / default_name
+        output_path = _require_under(
+            artifacts_dir / default_name, artifacts_dir, what="pack-apptainer output"
+        )
 
-    staging_dir = artifacts_dir / "apptainer-bundle"
+    staging_dir = _require_under(
+        artifacts_dir / "apptainer-bundle", artifacts_dir, what="pack staging"
+    )
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
 
