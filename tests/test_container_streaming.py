@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import logging
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -195,6 +196,79 @@ def test_run_capture_check_false() -> None:
 
 
 # ── Real subprocess smoke test (no podman needed) ───────────────────────────
+
+
+def test_run_streaming_keeps_bounded_tail_only() -> None:
+    """Long streams retain only the configured byte budget in memory."""
+    from hpc_cf import container as container_mod
+
+    # Tiny budget so early lines fall out of the ring.
+    old_max = container_mod.STREAM_TAIL_MAX_BYTES
+    container_mod.STREAM_TAIL_MAX_BYTES = 40
+    try:
+        lines = [f"line-{i:04d}-xxxxxxxx" for i in range(20)]
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.StringIO("\n".join(lines) + "\n")
+        mock_proc.wait.return_value = 0
+
+        ctr = _make_container()
+        with (
+            patch("subprocess.Popen", return_value=mock_proc),
+            patch.object(logging.getLogger("hpc_cf.container"), "info"),
+        ):
+            result = ctr._run(["exec", "test", "true"])
+
+        assert "line-0000" not in result.stdout
+        assert "line-0019" in result.stdout
+        assert len(result.stdout.encode("utf-8")) <= 40 + 20  # small slack
+    finally:
+        container_mod.STREAM_TAIL_MAX_BYTES = old_max
+
+
+def test_run_failure_exception_includes_last_kb() -> None:
+    """CalledProcessError.output is capped to STREAM_ERROR_TAIL_BYTES."""
+    from hpc_cf import container as container_mod
+
+    old_err = container_mod.STREAM_ERROR_TAIL_BYTES
+    old_max = container_mod.STREAM_TAIL_MAX_BYTES
+    container_mod.STREAM_TAIL_MAX_BYTES = 10_000
+    container_mod.STREAM_ERROR_TAIL_BYTES = 32
+    try:
+        body = ("A" * 200) + "\n" + ("B" * 200) + "\nERROR-TAIL\n"
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.StringIO(body)
+        mock_proc.wait.return_value = 7
+
+        ctr = _make_container()
+        with patch("subprocess.Popen", return_value=mock_proc):
+            with pytest.raises(subprocess.CalledProcessError) as exc_info:
+                ctr._run(["build", "-t", "x", "."])
+
+        out = exc_info.value.output
+        assert "ERROR-TAIL" in out
+        assert len(out.encode("utf-8")) <= 32 + 8
+        assert "A" * 50 not in out
+    finally:
+        container_mod.STREAM_ERROR_TAIL_BYTES = old_err
+        container_mod.STREAM_TAIL_MAX_BYTES = old_max
+
+
+def test_run_streaming_optional_log_file(tmp_path: Path) -> None:
+    """Optional stream_log_path receives the full line stream."""
+    log_path = tmp_path / "podman.stream.log"
+    mock_proc = MagicMock()
+    mock_proc.stdout = io.StringIO("one\ntwo\nthree\n")
+    mock_proc.wait.return_value = 0
+
+    ctr = Container(name="t", image="i", stream_log_path=log_path)
+    with (
+        patch("subprocess.Popen", return_value=mock_proc),
+        patch.object(logging.getLogger("hpc_cf.container"), "info"),
+    ):
+        ctr._run(["ps"])
+
+    text = log_path.read_text(encoding="utf-8")
+    assert text.splitlines() == ["one", "two", "three"]
 
 
 def test_run_streams_real_echo() -> None:

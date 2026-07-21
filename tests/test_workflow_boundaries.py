@@ -324,9 +324,179 @@ def test_exclusive_write_logs_while_waiting(
     assert not t.is_alive()
 
     text = caplog.text
-    assert "Shared mirror lock busy" in text
-    assert "Still waiting for shared mirror lock" in text
-    assert "Acquired shared mirror lock after" in text
+    assert "Shared mirror write lock busy" in text
+    assert "Still waiting for shared mirror write lock" in text
+    assert "Acquired shared mirror write lock after" in text
+
+
+def test_shared_mirror_read_lock_blocks_writer(tmp_path: Path) -> None:
+    """Readers holding LOCK_SH must block exclusive writers."""
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedMirrorStore(layout)
+    reader_held = threading.Event()
+    writer_entered = threading.Event()
+    release_reader = threading.Event()
+
+    def reader() -> None:
+        with store.shared_read():
+            reader_held.set()
+            release_reader.wait(timeout=5)
+
+    def writer() -> None:
+        assert reader_held.wait(timeout=2)
+        with store.exclusive_write():
+            writer_entered.set()
+
+    t_reader = threading.Thread(target=reader)
+    t_writer = threading.Thread(target=writer)
+    t_reader.start()
+    t_writer.start()
+    assert reader_held.wait(timeout=2)
+    # Writer must stay blocked while the shared read lock is held.
+    assert not writer_entered.wait(timeout=0.2)
+    release_reader.set()
+    t_writer.join(timeout=2)
+    t_reader.join(timeout=2)
+    assert writer_entered.is_set()
+    assert not t_writer.is_alive()
+    assert not t_reader.is_alive()
+
+
+def test_build_service_holds_mirror_read_lock_when_use_mirror(
+    tmp_path: Path,
+) -> None:
+    """OCI builds with use_mirror must hold LOCK_SH for the source mirror."""
+    import subprocess
+    from types import SimpleNamespace
+
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    entered = False
+
+    def fake_build(**_: object) -> None:
+        nonlocal entered
+        entered = True
+        lock_probe = subprocess.run(
+            [
+                "python3",
+                "-c",
+                (
+                    "import fcntl;"
+                    f"f=open({str(layout.mirror_lock_path)!r},'a+');"
+                    "fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"
+                ),
+            ],
+            check=False,
+        )
+        # Exclusive acquire must fail while BuildService holds LOCK_SH.
+        assert lock_probe.returncode != 0
+
+    with (
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.template.resolve_build_input") as resolved,
+        patch("hpc_cf.template.resolve_image_and_tag", return_value=("img", "tag")),
+        patch("hpc_cf.template.generate_dockerfile", return_value=Path("Dockerfile")),
+        patch("hpc_cf.sif.build_docker_like", side_effect=fake_build),
+    ):
+        resolved.return_value.environment_dir = tmp_path
+        resolved.return_value.environment_spec = SimpleNamespace(
+            spack=SimpleNamespace(
+                buildcache=SimpleNamespace(enabled=False, policy=BuildcachePolicy.NEVER),
+            )
+        )
+        BuildService(layout=layout).run(
+            BuildRequest(
+                app_version="demo",
+                use_mirror=True,
+                buildcache=BuildcachePolicy.NEVER,
+            )
+        )
+    assert entered
+
+
+def test_build_service_skips_mirror_read_lock_without_mirror(
+    tmp_path: Path,
+) -> None:
+    """use_mirror=False must not acquire SharedMirrorStore.shared_read."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    built = False
+
+    def fake_build(**_: object) -> None:
+        nonlocal built
+        built = True
+
+    with (
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.template.resolve_build_input") as resolved,
+        patch("hpc_cf.template.resolve_image_and_tag", return_value=("img", "tag")),
+        patch("hpc_cf.template.generate_dockerfile", return_value=Path("Dockerfile")),
+        patch("hpc_cf.sif.build_docker_like", side_effect=fake_build),
+        patch.object(
+            SharedMirrorStore,
+            "shared_read",
+            side_effect=AssertionError(
+                "shared_read must not run when use_mirror=False"
+            ),
+        ) as mock_shared_read,
+    ):
+        resolved.return_value = MagicMock(
+            environment_dir=tmp_path,
+            environment_spec=SimpleNamespace(
+                spack=SimpleNamespace(
+                    buildcache=SimpleNamespace(
+                        enabled=False, policy=BuildcachePolicy.NEVER
+                    ),
+                )
+            ),
+        )
+        BuildService(layout=layout).run(
+            BuildRequest(
+                app_version="demo",
+                use_mirror=False,
+                buildcache=BuildcachePolicy.NEVER,
+            )
+        )
+    assert built
+    mock_shared_read.assert_not_called()
+
+
+def test_shared_mirror_readers_are_concurrent(tmp_path: Path) -> None:
+    """Multiple shared_read holders may overlap."""
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedMirrorStore(layout)
+    both_inside = threading.Barrier(2)
+    release = threading.Event()
+    inside = 0
+    lock = threading.Lock()
+    max_inside = 0
+
+    def reader() -> None:
+        nonlocal inside, max_inside
+        with store.shared_read():
+            with lock:
+                inside += 1
+                max_inside = max(max_inside, inside)
+            both_inside.wait(timeout=2)
+            release.wait(timeout=5)
+            with lock:
+                inside -= 1
+
+    t1 = threading.Thread(target=reader)
+    t2 = threading.Thread(target=reader)
+    t1.start()
+    t2.start()
+    # If readers serialize incorrectly, the barrier times out.
+    time.sleep(0.05)
+    release.set()
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+    assert max_inside == 2
 
 
 def test_shared_mirror_run_dir_and_manifest(tmp_path: Path) -> None:

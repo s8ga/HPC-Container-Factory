@@ -263,22 +263,22 @@ class SharedMirrorStore:
     Package blobs remain in the shared joint cache; orchestration metadata
     lives under ``.hpc_cf/`` so existing bind-mount consumers stay compatible.
 
-    Locking is **writers-only** (``fcntl.LOCK_EX`` among assets mirror/verify
-    writers). It does **not** exclude read-only consumers such as podman bind
-    mounts of the mirror during image builds. Prefer a local filesystem for
-    the shared mirror — NFS flock semantics can be weak or advisory-only.
+    Locking is a classic flock reader/writer scheme on ``mirror.lock``:
+
+    - :meth:`exclusive_write` (``LOCK_EX``) for assets mirror/verify writers
+    - :meth:`shared_read` (``LOCK_SH``) for OCI builds that bind-mount the
+      mirror so they never observe a partial writer update
+
+    Prefer a local filesystem for the shared mirror — NFS flock semantics can
+    be weak or advisory-only.
     """
 
     def __init__(self, layout: ProjectLayout) -> None:
         self.layout = layout
 
     @contextmanager
-    def exclusive_write(self) -> Iterator[None]:
-        """Serialize writers across processes (fcntl flock).
-
-        Tries nonblocking first; while blocked, logs at acquire start and
-        about every :data:`MIRROR_LOCK_WAIT_LOG_INTERVAL_S` seconds.
-        """
+    def _flock(self, mode: int, *, role: str) -> Iterator[None]:
+        """Acquire ``mirror.lock`` with nonblocking poll + wait logging."""
         lock_path = self.layout.mirror_lock_path
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, "a+", encoding="utf-8") as lock_file:
@@ -288,19 +288,21 @@ class SharedMirrorStore:
             next_log_at = wait_started + MIRROR_LOCK_WAIT_LOG_INTERVAL_S
             while True:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(fd, mode | fcntl.LOCK_NB)
                     break
                 except BlockingIOError:
                     now = time.monotonic()
                     if not waited:
                         logger.info(
-                            "Shared mirror lock busy (%s); waiting for other writer",
+                            "Shared mirror %s lock busy (%s); waiting",
+                            role,
                             lock_path,
                         )
                         waited = True
                     if now >= next_log_at:
                         logger.info(
-                            "Still waiting for shared mirror lock (%s) after %.0fs",
+                            "Still waiting for shared mirror %s lock (%s) after %.0fs",
+                            role,
                             lock_path,
                             now - wait_started,
                         )
@@ -308,17 +310,43 @@ class SharedMirrorStore:
                     time.sleep(MIRROR_LOCK_POLL_INTERVAL_S)
             if waited:
                 logger.info(
-                    "Acquired shared mirror lock after %.1fs: %s",
+                    "Acquired shared mirror %s lock after %.1fs: %s",
+                    role,
                     time.monotonic() - wait_started,
                     lock_path,
                 )
             else:
-                logger.debug("Acquired shared mirror lock: %s", lock_path)
+                logger.debug(
+                    "Acquired shared mirror %s lock: %s", role, lock_path
+                )
             try:
                 yield
             finally:
                 fcntl.flock(fd, fcntl.LOCK_UN)
-                logger.debug("Released shared mirror lock: %s", lock_path)
+                logger.debug(
+                    "Released shared mirror %s lock: %s", role, lock_path
+                )
+
+    @contextmanager
+    def exclusive_write(self) -> Iterator[None]:
+        """Serialize writers across processes (fcntl ``LOCK_EX``).
+
+        Blocks while any reader (:meth:`shared_read`) or other writer holds
+        the lock. Tries nonblocking first; while blocked, logs at acquire
+        start and about every :data:`MIRROR_LOCK_WAIT_LOG_INTERVAL_S` seconds.
+        """
+        with self._flock(fcntl.LOCK_EX, role="write"):
+            yield
+
+    @contextmanager
+    def shared_read(self) -> Iterator[None]:
+        """Shared read lock for consumers that bind-mount the source mirror.
+
+        Multiple readers may hold concurrently. Blocks while a writer holds
+        :meth:`exclusive_write`, and blocks writers until this context exits.
+        """
+        with self._flock(fcntl.LOCK_SH, role="read"):
+            yield
 
     def begin_run(self, env_name: str) -> MirrorRun:
         """Create a unique host+container log directory for this run."""

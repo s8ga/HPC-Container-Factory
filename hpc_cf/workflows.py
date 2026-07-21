@@ -17,6 +17,7 @@ from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     ProjectLayout,
     SharedBuildcacheStore,
+    SharedMirrorStore,
 )
 from hpc_cf.validation import ValidationProfile
 
@@ -336,59 +337,67 @@ class BuildService:
 
         logger.info("Resolved image: %s:%s", resolved_image, resolved_tag)
         lock = store.consumer_lock() if hold_consumer_lock else nullcontext()
+        # Hold mirror LOCK_SH for the whole OCI build when the Dockerfile will
+        # bind-mount assets/spack-mirror, so assets writers cannot race it.
+        mirror_lock = (
+            SharedMirrorStore(self.layout).shared_read()
+            if request.use_mirror
+            else nullcontext()
+        )
         with lock:
-            effective_policy = _resolve_policy()
-            dockerfile = generate_dockerfile(
-                template=request.template,
-                app_version=request.app_version,
-                output=request.output,
-                use_mirror=request.use_mirror,
-                build_only=request.build_only,
-                layout=self.layout,
-                allow_reconcretize=request.allow_reconcretize,
-                buildcache_policy=effective_policy.value,
-            )
-            if effective_policy is BuildcachePolicy.ONLY:
-                env_dir = resolved.environment_dir
-                lock_path = env_dir / "spack.lock"
-                if not lock_path.is_file():
-                    lock_path = env_dir / "spack-env-file" / "spack.lock"
-                if spec is None:
-                    raise RuntimeError(
-                        "buildcache only requires an EnvironmentSpec"
-                    )
-                producer_ref = producer_image_ref(resolved_image, resolved_tag)
-                environment_provenance = collect_environment_provenance(
-                    lock_path,
-                    resolved.environment_dir,
+            with mirror_lock:
+                effective_policy = _resolve_policy()
+                dockerfile = generate_dockerfile(
+                    template=request.template,
+                    app_version=request.app_version,
+                    output=request.output,
+                    use_mirror=request.use_mirror,
+                    build_only=request.build_only,
+                    layout=self.layout,
+                    allow_reconcretize=request.allow_reconcretize,
+                    buildcache_policy=effective_policy.value,
                 )
-                require_coverage(
-                    self.layout,
-                    lock_path,
-                    spack_version=spec.spack.version,
-                    builder_image=inspect_image_digest(
+                if effective_policy is BuildcachePolicy.ONLY:
+                    env_dir = resolved.environment_dir
+                    lock_path = env_dir / "spack.lock"
+                    if not lock_path.is_file():
+                        lock_path = env_dir / "spack-env-file" / "spack.lock"
+                    if spec is None:
+                        raise RuntimeError(
+                            "buildcache only requires an EnvironmentSpec"
+                        )
+                    producer_ref = producer_image_ref(resolved_image, resolved_tag)
+                    environment_provenance = collect_environment_provenance(
+                        lock_path,
+                        resolved.environment_dir,
+                    )
+                    require_coverage(
+                        self.layout,
+                        lock_path,
+                        spack_version=spec.spack.version,
+                        builder_image=inspect_image_digest(
+                            engine=request.engine,
+                            image_ref=producer_ref,
+                            layout=self.layout,
+                        ),
+                        padded_length=spec.spack.buildcache.padded_length,
+                        environment_provenance=environment_provenance,
+                    )
+                    verify(
                         engine=request.engine,
                         image_ref=producer_ref,
+                        env_name=spec.spack.env_name,
                         layout=self.layout,
-                    ),
-                    padded_length=spec.spack.buildcache.padded_length,
-                    environment_provenance=environment_provenance,
-                )
-                verify(
+                    )
+                build_docker_like(
+                    dockerfile=dockerfile,
+                    image=resolved_image,
+                    tag=resolved_tag,
                     engine=request.engine,
-                    image_ref=producer_ref,
-                    env_name=spec.spack.env_name,
-                    layout=self.layout,
+                    network_host=request.network_host,
+                    build_args=list(request.build_args),
+                    build_opts=list(request.build_opts),
                 )
-            build_docker_like(
-                dockerfile=dockerfile,
-                image=resolved_image,
-                tag=resolved_tag,
-                engine=request.engine,
-                network_host=request.network_host,
-                build_args=list(request.build_args),
-                build_opts=list(request.build_opts),
-            )
         logger.info("Done")
         return 0
 
