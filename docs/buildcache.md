@@ -266,21 +266,48 @@ because cache misses intentionally use the source mirror.
 
 Default L0-L2 tests cover schema, policy, locking, sidecars, CLI/services,
 template mounts, lock gates, all-environment inventory, and render contracts.
-Opt-in L3 uses pkgconf with real Spack 1.1.0, 1.1.1, and 1.2.0 to exercise
-push/index/check, padded relocation, auto miss/recoverable damaged-entry
-fallback, and strict
-only failure.
+Run with `./venv/bin/pytest -q` (no Podman / large assets required).
 
-L4 application delivery is partially available as an **opt-in ABACUS
-lightweight smoke** (`tests/test_integration_abacus_l4.py`, gated by
-`--run-integration`): consumer build of
-`abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`, then
-padded-aware discovery of `share/abacus/tests` and the flat
+### Opt-in L3 / L4 execution counts
+
+| Layer | File | Collected cases | Gate |
+|-------|------|-----------------|------|
+| L3 | `tests/test_integration_spack.py` | **28** (pkgconf matrix × Spack 1.1.0 / 1.1.1 / 1.2.0 + e2e skeleton) | `--run-integration` |
+| L4 | `tests/test_integration_abacus_l4.py` | **2** (consumer build smoke + runtime integration smoke) | `--run-integration` |
+
+L3 exercises push/index/check, padded relocation, auto miss / recoverable
+damaged-entry fallback, and strict `only` failure. Missing matrix assets
+**skip** (classified skip, not a false-green pass). Prefer reporting
+“N passed / M skipped with reasons” over bare green when assets are absent.
+
+L4 application delivery is an **opt-in ABACUS lightweight smoke**: consumer
+build of `abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`,
+then padded-aware discovery of `share/abacus/tests` and the flat
 `integrate/Autotest.sh` entrypoint (3.10 layout; not `01_PW`…`10_others`).
 Full Autotest/module suites stay release evidence, not L4 pass gates.
-Missing healthy buildcache admission or build assets skips (not a false-green
-pass). Full CP2K producer/consumer compile, CP2K runtime/regtest, and SIF
-smoke remain deferred and are not default gates. Outside current scope:
-MKL/ROCm CP2K migration, OCI registries, GPG signing, Spack 1.2 index views,
-VASP integration, cache garbage collection or quotas, autopush,
-cross-distribution relocation, and complete OS/base-image air-gap support.
+Missing healthy buildcache admission, build assets, or installed ABACUS
+tests (`tests=false`) skips.
+
+### Adversarial / path-safety coverage (partial)
+
+Default suite already includes focused adversarial contracts (not a complete
+fuzz corpus):
+
+- Shell quoting / image-repo tokens: `tests/test_script_quoting.py`,
+  `tests/test_quote_path_safety.py`
+- Env path escape / `is_relative_to` guards: quote-path and validation tests
+- Buildcache proof-chain: old producer + new lock rejection, partial
+  coverage / health gates in `tests/test_buildcache_workflow.py`
+- SIF tag/path sanitize: `tests/test_sif_security.py`
+
+Remaining adversarial gaps (not yet systematic): broader shell metacharacter
+matrices, malicious `env.yaml` path traversal beyond current guards, and
+concurrent publisher/consumer stress beyond flock unit coverage.
+
+### Explicitly deferred
+
+- Full **CP2K** producer/consumer compile L4, CP2K runtime/regtest
+- Real **OCI → Apptainer SIF** end-to-end smoke as a default gate
+- MKL/ROCm CP2K migration, remote OCI registries, GPG signing, Spack 1.2
+  index views, VASP integration, cache GC/quotas, autopush,
+  cross-distribution relocation, and complete OS/base-image air-gap support

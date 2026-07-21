@@ -17,15 +17,10 @@ from pathlib import Path
 
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
+from hpc_cf.environment import EnvironmentSpec, SpackConfig, load_environment_spec
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
 from hpc_cf.requests import AssetsRequest
-from hpc_cf.spack_ops import (
-    EnvConfig,
-    SpackConfig,
-    SpackOps,
-    load_env_config,
-    resolve_env_paths,
-)
+from hpc_cf.spack_ops import SpackOps, resolve_env_paths
 from hpc_cf.template import detect_non_host_network
 from hpc_cf.validation import BootstrapContract, is_nonempty_spack_lock
 
@@ -54,10 +49,10 @@ def _make_spack_ops(
     container: Container,
     *,
     layout: ProjectLayout | None = None,
-) -> tuple[EnvConfig, SpackOps]:
+) -> tuple[EnvironmentSpec, SpackOps]:
     """Load env.yaml and create a SpackOps for the given environment."""
     host_dir, _ = resolve_env_paths(env_name, layout=layout)
-    env_config = load_env_config(host_dir)
+    env_config = load_environment_spec(host_dir)
     ops = SpackOps(env_config, container, layout=layout)
     return env_config, ops
 
@@ -99,9 +94,10 @@ def run_bootstrap(
 ) -> None:
     """Generate bootstrap mirror for the given Spack version.
 
-    Uses a minimal EnvConfig with just the version to drive ``SpackOps.bootstrap_mirror()``.
+    Uses a minimal EnvironmentSpec with just the version to drive
+    ``SpackOps.bootstrap_mirror()``.
     """
-    env_config = EnvConfig(
+    env_config = EnvironmentSpec(
         spack=SpackConfig(
             version=spack_version,
             env_name="bootstrap-env",
@@ -366,10 +362,7 @@ def run_assets(
     # Validation preflight lives solely in AssetsService (profile by action).
     if request.env and request.env != "__LIST__":
         try:
-            from hpc_cf.environment import load_environment_spec
-            from hpc_cf.spack_ops import resolve_env_paths as _resolve
-
-            host_dir, _ = _resolve(request.env, layout=layout)
+            host_dir, _ = resolve_env_paths(request.env, layout=layout)
             spec = load_environment_spec(host_dir)
             if not spec.method.requires_spack_assets:
                 print(

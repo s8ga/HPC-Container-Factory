@@ -73,10 +73,12 @@ class BuildcachePlan:
 class SpackEnvironmentPlan:
     """Authoritative Spack contract for one environment.
 
-    Today the plan is the reliable shared contract for **assets** scripts.
-    Image Dockerfiles still stage/register many custom repos via per-env
-    templates + ``template_vars``; ``spack_image_repos`` context is available
-    but the shared partial is not wired into shipped apps yet.
+    The plan is the reliable shared contract for **assets** scripts
+    (prepare/register/mirror). For image Dockerfiles, ABACUS opensource
+    environments include ``templates/partials/spack_image_repos.j2`` (plan-driven
+    ``custom_repos[].image_path``); other apps still stage/register custom repos
+    via per-env Dockerfile.j2 + ``template_vars`` handwritten ``spack repo add``
+    lines.
     """
 
     version: str

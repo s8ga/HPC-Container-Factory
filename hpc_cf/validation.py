@@ -545,14 +545,20 @@ def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
 
     builtin = ((data.get("spack", {}) or {}).get("repos", {}) or {}).get("builtin", {}) or {}
     commit = builtin.get("commit")
+    # Length-only gate (not hex alphabet). Message must match this check.
     if commit is not None and not (isinstance(commit, str) and len(commit) == 40):
         findings.append(
             ValidationFinding(
                 code="spack_yaml.commit_format",
                 severity=ValidationSeverity.WARNING,
-                message=f"repos.builtin.commit is not a 40-char hex string: {commit!r}",
+                message=(
+                    f"repos.builtin.commit is not exactly 40 characters: {commit!r}"
+                ),
                 path=str(spack_yaml),
-                fix_hint="Set repos.builtin.commit to a full 40-character git SHA.",
+                fix_hint=(
+                    "Set repos.builtin.commit to a 40-character string "
+                    "(typically a full git SHA; this check validates length only)."
+                ),
             )
         )
     elif commit is None:

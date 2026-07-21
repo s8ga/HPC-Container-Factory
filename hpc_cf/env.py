@@ -178,7 +178,7 @@ def validate_branch_consistency(env_dir: Path) -> None:
 
 def validate_spack_yaml(env_dir: Path) -> None:
     """Basic spack.yaml sanity: parses; if repos.builtin.commit is set it
-    must be a 40-char hex string."""
+    must be exactly 40 characters (length only; not hex-validated here)."""
     from hpc_cf.validation import ValidationReport, ValidationSeverity
 
     findings = collect_spack_yaml(env_dir)
