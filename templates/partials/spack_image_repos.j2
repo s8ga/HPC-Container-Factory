@@ -4,11 +4,14 @@
 
    STATUS: Wired into ABACUS opensource Dockerfile.j2 (pilot). Other shipped apps
    still register image custom repos via per-env templates + template_vars
-   (e.g. cp2k_branch / cp2k_dev_repo_path) until migrated. #}
+   (e.g. cp2k_branch / cp2k_dev_repo_path) until migrated.
+
+   All tokens are shell_quote'd (Jinja filter → shlex.quote) so spaces / quotes /
+   metacharacters in config cannot break the RUN line. #}
 {% if spack_image_repos %}
 RUN set -euo pipefail; \
 {% for repo in spack_image_repos %}
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} {{ repo.image_path }}{% if not loop.last %} && \{% endif %}{{ "" }}
+    spack -e {{ spack_env_name | shell_quote }} repo add --scope {{ spack_repo_scope | shell_quote }} {{ repo.image_path | shell_quote }}{% if not loop.last %} && \{% endif %}{{ "" }}
 {% endfor %}
 
 {% endif %}

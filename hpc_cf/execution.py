@@ -162,14 +162,44 @@ class ProjectLayout:
         """Return ``(host_env_dir, container_env_dir)`` under this layout.
 
         Handles the ``spack-env-file/`` subdirectory convention.
+        Resolved host paths must stay under :attr:`project_root` so ``--env``
+        values with ``..`` or absolute segments cannot escape the tree.
         """
-        host_dir = self.spack_envs_dir / env_name
-        container_dir = Path(f"/work/spack-envs/{env_name}")
+        from hpc_cf.shell_quote import confine_to_root
+
+        if not env_name or env_name != env_name.strip():
+            raise ValueError(f"invalid --env name: {env_name!r}")
+        # Single path component only — blocks ``../``, absolute, and nested names.
+        env_leaf = Path(env_name).name
+        if (
+            env_leaf != env_name
+            or env_leaf in (".", "..")
+            or "/" in env_name
+            or "\\" in env_name
+        ):
+            raise ValueError(
+                f"--env must be a single directory name under spack-envs/, "
+                f"got {env_name!r}"
+            )
+
+        # Resolve under spack-envs/ (implies project_root for the default layout).
+        host_dir = confine_to_root(
+            self.spack_envs_dir / env_leaf,
+            root=self.spack_envs_dir,
+            label="--env",
+        )
+        confine_to_root(host_dir, root=self.project_root, label="--env")
+        container_dir = Path(f"/work/spack-envs/{env_leaf}")
 
         if (host_dir / "spack-env-file" / "env.yaml").exists() or (
             host_dir / "spack-env-file" / "spack.yaml"
         ).exists():
-            host_dir = host_dir / "spack-env-file"
+            host_dir = confine_to_root(
+                host_dir / "spack-env-file",
+                root=self.spack_envs_dir,
+                label="--env",
+            )
+            confine_to_root(host_dir, root=self.project_root, label="--env")
             container_dir = container_dir / "spack-env-file"
 
         return host_dir, container_dir

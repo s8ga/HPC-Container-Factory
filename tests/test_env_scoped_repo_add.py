@@ -18,8 +18,9 @@ from hpc_cf.environment import BuildMethod, load_environment_spec
 from hpc_cf.template import build_context, render_template, select_template
 
 # ``repo add`` with env scope must include ``spack -e`` on the same logical line.
+# Optional shell quotes around the scope token (``shell_quote`` / shlex.quote).
 _REPO_ADD_ENV_SCOPE = re.compile(
-    r"repo\s+add\b.*--scope\s+env:",
+    r"repo\s+add\b.*--scope\s+'?env:",
     re.IGNORECASE,
 )
 _SPACK_E = re.compile(r"\bspack\s+-e\b")

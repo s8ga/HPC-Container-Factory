@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import re
-import shlex
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +26,7 @@ from hpc_cf.environment import (
     load_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout, RunnerPort
+from hpc_cf.shell_quote import shell_quote
 from hpc_cf.spack_plan import (
     SpackEnvironmentPlan,
     build_spack_environment_plan,
@@ -296,12 +296,14 @@ spack bootstrap mirror{flag} "{container_dir}"
         mb = self.env.mirror_builder
         if mb.pkg_mirror_setup:
             logger.info("Configuring package mirrors...")
-            self.ctr.exec(f"sudo bash -c {shlex.quote(mb.pkg_mirror_setup)}")
+            self.ctr.exec(f"sudo bash -c {shell_quote(mb.pkg_mirror_setup)}")
 
         if mb.system_pkgs and mb.pkg_install_cmd:
             logger.info("Installing system packages...")
-            pkgs = " ".join(mb.system_pkgs)
-            self.ctr.exec(f"sudo bash -c {shlex.quote(mb.pkg_install_cmd + ' ' + pkgs)}")
+            pkgs = " ".join(shell_quote(p) for p in mb.system_pkgs)
+            self.ctr.exec(
+                f"sudo bash -c {shell_quote(mb.pkg_install_cmd + ' ' + pkgs)}"
+            )
             logger.info("System packages installed")
         else:
             logger.info("No system packages declared — skipping")
@@ -368,13 +370,13 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
     def _prepare_git_repo(self, repo: CustomRepo) -> str:
         if not repo.url:
             raise ValueError("custom_repos git repo missing url")
-        url = shlex.quote(repo.url)
-        branch = shlex.quote(repo.branch or "main")
-        sparse = shlex.quote(repo.sparse_path) if repo.sparse_path else ""
+        url = shell_quote(repo.url)
+        branch = shell_quote(repo.branch or "main")
+        sparse = shell_quote(repo.sparse_path) if repo.sparse_path else ""
         clone_dir = self._custom_repo_path(repo, "")
-        clone_dir_q = shlex.quote(clone_dir)
+        clone_dir_q = shell_quote(clone_dir)
         clone_tmp = f"/tmp/repo-clone-{repo.namespace}"
-        clone_tmp_q = shlex.quote(clone_tmp)
+        clone_tmp_q = shell_quote(clone_tmp)
 
         if repo.sparse_path:
             materialize = f"""
@@ -384,7 +386,7 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
             materialize = f"cp -a ./. {clone_dir_q}/"
 
         if repo.commit:
-            commit = shlex.quote(repo.commit)
+            commit = shell_quote(repo.commit)
             if repo.sparse_path:
                 # Sparse cone must be configured before checkout so only the
                 # requested tree is materialized at the pinned commit.
@@ -434,7 +436,7 @@ echo "Prepared {repo.namespace} (git)"
         if not repo.path:
             raise ValueError("custom_repos local repo missing path")
         repo_path = self._custom_repo_path(repo, env_dir)
-        repo_path_q = shlex.quote(repo_path)
+        repo_path_q = shell_quote(repo_path)
         return f"""
 # Validate local repo: {repo.namespace}
 if [[ ! -f {repo_path_q}/repo.yaml ]]; then
@@ -466,12 +468,12 @@ echo "Prepared {repo.namespace} (local)"
         env_dir_container: str,
     ) -> str:
         env_name = self.plan.env_name
-        env_q = shlex.quote(env_name)
+        env_q = shell_quote(env_name)
         scope = self.plan.assets.scope_flag()
-        scope_q = shlex.quote(scope)
+        scope_q = shell_quote(scope)
         parts: list[str] = []
         for repo in self._assets_repos():
-            repo_path_q = shlex.quote(
+            repo_path_q = shell_quote(
                 self._custom_repo_path(repo, env_dir_container)
             )
             # ENV scope registration requires -e; SITE does not.
@@ -495,10 +497,10 @@ echo "Prepared {repo.namespace} (local)"
         import_lock: bool,
     ) -> str:
         env_name = self.plan.env_name
-        env_q = shlex.quote(env_name)
-        spack_yaml = shlex.quote(f"{env_dir_container}/spack.yaml")
-        lock_src = shlex.quote(f"{env_dir_container}/spack.lock")
-        env_root = shlex.quote(
+        env_q = shell_quote(env_name)
+        spack_yaml = shell_quote(f"{env_dir_container}/spack.yaml")
+        lock_src = shell_quote(f"{env_dir_container}/spack.lock")
+        env_root = shell_quote(
             f"{self.spack_root}/var/spack/environments/{env_name}"
         )
 
@@ -567,11 +569,11 @@ spack compiler find
 
     def _build_concretize_script(self, env_dir_container: str) -> str:
         spack_env_name = self.env.spack.env_name
-        lock_dst = shlex.quote(f"{env_dir_container}/spack.lock")
-        lock_src = shlex.quote(
+        lock_dst = shell_quote(f"{env_dir_container}/spack.lock")
+        lock_src = shell_quote(
             f"{self.spack_root}/var/spack/environments/{spack_env_name}/spack.lock"
         )
-        env_q = shlex.quote(spack_env_name)
+        env_q = shell_quote(spack_env_name)
         return f"""{self._source_spack()}
 echo "Concretizing (spack -e {spack_env_name} concretize -f)..."
 spack -e {env_q} concretize -f
@@ -628,9 +630,9 @@ fi
         *,
         create_log: str | None = None,
     ) -> str:
-        env_q = shlex.quote(self.env.spack.env_name)
-        mirror_dir = shlex.quote(mirror_dir_container)
-        log_q = shlex.quote(create_log or MIRROR_CREATE_LOG)
+        env_q = shell_quote(self.env.spack.env_name)
+        mirror_dir = shell_quote(mirror_dir_container)
+        log_q = shell_quote(create_log or MIRROR_CREATE_LOG)
         return f"""{self._source_spack()}
 mkdir -p {mirror_dir}
 mkdir -p "$(dirname {log_q})"
@@ -645,9 +647,9 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
         *,
         verify_log: str | None = None,
     ) -> str:
-        env_q = shlex.quote(self.env.spack.env_name)
-        mirror_dir = shlex.quote(mirror_dir_container)
-        log_q = shlex.quote(verify_log or MIRROR_VERIFY_LOG)
+        env_q = shell_quote(self.env.spack.env_name)
+        mirror_dir = shell_quote(mirror_dir_container)
+        log_q = shell_quote(verify_log or MIRROR_VERIFY_LOG)
         return f"""{self._source_spack()}
 mkdir -p "$(dirname {log_q})"
 : > {log_q}
@@ -779,7 +781,7 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
         If the container read itself fails, returns ``failed=MIRROR_STATS_UNKNOWN``
         rather than masking the error as ``failed=0``.
         """
-        log_q = shlex.quote(log_path)
+        log_q = shell_quote(log_path)
         try:
             result = self.ctr.exec(
                 f"cat {log_q} 2>/dev/null || true",

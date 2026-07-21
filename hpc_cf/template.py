@@ -29,6 +29,7 @@ from hpc_cf.environment import (
     load_environment_spec_from_template,
 )
 from hpc_cf.execution import ProjectLayout
+from hpc_cf.shell_quote import confine_to_root, shell_quote
 from hpc_cf.spack_plan import build_spack_environment_plan, plan_context
 
 logger = logging.getLogger(__name__)
@@ -202,32 +203,40 @@ def resolve_build_input(
     mode.
 
     Path discovery uses *layout* (or :meth:`ProjectLayout.default`).
+    Caller-supplied ``--app-version`` / ``--template`` paths are resolved and
+    must stay under ``layout.project_root``.
     """
     root = _layout(layout)
+    project_root = root.project_root
 
     if explicit_template is not None:
-        if not explicit_template.exists():
+        template_path = confine_to_root(
+            explicit_template,
+            root=project_root,
+            label="--template",
+        )
+        if not template_path.exists():
             raise FileNotFoundError(
                 f"Specified template not found: {explicit_template}"
             )
-        env_dir = explicit_template.parent
+        env_dir = template_path.parent
         spec = _try_load_env_spec(env_dir)
         if spec is None:
             logger.warning(
                 "Template %s has no adjacent env.yaml — "
                 "running in compatibility mode with defaults",
-                explicit_template,
+                template_path,
             )
             return ResolvedBuildInput(
                 environment_spec=None,
                 environment_dir=env_dir,
-                render_template=explicit_template,
+                render_template=template_path,
                 compatibility_mode=True,
             )
         return ResolvedBuildInput(
             environment_spec=spec,
             environment_dir=env_dir,
-            render_template=explicit_template,
+            render_template=template_path,
             compatibility_mode=False,
         )
 
@@ -236,8 +245,14 @@ def resolve_build_input(
             "Cannot resolve build input without --app-version or --template"
         )
 
-    # Prefer: spack-envs/<app-version>/Dockerfile.j2 (current layout)
-    env_dir = root.spack_envs_dir / app_version
+    # Prefer: spack-envs/<app-version>/Dockerfile.j2 (current layout).
+    # Confine under spack-envs/ so ``../artifacts`` cannot select non-env trees.
+    env_dir = confine_to_root(
+        root.spack_envs_dir / app_version,
+        root=root.spack_envs_dir,
+        label="--app-version/--env",
+    )
+    confine_to_root(env_dir, root=project_root, label="--app-version/--env")
     per_env = env_dir / "Dockerfile.j2"
     if per_env.exists():
         spec = _try_load_env_spec(env_dir)
@@ -263,7 +278,12 @@ def resolve_build_input(
 
     # Fallback: spack-envs/<app>_<app-version>/Dockerfile.j2
     if app:
-        env_dir = root.spack_envs_dir / f"{app}_{app_version}"
+        env_dir = confine_to_root(
+            root.spack_envs_dir / f"{app}_{app_version}",
+            root=root.spack_envs_dir,
+            label="--app-version/--env",
+        )
+        confine_to_root(env_dir, root=project_root, label="--app-version/--env")
         per_env = env_dir / "Dockerfile.j2"
         if per_env.exists():
             spec = _try_load_env_spec(env_dir)
@@ -292,22 +312,33 @@ def resolve_build_input(
             if raw.endswith(".j2")
             else root.templates_dir / f"{raw}.j2"
         )
-        if candidate.exists():
+        confined = confine_to_root(
+            candidate, root=project_root, label="--app-version/--env"
+        )
+        if confined.exists():
             return resolve_build_input(
-                explicit_template=candidate, layout=root
+                explicit_template=confined, layout=root
             )
 
     # Fallback: templates/Dockerfile-<app>-<app-version>.j2 (legacy)
     if app:
         template_name = f"Dockerfile-{app}-{app_version}.j2"
-        template_path = root.templates_dir / template_name
+        template_path = confine_to_root(
+            root.templates_dir / template_name,
+            root=project_root,
+            label="--app-version/--env",
+        )
         if template_path.exists():
             return resolve_build_input(
                 explicit_template=template_path, layout=root
             )
 
     # Legacy stem: templates/Dockerfile-<app_version>.j2 without env.yaml
-    legacy = root.templates_dir / f"Dockerfile-{app_version}.j2"
+    legacy = confine_to_root(
+        root.templates_dir / f"Dockerfile-{app_version}.j2",
+        root=project_root,
+        label="--app-version/--env",
+    )
     if legacy.exists():
         return resolve_build_input(explicit_template=legacy, layout=root)
 
@@ -504,6 +535,7 @@ def render_template(
         keep_trailing_newline=True,
         undefined=StrictUndefined,
     )
+    env.filters["shell_quote"] = shell_quote
 
     try:
         template = env.get_template(template_path.name)

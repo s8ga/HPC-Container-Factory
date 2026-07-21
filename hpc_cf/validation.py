@@ -238,10 +238,32 @@ def collect_manual_packages(
     *,
     project_root: Path,
 ) -> list[ValidationFinding]:
+    from hpc_cf.shell_quote import confine_to_root
+
     findings: list[ValidationFinding] = []
+    root = project_root.resolve()
     for mp in spec.manual_packages:
         rel_path = mp.file
-        mp_file = project_root / rel_path
+        try:
+            mp_file = confine_to_root(
+                root / rel_path,
+                root=root,
+                label="manual_packages.file",
+            )
+        except ValueError as exc:
+            findings.append(
+                ValidationFinding(
+                    code="manual_packages.path_escape",
+                    severity=ValidationSeverity.ERROR,
+                    message=str(exc),
+                    path=rel_path,
+                    fix_hint=(
+                        "Use a path under the project root "
+                        "(no '..' or absolute escapes)."
+                    ),
+                )
+            )
+            continue
         if not mp_file.exists():
             findings.append(
                 ValidationFinding(
