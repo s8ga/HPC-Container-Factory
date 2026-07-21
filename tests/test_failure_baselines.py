@@ -220,20 +220,15 @@ def test_schema_version_bool_and_float_fail_closed() -> None:
 
 
 def test_validate_nonexistent_template_does_not_succeed(
-    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """``validate --template`` pointing at a missing file must fail (rc != 0)."""
     from hpc_cf.cli import run_new_cli
+    from hpc_cf.config import PROJECT_ROOT
 
-    # Valid env.yaml beside a missing Dockerfile — current CLI skips existence check.
-    (tmp_path / "env.yaml").write_text(
-        "schema_version: 1\n"
-        "method: no_spack\n"
-        "spack:\n  version: '1.1.1'\n  env_name: e\n",
-        encoding="utf-8",
-    )
-    missing = tmp_path / "Dockerfile.j2"
+    # Path must stay under project root (confine_to_root); use a missing in-tree
+    # path so this baseline asserts missing-template failure, not path escape.
+    missing = PROJECT_ROOT / "tests" / "_no_such_failure_baseline_Dockerfile.j2"
     assert not missing.exists()
 
     rc = run_new_cli(
