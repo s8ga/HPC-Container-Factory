@@ -8,6 +8,7 @@ import pytest
 
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.validation import (
+    BootstrapContract,
     ValidationFinding,
     ValidationProfile,
     ValidationReport,
@@ -32,10 +33,7 @@ def _write_minimal_env(env_dir: Path, *, method: str = "spack") -> None:
 
 
 def _write_valid_bootstrap(bootstrap: Path) -> None:
-    for relative_path in (
-        Path("metadata/sources/metadata.yaml"),
-        Path("metadata/binaries/metadata.yaml"),
-    ):
+    for relative_path in BootstrapContract.required_relative_paths():
         path = bootstrap / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("bootstrap: valid\n", encoding="utf-8")
@@ -91,6 +89,8 @@ def test_build_input_requires_bootstrap_cache(tmp_path: Path) -> None:
         ("empty_directory", False),
         ("missing_binary_metadata", False),
         ("empty_binary_metadata", False),
+        ("missing_clingo_json", False),
+        ("empty_clingo_json", False),
         ("valid", True),
     ],
 )
@@ -116,6 +116,15 @@ def test_build_input_requires_complete_bootstrap_metadata(
     elif bootstrap_state == "empty_binary_metadata":
         _write_valid_bootstrap(bootstrap)
         (bootstrap / "metadata/binaries/metadata.yaml").write_text(
+            "",
+            encoding="utf-8",
+        )
+    elif bootstrap_state == "missing_clingo_json":
+        _write_valid_bootstrap(bootstrap)
+        (bootstrap / "metadata/binaries/clingo.json").unlink()
+    elif bootstrap_state == "empty_clingo_json":
+        _write_valid_bootstrap(bootstrap)
+        (bootstrap / "metadata/binaries/clingo.json").write_text(
             "",
             encoding="utf-8",
         )
@@ -392,14 +401,7 @@ def test_all_envs_with_assets_pass_build_input_profile() -> None:
         if spec.method.requires_spack_assets:
             tarball = layout.assets_dir / f"spack-v{spec.spack.version}.tar.gz"
             bootstrap = layout.bootstrap_dir(spec.spack.version)
-            metadata_files = (
-                bootstrap / "metadata/sources/metadata.yaml",
-                bootstrap / "metadata/binaries/metadata.yaml",
-            )
-            if not tarball.is_file() or not all(
-                path.is_file() and path.stat().st_size > 0
-                for path in metadata_files
-            ):
+            if not tarball.is_file() or not BootstrapContract.is_complete(bootstrap):
                 continue
         report = validate_environment(
             env_dir, ValidationProfile.BUILD_INPUT, layout=layout

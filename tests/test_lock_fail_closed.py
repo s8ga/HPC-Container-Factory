@@ -35,10 +35,9 @@ def _write_spack_env(env_dir: Path, *, with_lock: bool = True) -> None:
 
 
 def _write_valid_bootstrap(bootstrap: Path) -> None:
-    for relative_path in (
-        Path("metadata/sources/metadata.yaml"),
-        Path("metadata/binaries/metadata.yaml"),
-    ):
+    from hpc_cf.validation import BootstrapContract
+
+    for relative_path in BootstrapContract.required_relative_paths():
         path = bootstrap / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("bootstrap: valid\n", encoding="utf-8")

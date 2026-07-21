@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 try:
     import yaml
@@ -36,10 +36,46 @@ from hpc_cf.execution import ProjectLayout
 
 logger = logging.getLogger(__name__)
 
-BOOTSTRAP_METADATA_FILES = (
-    Path("metadata/sources/metadata.yaml"),
-    Path("metadata/binaries/metadata.yaml"),
-)
+
+@dataclass(frozen=True)
+class BootstrapContract:
+    """Single source of truth for a complete offline bootstrap mirror.
+
+    Build-input validation and runtime ``SpackOps._verify_bootstrap`` share
+    this required metadata set so preflight cannot pass a cache that later
+    fails ``spack bootstrap now``.
+    """
+
+    BINARY_PACKAGES: ClassVar[tuple[str, ...]] = ("clingo", "gnupg", "patchelf")
+
+    @classmethod
+    def required_relative_paths(cls) -> tuple[Path, ...]:
+        return (
+            Path("metadata/sources/metadata.yaml"),
+            Path("metadata/binaries/metadata.yaml"),
+            *(Path(f"metadata/binaries/{name}.json") for name in cls.BINARY_PACKAGES),
+        )
+
+    @classmethod
+    def required_paths(cls, bootstrap_dir: Path) -> tuple[Path, ...]:
+        return tuple(bootstrap_dir / rel for rel in cls.required_relative_paths())
+
+    @classmethod
+    def invalid_paths(cls, bootstrap_dir: Path) -> list[Path]:
+        """Return required paths that are missing or empty."""
+        return [
+            path
+            for path in cls.required_paths(bootstrap_dir)
+            if not path.is_file() or path.stat().st_size == 0
+        ]
+
+    @classmethod
+    def is_complete(cls, bootstrap_dir: Path) -> bool:
+        return not cls.invalid_paths(bootstrap_dir)
+
+
+# Backward-compatible alias for callers that imported the old tuple.
+BOOTSTRAP_METADATA_FILES = BootstrapContract.required_relative_paths()
 
 
 class ValidationSeverity(str, Enum):
@@ -336,12 +372,7 @@ def collect_spack_assets(
         )
 
     bootstrap = assets_dir / f"bootstrap-{spack_version}"
-    invalid_metadata = [
-        path
-        for relative_path in BOOTSTRAP_METADATA_FILES
-        if not (path := bootstrap / relative_path).is_file()
-        or path.stat().st_size == 0
-    ]
+    invalid_metadata = BootstrapContract.invalid_paths(bootstrap)
     if invalid_metadata:
         invalid_paths = ", ".join(str(path) for path in invalid_metadata)
         findings.append(

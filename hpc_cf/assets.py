@@ -19,7 +19,6 @@ from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
 from hpc_cf.spack_ops import (
-    EXPECTED_BOOTSTRAP_BINARIES,
     EnvConfig,
     SpackConfig,
     SpackOps,
@@ -27,7 +26,7 @@ from hpc_cf.spack_ops import (
     resolve_env_paths,
 )
 from hpc_cf.template import detect_non_host_network
-from hpc_cf.validation import is_nonempty_spack_lock
+from hpc_cf.validation import BootstrapContract, is_nonempty_spack_lock
 from hpc_cf.workflows import AssetsRequest
 
 logger = logging.getLogger(__name__)
@@ -300,19 +299,16 @@ def _verify_host_side(
     bootstrap_dir = find_bootstrap_dir(spack_version, layout=layout)
 
     if bootstrap_dir:
-        metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
-        if metadata.exists() and metadata.stat().st_size > 0:
-            logger.info("Bootstrap metadata exists and is non-empty")
+        invalid = BootstrapContract.invalid_paths(bootstrap_dir)
+        if not invalid:
+            logger.info("Bootstrap metadata complete under %s", bootstrap_dir)
         else:
             logger.info(
-                "Bootstrap metadata not yet generated: %s "
-                "(run --prepare-bootstrap to create)", metadata,
+                "Bootstrap cache incomplete under %s (missing/empty: %s); "
+                "run --prepare-bootstrap to create",
+                bootstrap_dir,
+                ", ".join(str(path) for path in invalid),
             )
-
-        for name in EXPECTED_BOOTSTRAP_BINARIES:
-            f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
-            if not f.exists() or f.stat().st_size == 0:
-                logger.debug("Missing optional binary metadata: %s", f)
     elif spack_version:
         logger.warning(
             "Bootstrap cache missing for requested version %s "

@@ -31,6 +31,7 @@ from hpc_cf.spack_plan import (
     SpackEnvironmentPlan,
     build_spack_environment_plan,
 )
+from hpc_cf.validation import BootstrapContract
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +83,8 @@ MIRROR_STATS_UNKNOWN = -1
 MIRROR_CREATE_LOG = "/tmp/mirror-output.log"
 MIRROR_VERIFY_LOG = "/tmp/verify-output.log"
 
-# Bootstrap binaries that a complete bootstrap mirror must provide.
-# Single source of truth — previously the ("clingo","gnupg","patchelf") tuple
-# was duplicated in spack_ops (_bootstrap_metadata_complete, _verify_bootstrap)
-# and assets._verify_host_side.
-EXPECTED_BOOTSTRAP_BINARIES = ("clingo", "gnupg", "patchelf")
+# Re-export for callers that still import the package name tuple.
+EXPECTED_BOOTSTRAP_BINARIES = BootstrapContract.BINARY_PACKAGES
 
 
 def _parse_mirror_stats_from_text(text: str) -> dict[str, int]:
@@ -265,26 +263,17 @@ spack bootstrap mirror{flag} "{container_dir}"
 """
 
     def _bootstrap_metadata_complete(self, bootstrap_dir: Path) -> bool:
-        """Check whether all expected bootstrap metadata files are present."""
-        metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
-        if not metadata.exists() or metadata.stat().st_size == 0:
-            return False
-        for name in EXPECTED_BOOTSTRAP_BINARIES:
-            f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
-            if not f.exists() or f.stat().st_size == 0:
-                return False
-        return True
+        """Check whether all required bootstrap metadata files are present."""
+        return BootstrapContract.is_complete(bootstrap_dir)
 
     def _verify_bootstrap(self, bootstrap_dir: Path) -> None:
-        """Validate generated bootstrap metadata."""
-        metadata = bootstrap_dir / "metadata" / "sources" / "metadata.yaml"
-        if not metadata.exists() or metadata.stat().st_size == 0:
-            raise RuntimeError(f"Bootstrap metadata missing or empty: {metadata}")
-
-        for name in EXPECTED_BOOTSTRAP_BINARIES:
-            f = bootstrap_dir / "metadata" / "binaries" / f"{name}.json"
-            if not f.exists() or f.stat().st_size == 0:
-                logger.warning("Missing optional binary metadata: %s", f)
+        """Validate generated bootstrap metadata (fail-closed on contract)."""
+        invalid = BootstrapContract.invalid_paths(bootstrap_dir)
+        if invalid:
+            missing = ", ".join(str(path) for path in invalid)
+            raise RuntimeError(
+                f"Bootstrap metadata missing or empty: {missing}"
+            )
 
         file_count = sum(1 for _ in bootstrap_dir.rglob("*") if _.is_file())
         logger.info("Bootstrap cache prepared — files: %d", file_count)
