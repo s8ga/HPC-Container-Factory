@@ -1963,6 +1963,7 @@ def test_verify_rejects_producer_image_lock_mismatch_with_host(
 def test_publish_success_state_is_atomic_against_half_commit(
     tmp_path: Path,
 ) -> None:
+    """Interrupt before coverage rename: no admitted coverage, no AUTO/ONLY."""
     from hpc_cf.buildcache import (
         coverage_path_for_lock,
         publish_success_state,
@@ -1991,10 +1992,13 @@ def test_publish_success_state_is_atomic_against_half_commit(
         check_returncode=0,
         checked_spec_count=1,
     )
+    # Fail before rename so coverage never becomes visible.
     with patch.object(
-        store, "mark_healthy", side_effect=RuntimeError("health write failed")
+        store,
+        "write_provenance",
+        side_effect=RuntimeError("provenance write failed"),
     ):
-        with pytest.raises(RuntimeError, match="health write failed"):
+        with pytest.raises(RuntimeError, match="provenance write failed"):
             publish_success_state(
                 store,
                 run=run,
@@ -2010,6 +2014,98 @@ def test_publish_success_state_is_atomic_against_half_commit(
             BuildcachePolicy.AUTO, store, lock_path=lock
         )
         is BuildcachePolicy.NEVER
+    )
+    with pytest.raises(RuntimeError, match="unhealthy"):
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store, lock_path=lock
+        )
+
+
+def test_healthy_without_coverage_file_rejects_auto_and_only(
+    tmp_path: Path,
+) -> None:
+    """Crash-window simulation: healthy=true but coverage file missing."""
+    from hpc_cf.buildcache import resolve_consumer_policy
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    store.ensure_store_root()
+    missing = layout.buildcache_coverage_dir / "missing-lock-sha.json"
+    store.mark_healthy(run_id="crash-window", coverage_path=missing)
+    assert not missing.is_file()
+
+    assert (
+        resolve_consumer_policy(BuildcachePolicy.AUTO, store)
+        is BuildcachePolicy.NEVER
+    )
+    with pytest.raises(RuntimeError, match="unhealthy"):
+        resolve_consumer_policy(BuildcachePolicy.ONLY, store)
+
+
+def test_publish_success_state_renames_coverage_before_mark_healthy(
+    tmp_path: Path,
+) -> None:
+    """Coverage final path must exist before mark_healthy runs."""
+    from hpc_cf.buildcache import (
+        coverage_path_for_lock,
+        publish_success_state,
+        resolve_consumer_policy,
+    )
+    from hpc_cf.environment import BuildcachePolicy
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    store.ensure_store_root()
+    store.mark_unhealthy(run_id="prior", failed_step="check", error="bad")
+    lock = tmp_path / "spack.lock"
+    lock.write_text('{"lock": true}\n', encoding="utf-8")
+    run = store.begin_run("demo")
+    record = BuildcacheCoverageRecord(
+        spack_version="1.1.0",
+        builder_image_digest="sha256:builder",
+        environment_provenance={
+            "operating_systems": None,
+            "targets": None,
+            "compilers": None,
+            "repo_commits": None,
+        },
+        padded_length=128,
+        signing_policy="unsigned",
+        check_returncode=0,
+        checked_spec_count=1,
+    )
+    final_path = coverage_path_for_lock(layout, lock)
+    seen_coverage_before_health: list[bool] = []
+    original_mark_healthy = store.mark_healthy
+
+    def tracking_mark_healthy(*, run_id: str, coverage_path: Path) -> Path:
+        seen_coverage_before_health.append(coverage_path.is_file())
+        return original_mark_healthy(run_id=run_id, coverage_path=coverage_path)
+
+    with patch.object(store, "mark_healthy", side_effect=tracking_mark_healthy):
+        published = publish_success_state(
+            store,
+            run=run,
+            lock_path=lock,
+            record=record,
+            provenance={"env": "demo"},
+        )
+
+    assert published == final_path
+    assert seen_coverage_before_health == [True]
+    assert final_path.is_file()
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.AUTO, store, lock_path=lock
+        )
+        is BuildcachePolicy.AUTO
+    )
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store, lock_path=lock
+        )
+        is BuildcachePolicy.ONLY
     )
 
 

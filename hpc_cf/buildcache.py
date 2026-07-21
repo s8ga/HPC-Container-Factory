@@ -158,6 +158,12 @@ def require_verified_source_mirror(
 
 
 def _healthy(store: SharedBuildcacheStore) -> bool:
+    """True only when health claims healthy *and* its coverage file exists.
+
+    Fail-closed: a healthy claim without a visible coverage file (crash window
+    after ``mark_healthy`` / before rename under the old order, or a corrupted
+    sidecar) must not admit consumers.
+    """
     layout = store.layout
     if not layout.spack_buildcache_dir.is_dir():
         return False
@@ -165,7 +171,12 @@ def _healthy(store: SharedBuildcacheStore) -> bool:
         health = store.read_health()
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return False
-    return health.get("healthy") is True
+    if health.get("healthy") is not True:
+        return False
+    coverage_path = health.get("coverage_path")
+    if not isinstance(coverage_path, str) or not coverage_path:
+        return False
+    return Path(coverage_path).is_file()
 
 
 def _has_successful_lock_coverage(
@@ -414,9 +425,11 @@ def publish_success_state(
 ) -> Path:
     """Atomically publish coverage, provenance, and healthy store state.
 
-    Coverage is staged under a non-admitted name until provenance and health
-    succeed, then renamed into place. Any failure leaves no admitted coverage
-    record for this lock SHA.
+    Coverage is staged under a non-admitted name, provenance is written, then
+    coverage is renamed into place *before* ``mark_healthy``. Health is only
+    claimed once the coverage file is visible, so a crash cannot leave
+    ``healthy=true`` without a coverage file. Any failure before a successful
+    rename leaves no admitted coverage record for this lock SHA.
     """
     lock_sha256 = hashlib.sha256(lock_path.read_bytes()).hexdigest()
     final_path = store.layout.buildcache_coverage_dir / f"{lock_sha256}.json"
@@ -444,9 +457,10 @@ def publish_success_state(
             encoding="utf-8",
         )
         store.write_provenance(run, provenance)
-        store.mark_healthy(run_id=run.run_id, coverage_path=final_path)
-        # Coverage becomes visible to consumers only after provenance + health.
+        # Coverage must be visible before health; otherwise AUTO may admit on
+        # healthy alone while the coverage file is still missing.
         staging_path.replace(final_path)
+        store.mark_healthy(run_id=run.run_id, coverage_path=final_path)
         return final_path
     except Exception:
         staging_path.unlink(missing_ok=True)
