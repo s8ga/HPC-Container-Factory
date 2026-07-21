@@ -10,12 +10,17 @@ from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore
 
 from tests.test_integration_abacus_l4 import (
     ENV_NAME,
+    FLAT_AUTOTEST_PROBE,
+    SHARE_ABACUS_TESTS_PROBE,
     _assert_integration_summary_passed,
     consumer_buildcache_admitted,
     l4_skip_reason,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_310 = PROJECT_ROOT / "spack-envs" / "abacus_opensource-3.10.1-force-avx512"
+ENV_39 = PROJECT_ROOT / "spack-envs" / "abacus_opensource-3.9.0.27-force-avx512"
+PADDED_FIND = "find /opt/spack -type d -path '*/share/abacus/tests'"
 
 
 def test_l4_integration_module_skipped_without_run_integration() -> None:
@@ -65,6 +70,35 @@ def test_assert_integration_summary_accepts_clean_pass() -> None:
         "  Skipped:   0\n"
     )
     _assert_integration_summary_passed(summary)
+
+
+def test_l4_probe_uses_padded_find_fallback() -> None:
+    """L4 discovery must match module-runner padded find (not short path only)."""
+    assert PADDED_FIND in SHARE_ABACUS_TESTS_PROBE
+    assert "linux-x86_64_v3/abacus-*/share/abacus/tests" in SHARE_ABACUS_TESTS_PROBE
+    assert "integrate/Autotest.sh" in FLAT_AUTOTEST_PROBE
+    assert "CASES_CPU.txt" in FLAT_AUTOTEST_PROBE
+
+
+def test_integration_scripts_padded_find_and_layouts() -> None:
+    """3.10 flat Autotest; 3.9 grouped dirs; both padded-aware."""
+    s310 = (ENV_310 / "abacus_run_integration_tests.sh").read_text(encoding="utf-8")
+    s39 = (ENV_39 / "abacus_run_integration_tests.sh").read_text(encoding="utf-8")
+    assert PADDED_FIND in s310
+    assert PADDED_FIND in s39
+    assert "INTEGRATE=" in s310 and "Autotest.sh" in s310
+    assert "CASES_CPU.txt" in s310
+    assert "flat Autotest" in s310
+    assert "DIRS=" not in s310
+    assert "DIRS=" in s39 and "01_PW" in s39
+
+
+def test_module_runners_reject_zero_total() -> None:
+    """Empty discovery must not exit 0 (Total:0 false green)."""
+    for env in (ENV_310, ENV_39):
+        text = (env / "abacus_run_module_tests.sh").read_text(encoding="utf-8")
+        assert "TOTAL -eq 0" in text
+        assert "no module tests discovered" in text
 
 
 def test_consumer_buildcache_admitted_false_when_store_missing(

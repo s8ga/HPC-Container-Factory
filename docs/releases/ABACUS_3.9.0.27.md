@@ -53,7 +53,7 @@ ABACUS spec 启用了 `deepmd`、`mlalgo`、`elpa`、`lcao`、`libri`、`libxc`�
 
 已提交的 [abacus-integration-test.log](../../spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus-integration-test.log)：
 
-- 入口：`abacus_run_integration_tests.sh`（目录 `01_PW` … `10_others`）
+- 入口：`abacus_run_integration_tests.sh`（目录 `01_PW` … `10_others`；短路径 + padded `find` 兜底）
 - 并行：4 MPI × 若干 OpenMP（日志记录各组运行）
 - **10/10 passed**，0 failed，0 skipped（总耗时约 1243s）
 
@@ -61,7 +61,7 @@ ABACUS spec 启用了 `deepmd`、`mlalgo`、`elpa`、`lcao`、`libri`、`libxc`�
 
 已提交的 [abacus-module-test.log](../../spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus-module-test.log)：
 
-- 入口：`abacus_run_module_tests.sh`（跳过 `INPUT`/`KPT`/`STRU`；`HSolver`/`dav`/`cg` 超时 120s；失败输出头尾截断）
+- 入口：`abacus_run_module_tests.sh`（跳过 `INPUT`/`KPT`/`STRU`；`HSolver`/`dav`/`cg` 超时 120s；失败输出头尾截断；`TOTAL==0` 非零退出）
 - 镜像：`localhost/abacus_opensource:3.9.0.27-force-avx512`
 - 镜像内路径：`share/abacus/tests`（spec 含 `+tests`；兼容 padded install 发现）
 - **232/238 passed**，**6 failed**（总耗时约 78s，EXIT=1；日志约 145KB）

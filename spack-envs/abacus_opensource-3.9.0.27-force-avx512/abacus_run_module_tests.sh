@@ -158,5 +158,9 @@ if [[ $FAIL -gt 0 ]]; then
 fi
 echo "================================================================"
 
+[[ $TOTAL -eq 0 ]] && {
+    echo "ERROR: no module tests discovered under $TESTS" >&2
+    exit 1
+}
 [[ $FAIL -gt 0 ]] && exit 1
 exit 0

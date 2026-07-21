@@ -29,9 +29,18 @@
 
 ## 应用测试入口
 
-本环境 abacus spec 已启用 `+tests`；OCI 含 `share/abacus/tests`（含 padded install 前缀）。Module 证据已入库（213/221；日志经 harness 截断，约百 KB 级）；Integration 证据使用挂载的 3.10.1-lts 源码 `tests/integrate/Autotest.sh`（见已入库日志），不是 `01_PW`…`10_others` 分组脚本。
+本环境 abacus spec 已启用 `+tests`；OCI 含 `share/abacus/tests`（含 padded install 前缀）。`abacus_run_*.sh` 均用短路径 glob + `find …/share/abacus/tests` 兜底。
+
+- **Module**：`abacus_run_module_tests.sh`（`TOTAL==0` 非零退出）。证据已入库（213/221；日志经 harness 截断）。
+- **Integration**：`abacus_run_integration_tests.sh` 走扁平 `integrate/Autotest.sh` + `CASES_CPU.txt`（与发布证据一致）；**不是** `01_PW`…`10_others` 分组。全量 Autotest 有已知失败，属发布证据而非 L4 门禁。
+- **L4**（opt-in）：consumer build + padded 探测 + Autotest 入口存在性；不跑全量 Autotest。
 
 ```bash
+# Integration (flat Autotest; long-running; may exit non-zero on known fails)
+podman run --rm --network=host \
+  -v "$PWD/spack-envs/abacus_opensource-3.10.1-force-avx512/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro" \
+  abacus_opensource:3.10.1-force-avx512 bash /tmp/run_tests.sh
+
 # Module unit tests
 podman run --rm --network=host \
   -v "$PWD/spack-envs/abacus_opensource-3.10.1-force-avx512/abacus_run_module_tests.sh:/tmp/run_tests.sh:ro" \

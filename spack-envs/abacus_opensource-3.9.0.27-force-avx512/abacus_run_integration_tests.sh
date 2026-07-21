@@ -2,19 +2,23 @@
 #
 # abacus_run_integration_tests.sh — Batch run ABACUS integration tests (01–10)
 #
-# Auto-discovers the ABACUS install under /opt/spack/linux-x86_64_v3/
-# and runs all integration test groups sequentially.
+# Auto-discovers share/abacus/tests under /opt/spack (short or padded
+# install prefix) and runs all integration test groups sequentially.
 #
 # Usage (inside container):
 #   podman run --rm --network=host \
-#     -v $PWD/scripts/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro \
+#     -v $PWD/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro \
 #     abacus_opensource:3.9.0.27-force-avx512 bash /tmp/run_tests.sh
 
 set -eu
 
 TESTS="$(ls -d /opt/spack/linux-x86_64_v3/abacus-*/share/abacus/tests 2>/dev/null | head -1)"
 if [[ -z "$TESTS" ]]; then
-    echo "ERROR: Cannot find test dir under /opt/spack/linux-x86_64_v3/" >&2
+    # padded_length installs nest under /opt/spack/__spack_path_placeholder__/...
+    TESTS="$(find /opt/spack -type d -path '*/share/abacus/tests' 2>/dev/null | head -1)"
+fi
+if [[ -z "$TESTS" ]]; then
+    echo "ERROR: Cannot find share/abacus/tests under /opt/spack/" >&2
     exit 1
 fi
 
@@ -84,5 +88,8 @@ printf "  %-10s %d\n" "Skipped:" "$SKIP"
 printf "  %-10s %ds\n" "Time:"   "$ELAPSED"
 echo "================================================================"
 
+[[ $TOTAL -eq 0 ]] && { echo "ERROR: no integration groups discovered" >&2; exit 1; }
+# All-skip is not a pass (same gate as L4 summary assertion).
+[[ $PASS -eq 0 ]] && { echo "ERROR: Passed=0 (all groups skipped or failed)" >&2; exit 1; }
 [[ $FAIL -gt 0 ]] && exit 1
 exit 0

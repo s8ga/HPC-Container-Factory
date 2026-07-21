@@ -61,10 +61,11 @@ ABACUS spec 启用了 `deepmd`、`deepks`、`elpa`、`lcao`、`libri`、`libxc`�
 
 已提交的 [abacus-integration-test.log](../../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-integration-test.log)：
 
-- 入口为上游 `tests/integrate/Autotest.sh` + `CASES_CPU.txt`（356 cases）；当时镜像尚未带 `+tests`，故挂载 3.10.1-lts 源码树。
+- 入口为上游扁平 `tests/integrate/Autotest.sh` + `CASES_CPU.txt`（356 cases）。当时镜像尚未带 `+tests`，故证据运行挂载了 3.10.1-lts 源码树；当前 `+tests` OCI 内同布局位于 padded `share/abacus/tests/integrate/`。
 - 并行：4 MPI ranks × 2 OpenMP threads。
 - Autotest 报告：5 failed + 3 fatal（相对 1619 property checks）。
 - 按唯一 case 目录计：**348/356 passed**，**8 failed**（EXIT=1）。
+- stock `abacus_run_integration_tests.sh`（本环境）现与证据一致：padded `find` + 扁平 Autotest；**不是** `01_PW`…`10_others` 分组。opt-in L4 只做 padded 探测与 Autotest 入口检查，不把全量 Autotest 当绿门禁。
 
 失败清单：
 
@@ -79,13 +80,13 @@ ABACUS spec 启用了 `deepmd`、`deepks`、`elpa`、`lcao`、`libri`、`libxc`�
 | `312_NO_GO_wfc_get_wf` | fatal | 同上（Fatal Error in catch_properties.sh） |
 | `312_NO_GO_wfc_get_pchg` | fatal | 同上 |
 
-未覆盖：`tests/deepks/`（独立 `Autotest1.sh`）；stock `abacus_run_integration_tests.sh` 的 `01_PW`…`10_others` 分组在 3.10.1-lts 源码中不存在。
+未覆盖：`tests/deepks/`（独立 `Autotest1.sh`）。
 
 ### Module unit tests
 
 已提交的 [abacus-module-test.log](../../spack-envs/abacus_opensource-3.10.1-force-avx512/abacus-module-test.log)：
 
-- 入口：`abacus_run_module_tests.sh`（padded 前缀发现；`HSolver`/`dav`/`cg` 超时 120s；失败输出头尾截断）
+- 入口：`abacus_run_module_tests.sh`（padded 前缀发现；`HSolver`/`dav`/`cg` 超时 120s；失败输出头尾截断；`TOTAL==0` 非零退出）
 - 镜像：`localhost/abacus_opensource:3.10.1-force-avx512`（digest `d096573bdc6ecf0871c5799e489a04224f41ed4a1ca3fa673ecd42b666e8c48d`）
 - 镜像内路径：`share/abacus/tests`（spec 含 `+tests`，concrete hash `imzxfno…`）
 - **213/221 passed**，**8 failed**（总耗时约 145s，EXIT=1；日志约 137KB）

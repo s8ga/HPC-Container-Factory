@@ -213,9 +213,11 @@ use conda/mamba when a binary env solver is enough.
   assets are skipped.
 - **L4 real application delivery**: opt-in ABACUS lightweight smoke in
   `tests/test_integration_abacus_l4.py` (consumer build of
-  `abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`, then stock
-  `abacus_run_integration_tests.sh` when `share/abacus/tests` is present).
-  Full CP2K producer/consumer, CP2K regtest, and SIF smoke remain deferred.
+  `abacus_opensource-3.10.1-force-avx512` with `--buildcache auto`, then
+  padded-aware discovery of `share/abacus/tests` plus flat
+  `integrate/Autotest.sh` entrypoint). Full Autotest / module suites are
+  release evidence (not L4 pass gates). Full CP2K producer/consumer, CP2K
+  regtest, and SIF smoke remain deferred.
 
 Run L0-L2 with `./venv/bin/pytest -q`. Run L3 explicitly with
 `./venv/bin/pytest --run-integration -v -s tests/test_integration_spack.py`.
@@ -229,6 +231,11 @@ L3 creates a persistent container per Spack version and uses a minimal pkgconf
 environment; it does not build CP2K. Missing matrix assets are skipped rather
 than counted as passes. L4 skips when buildcache admission/assets/podman are
 missing, or when the built image lacks installed ABACUS tests (`tests=false`).
+L4 does **not** run the full 356-case Autotest or assert Failed==0 (known
+upstream failures; multi-hour). On padded installs, discovery uses the same
+`find …/share/abacus/tests` fallback as the module runner — do not assume the
+short `/opt/spack/linux-x86_64_v3/abacus-*/…` glob alone. 3.10 stock
+`abacus_run_integration_tests.sh` uses flat Autotest (not `01_PW`…`10_others`).
 Environment inventory is discovered via `EnvironmentSpec` / `list_available_envs()`
 — do not hardcode test counts.
 

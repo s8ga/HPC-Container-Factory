@@ -35,10 +35,10 @@
 
 ## 应用测试入口
 
-容器内可用脚本（挂载到镜像中运行）：
+容器内可用脚本（挂载到镜像中运行）。脚本支持短路径 glob + padded `find …/share/abacus/tests` 兜底；module runner 在 `TOTAL==0` 时非零退出。
 
 ```bash
-# Integration（约 10 组 integrate 目录）
+# Integration（01_PW … 10_others 分组；3.9 布局）
 podman run --rm --network=host \
   -v "$PWD/spack-envs/abacus_opensource-3.9.0.27-force-avx512/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro" \
   abacus_opensource:3.9.0.27-force-avx512 bash /tmp/run_tests.sh

@@ -1,88 +1,76 @@
 #!/bin/bash
 #
-# abacus_run_integration_tests.sh — Batch run ABACUS integration tests (01–10)
+# abacus_run_integration_tests.sh — Run ABACUS flat Autotest (3.10.1-lts)
 #
-# Auto-discovers the ABACUS install under /opt/spack/linux-x86_64_v3/
-# and runs all integration test groups sequentially.
+# Auto-discovers share/abacus/tests under /opt/spack (short or padded
+# install prefix). 3.10.1-lts ships a flat integrate/ tree (cases beside
+# Autotest.sh + CASES_CPU.txt) — not the 01_PW…10_others grouping used by
+# older ABACUS installs. Matches release evidence entrypoint.
 #
 # Usage (inside container):
 #   podman run --rm --network=host \
-#     -v $PWD/scripts/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro \
+#     -v $PWD/abacus_run_integration_tests.sh:/tmp/run_tests.sh:ro \
 #     abacus_opensource:3.10.1-force-avx512 bash /tmp/run_tests.sh
 
 set -eu
 
 TESTS="$(ls -d /opt/spack/linux-x86_64_v3/abacus-*/share/abacus/tests 2>/dev/null | head -1)"
 if [[ -z "$TESTS" ]]; then
-    echo "ERROR: Cannot find test dir under /opt/spack/linux-x86_64_v3/" >&2
+    # padded_length installs nest under /opt/spack/__spack_path_placeholder__/...
+    TESTS="$(find /opt/spack -type d -path '*/share/abacus/tests' 2>/dev/null | head -1)"
+fi
+if [[ -z "$TESTS" ]]; then
+    echo "ERROR: Cannot find share/abacus/tests under /opt/spack/" >&2
     exit 1
 fi
 
-AUTOTEST="$TESTS/integrate/Autotest.sh"
+INTEGRATE="$TESTS/integrate"
+AUTOTEST="$INTEGRATE/Autotest.sh"
+CASES="$INTEGRATE/CASES_CPU.txt"
 if [[ ! -f "$AUTOTEST" ]]; then
     echo "ERROR: Autotest.sh not found at $AUTOTEST" >&2
     exit 1
 fi
+if [[ ! -f "$CASES" ]]; then
+    echo "ERROR: CASES_CPU.txt not found at $CASES" >&2
+    exit 1
+fi
 
-DIRS="01_PW 02_NAO_Gamma 03_NAO_multik 04_FF 05_rtTDDFT 06_SDFT 07_OFDFT 08_EXX 09_DeePKS 10_others"
+n=$(grep -cE '^[^#].*_.*$' "$CASES" 2>/dev/null || echo "0")
 
 echo "================================================================"
-echo "  ABACUS Integration Tests"
-echo "  $TESTS"
+echo "  ABACUS Integration Tests (flat Autotest)"
+echo "  $INTEGRATE"
+echo "  cases: $n"
 echo "================================================================"
 echo ""
 
-PASS=0
-FAIL=0
-SKIP=0
 START=$(date +%s)
-
-for dir in $DIRS; do
-    if [[ ! -d "$TESTS/$dir" ]]; then
-        echo "[SKIP] $dir not found"
-        SKIP=$((SKIP + 1))
-        continue
-    fi
-
-    cases="$TESTS/$dir/CASES_CPU.txt"
-    if [[ ! -f "$cases" ]]; then
-        echo "[SKIP] $dir: no CASES_CPU.txt"
-        SKIP=$((SKIP + 1))
-        continue
-    fi
-
-    n=$(grep -cE '^[^#].*_.*$' "$cases" 2>/dev/null || echo "?")
-
-    echo "--- $dir ($n cases) ---"
-    t0=$(date +%s)
-
-    rc=0
-    (cd "$TESTS/$dir" && bash "$AUTOTEST") || rc=$?
-
-    t1=$(date +%s)
-    if [[ $rc -eq 0 ]]; then
-        echo "[PASS] $dir — $((t1 - t0))s"
-        PASS=$((PASS + 1))
-    else
-        echo "[FAIL] $dir — $((t1 - t0))s (rc=$rc)"
-        FAIL=$((FAIL + 1))
-    fi
-    echo ""
-done
-
+rc=0
+(cd "$INTEGRATE" && bash "$AUTOTEST") || rc=$?
 END=$(date +%s)
 ELAPSED=$((END - START))
-TOTAL=$((PASS + FAIL + SKIP))
 
+if [[ $rc -eq 0 ]]; then
+    PASS=1
+    FAIL=0
+else
+    PASS=0
+    FAIL=1
+fi
+TOTAL=$((PASS + FAIL))
+
+echo ""
 echo "================================================================"
 echo "  Summary"
 echo "================================================================"
 printf "  %-10s %d\n" "Total:"   "$TOTAL"
 printf "  %-10s %d\n" "Passed:"  "$PASS"
 printf "  %-10s %d\n" "Failed:"  "$FAIL"
-printf "  %-10s %d\n" "Skipped:" "$SKIP"
 printf "  %-10s %ds\n" "Time:"   "$ELAPSED"
+echo "  Autotest rc: $rc"
 echo "================================================================"
 
+[[ $TOTAL -eq 0 ]] && { echo "ERROR: no Autotest run recorded" >&2; exit 1; }
 [[ $FAIL -gt 0 ]] && exit 1
 exit 0
