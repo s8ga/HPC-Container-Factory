@@ -83,6 +83,12 @@ def test_only_consumer_has_no_source_mount_or_source_install_branch() -> None:
     assert "--only-concrete" in install
 
 
+def test_non_producer_explicitly_sets_padded_length_zero() -> None:
+    """Non-producer builds explicitly set padded_length:0 via buildcache_config.j2."""
+    rendered = _render("auto", producer=False)
+    assert "padded_length:0" in rendered
+
+
 def test_producer_auto_install_reuses_buildcache_with_padding() -> None:
     """Producer keeps padded_length but may extract published hashes."""
     rendered = _render("auto", producer=True)

@@ -1,5 +1,7 @@
-{# Producer-only relocation padding. Consumers keep the environment's normal prefix. #}
-{% if spack_buildcache_producer %}
+{# Explicitly set install_tree padded_length for every build.
+   Producer: padded (env.yaml buildcache.padded_length, default 128) so published
+   binaries have room to relocate to longer consumer install paths.
+   Non-producer (normal/consumer): explicitly 0 so install paths stay compact.
+   This replaces the old hidden dependency on padded_length:0 in spack.yaml. #}
 RUN spack -e {{ spack_env_name }} config add \
-        "config:install_tree:padded_length:{{ spack_buildcache_padded_length }}"
-{% endif %}
+        "config:install_tree:padded_length:{% if spack_buildcache_producer %}{{ spack_buildcache_padded_length }}{% else %}0{% endif %}"
