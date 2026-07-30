@@ -8,7 +8,7 @@ spack:
     deprecated: true
     install_tree:
       root: /opt/spack
-      padded_length: 128
+      padded_length: 0
     build_stage:
     - /tmp/spack-build
   packages:
