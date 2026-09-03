@@ -107,6 +107,20 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   (`cp2k-image-size-baseline.md`, `cp2k-image-size-log.md`). Opensource CP2K Dockerfiles must
   not emit `--use-buildcache never` for libint (see
   `tests/test_cp2k_libint_buildcache_ban.py`). Details: `docs/buildcache.md`.
+- **Buildcache backend mode**: `spack.buildcache.mode: local|oci` (default
+  `local`, byte-identical to the pre-oci behavior; zero-leak sweep enforces
+  no oci trace in local renders). `oci` requires an `oci://`/`oci+http://`
+  url; credential fields hold env-var **names** (pairs only, oci only).
+  CLI overrides: `--buildcache-mode/--buildcache-url/
+  --buildcache-username-var/--buildcache-password-var`. oci publishers skip
+  update-index/check (`buildcache check` cannot see oci mirrors — rc=1
+  regardless of content; pinned by `TestOciBuildcachePoC`) and gate on a
+  pushed-vs-planned count (`check_kind: "count"` coverage). Admission never
+  crosses backends; `buildcache verify` is local-only; the oci buildcache
+  package must never be pruned by version count (hash-addressed tags).
+  Build secrets (`--build-secret ID=ENVVAR`) feed the oci install RUN via
+  `RUN --mount=type=secret` — values never enter layers. Evidence:
+  `artifacts/oci-registry-lab/notes.md`.
  Production policy defaults come from each env's `spack.buildcache.policy`;
  CLI `--buildcache` is an override. `auto` mounts buildcache and source mirror read-only and permits
   source fallback; strict `only` mounts buildcache alone and fails closed.

@@ -7,6 +7,43 @@ baseline: `cp2k_opensource-2026.2-force-avx512`, then aligned
 are out of this migration and remain as-is. Do not invent a parallel homemade
 binary cache; deepen this Spack buildcache + factory sidecar only.
 
+## Backends: `local` (default) and `oci`
+
+`spack.buildcache.mode` in env.yaml selects where the cache lives; CLI
+`--buildcache-mode`/`--buildcache-url` (plus
+`--buildcache-username-var`/`--buildcache-password-var`) override it per run.
+Unset mode is `local` and renders/executes byte-identically to the pre-oci
+behavior — a zero-leak sweep asserts no oci trace in any local render.
+
+- **local** — the historical single-host model: the global
+  `assets/spack-buildcache/` bind mount, `update-index`, and the live
+  full-lock `buildcache check` as the admission pre-flight.
+- **oci** — a registry mirror (`oci://…` or `oci+http://…`; url required,
+  credential fields hold environment-variable *names*). The install RUN
+  registers the mirror instead of bind-mounting the store; credentials are
+  injected through the `buildcache-creds` build secret, never into layers.
+  The publisher pushes installed hashes by mirror name with **no
+  update-index and no check** — `spack buildcache check` cannot see oci
+  mirrors and returns rc=1 regardless of content (root cause:
+  `needs_rebuild()` builds a URL-layout entry with no oci dispatch; evidence
+  and pinned-by `TestOciBuildcachePoC`). Completeness is a pushed-vs-planned
+  count gate, and coverage records carry `check_kind: "count"`.
+- **Admission never crosses backends**: count-kind records admit oci
+  consumers only, live/legacy records admit local consumers only — health
+  alone cannot bridge them. oci `only` admission = coverage record (no local
+  producer image to bind); the runtime net is `--use-buildcache only`
+  failing closed on any miss. `buildcache verify` is local-mode only.
+- **Never prune the oci buildcache package by version count**: it is
+  hash-addressed (`name-version-daghash.spack` tags); count-based
+  `delete-package-versions` would delete digests that kept tags still
+  reference. Lock-aware cleanup is a separate future task.
+- The host-local publisher flock serializes local writers as before;
+  cross-host serialization for remote producers is the workflow's
+  `concurrency` group, not the flock.
+
+Lab evidence for every behavioral claim above:
+`artifacts/oci-registry-lab/notes.md`.
+
 ## Artifact and ownership boundaries
 
 - `assets/spack-mirror/` is the source mirror. Assets workflows may populate it.
@@ -105,6 +142,16 @@ on the same host mount it read-only. There is no multi-tenant or remote-mirror
 integrity model yet; GPG signing remains out of scope (see deferred work
 below). Do not treat an unsigned local cache as safe to share across untrusted
 machines or users.
+
+For the oci backend the trust root moves from "local filesystem + flock" to
+"the registry account and its tokens": write access is enforced by registry
+authentication (only credential holders can push), read access by package
+visibility (keep the buildcache package private), and integrity by OCI
+content addressing. An unsigned oci cache is acceptable exactly as long as
+that package stays private — publishing it openly would require GPG signing
+first. Credential values live only in CI secrets / process environments and
+enter builds via secret mounts; variable *names* are the only thing env.yaml
+or rendered Dockerfiles ever contain.
 
 To inspect which packages are present in the opaque cache (operator inventory,
 not a factory API), use Spack's own listing against the mount, for example:
@@ -309,6 +356,8 @@ concurrent publisher/consumer stress beyond flock unit coverage.
 
 - Full **CP2K** producer/consumer compile L4, CP2K runtime/regtest
 - Real **OCI → Apptainer SIF** end-to-end smoke as a default gate
-- MKL/ROCm CP2K migration, remote OCI registries, GPG signing, Spack 1.2
-  index views, VASP integration, cache GC/quotas, autopush,
+- GHCR Bearer-token E2E for the oci backend (local lab validated push/pull
+  and admission against a plain registry; authenticated-registry auth ran as
+  far as Basic allowed — see lab notes), GPG signing, Spack 1.2 index views,
+  lock-aware oci cache cleanup, VASP integration, cache GC/quotas, autopush,
   cross-distribution relocation, and complete OS/base-image air-gap support
