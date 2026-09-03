@@ -164,7 +164,12 @@ jobs:
       - name: Publish source-mirror data image to GHCR
         run: |
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
-          tar -C assets -cf - spack-mirror | podman import - "$DATED"
+          # An imported image has no CMD/ENTRYPOINT (the tar only contains
+          # the mirror tree), and the produce job restores it with
+          # `podman create`, which requires one. Stamp a dummy command —
+          # create never executes it.
+          tar -C assets -cf - spack-mirror | \
+            podman import --change 'CMD ["/bin/true"]' - "$DATED"
           podman tag "$DATED" "${INPUTS_REPO}:${ENV_NAME}"
           podman push "$DATED"
           podman push "${INPUTS_REPO}:${ENV_NAME}"
