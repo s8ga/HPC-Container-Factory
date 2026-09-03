@@ -16,7 +16,11 @@ from typing import Any
 
 import yaml
 
-from hpc_cf.buildcache_ops import build_publish_script, build_verify_script
+from hpc_cf.buildcache_ops import (
+    build_publish_script,
+    build_publish_script_oci,
+    build_verify_script,
+)
 from hpc_cf.config import IMAGE_SPACK_ROOT
 from hpc_cf.environment import BuildcachePolicy
 from hpc_cf.execution import (
@@ -446,6 +450,7 @@ def publish_success_state(
         "signing_policy": record.signing_policy,
         "check_returncode": record.check_returncode,
         "checked_spec_count": record.checked_spec_count,
+        "check_kind": record.check_kind,
         "coverage": "non_external",
         "external_specs_excluded": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -475,8 +480,18 @@ def run_in_installed_image(
     script: str,
     writable: bool = False,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    env_extra: dict[str, str] | None = None,
+    network_host: bool = False,
+    mount_buildcache: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Run a dedicated publisher/checker with the store mounted read-write."""
+    """Run a dedicated publisher/checker with the store mounted read-write.
+
+    The extra parameters are inert by default so the local-mode command line
+    is unchanged: *env_extra* appends ``--env`` pairs (oci credentials),
+    *network_host* adds ``--network=host`` (local plain-HTTP registries), and
+    *mount_buildcache=False* drops the store bind mount (oci pushes go to the
+    registry, not the local filesystem).
+    """
     sandboxed_script = (
         'mkdir -p "$SPACK_USER_CONFIG_PATH"\n'
         'test -w "$HOME"\n'
@@ -492,6 +507,8 @@ def run_in_installed_image(
     ]
     if engine == "podman":
         command.append("--userns=keep-id:uid=0,gid=0")
+    if network_host:
+        command.append("--network=host")
     command += [
         "--env",
         "HOME=/root",
@@ -499,12 +516,20 @@ def run_in_installed_image(
         "SPACK_USER_CACHE_PATH=/root/.spack",
         "--env",
         "SPACK_USER_CONFIG_PATH=/tmp/hpc-cf-spack-config",
-        "-v",
-        (
-            f"{layout.spack_buildcache_dir}:"
-            f"{layout.container_publisher_buildcache_dir()}:"
-            f"{'rw' if writable else 'ro'}"
-        ),
+    ]
+    if env_extra:
+        for key, value in env_extra.items():
+            command += ["--env", f"{key}={value}"]
+    if mount_buildcache:
+        command += [
+            "-v",
+            (
+                f"{layout.spack_buildcache_dir}:"
+                f"{layout.container_publisher_buildcache_dir()}:"
+                f"{'rw' if writable else 'ro'}"
+            ),
+        ]
+    command += [
         image_ref,
         "bash",
         "-lc",
@@ -545,6 +570,49 @@ def publish(
     match = _COUNT_RE.search(result.stdout or "")
     if match is None:
         raise RuntimeError("publisher did not report explicit checked spec count")
+    return result, int(match.group(1))
+
+
+def publish_oci(
+    *,
+    engine: str,
+    image_ref: str,
+    env_name: str,
+    layout: ProjectLayout,
+    mirror_url: str,
+    username_var: str | None = None,
+    password_var: str | None = None,
+    credentials: dict[str, str] | None = None,
+    timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    """OCI-mirror publisher: registry push with a count-based coverage gate.
+
+    Completeness is asserted by the pushed-vs-planned count emitted by
+    :func:`build_publish_script_oci`; the full-lock check command cannot be
+    used against oci mirrors (known-broken upstream — see
+    artifacts/oci-registry-lab/notes.md). The local store is not mounted.
+    """
+    script = build_publish_script_oci(
+        env_name=env_name,
+        mirror_url=mirror_url,
+        username_var=username_var,
+        password_var=password_var,
+    )
+    result = run_in_installed_image(
+        engine=engine,
+        image_ref=image_ref,
+        layout=layout,
+        script=script,
+        writable=False,
+        timeout_seconds=timeout_seconds,
+        env_extra=credentials,
+        mount_buildcache=False,
+    )
+    match = _COUNT_RE.search(result.stdout or "")
+    if match is None:
+        raise RuntimeError(
+            "oci publisher did not report explicit checked spec count"
+        )
     return result, int(match.group(1))
 
 

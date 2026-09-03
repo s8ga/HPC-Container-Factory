@@ -121,3 +121,56 @@ def build_publish_script(
         f"--mirror-url {shlex.quote(f'file://{store_path}')} "
         '"${spec_hashes[@]}"\n'
     )
+
+
+def build_publish_script_oci(
+    *,
+    env_name: str,
+    mirror_url: str,
+    username_var: str | None = None,
+    password_var: str | None = None,
+    setup_script: str = IMAGE_SPACK_SETUP_SCRIPT,
+) -> str:
+    """OCI-mirror publisher: register mirror, push installed hashes by name.
+
+    Deliberate omissions vs the local publisher (lab evidence:
+    artifacts/oci-registry-lab/notes.md):
+    - no ``update-index``: nothing consumes the index tag it would upload;
+    - no ``buildcache check``: the check CLI cannot see oci mirrors and
+      reports rc=1 regardless of content.
+
+    Completeness is instead asserted by the pushed-vs-planned count:
+    ``HPC_CF_CHECKED_SPEC_COUNT`` is only emitted when every non-external
+    concrete spec was pushed, so partial publishes fail closed after
+    pushing (already-published binaries are never discarded — the caller
+    records partial state from the pushed-count marker).
+    """
+    env = shlex.quote(env_name)
+    cred_flags = ""
+    if username_var and password_var:
+        cred_flags = (
+            f" --oci-username-variable {shlex.quote(username_var)}"
+            f" --oci-password-variable {shlex.quote(password_var)}"
+        )
+    return _prelude(setup_script) + (
+        'echo "HPC_CF_BUILDCACHE_STEP=publish"\n'
+        f"{_installed_non_external_hashes(env_name)}"
+        f"{_coverage_hashes(env_name)}"
+        'if ((${#installed_hashes[@]} < ${#spec_hashes[@]})); then\n'
+        '    echo "HPC_CF_PARTIAL_PUBLISH=1"\n'
+        "fi\n"
+        f"spack -e {env} mirror add --unsigned{cred_flags} binary-cache "
+        f"{shlex.quote(mirror_url)}\n"
+        f"spack -e {env} buildcache push --unsigned --fail-fast binary-cache "
+        '"${installed_hashes[@]}"\n'
+        'echo "HPC_CF_PUSHED_SPEC_COUNT=${#installed_hashes[@]}"\n'
+        'echo "HPC_CF_BUILDCACHE_STEP=oci-count-check"\n'
+        "if ((${#installed_hashes[@]} == ${#spec_hashes[@]})); then\n"
+        '    echo "HPC_CF_CHECKED_SPEC_COUNT=${#spec_hashes[@]}"\n'
+        "else\n"
+        '    echo "HPC_CF_OCI_INCOMPLETE_COVERAGE=1"\n'
+        '    echo "oci coverage incomplete: pushed ${#installed_hashes[@]}"\n'
+        '         "of ${#spec_hashes[@]} non-external concrete specs" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+    )

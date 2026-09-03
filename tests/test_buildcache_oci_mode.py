@@ -299,3 +299,277 @@ def test_build_request_maps_backend_overrides() -> None:
     request = build_request_from_args(args, use_mirror=True)
     assert request.buildcache_mode is BuildcacheMode.OCI
     assert request.buildcache_url == OCI_URL
+
+
+# ── Producer leaves: oci publish script and publisher container ───────────
+
+import hashlib  # noqa: E402
+import json  # noqa: E402
+import subprocess  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+from hpc_cf.buildcache import publish_oci, run_in_installed_image  # noqa: E402
+from hpc_cf.buildcache_ops import (  # noqa: E402
+    build_publish_script,
+    build_publish_script_oci,
+)
+from hpc_cf.execution import ProjectLayout  # noqa: E402
+
+
+def test_oci_publish_script_pins_registry_flow() -> None:
+    script = build_publish_script_oci(env_name="cp2k-env", mirror_url=OCI_URL)
+    normalized = " ".join(script.split())
+    assert (
+        "spack -e cp2k-env mirror add --unsigned binary-cache "
+        f"{OCI_URL}" in normalized
+    )
+    assert "buildcache push --unsigned --fail-fast binary-cache" in normalized
+    assert "HPC_CF_PUSHED_SPEC_COUNT=" in script
+    assert "HPC_CF_CHECKED_SPEC_COUNT=" in script
+    assert "HPC_CF_BUILDCACHE_STEP=oci-count-check" in script
+    # Commands that must never run against oci mirrors.
+    assert "update-index" not in script
+    assert "buildcache check" not in script
+
+
+def test_oci_publish_script_credential_flags() -> None:
+    script = build_publish_script_oci(
+        env_name="e",
+        mirror_url=OCI_URL,
+        username_var="OCI_USER",
+        password_var="OCI_PASS",
+    )
+    normalized = " ".join(script.split())
+    assert (
+        "mirror add --unsigned --oci-username-variable OCI_USER "
+        "--oci-password-variable OCI_PASS binary-cache" in normalized
+    )
+
+
+def test_local_publish_script_has_zero_oci_traces() -> None:
+    script = build_publish_script(
+        env_name="e", store_path="/work/assets/spack-buildcache"
+    )
+    assert "oci" not in script.lower()
+    assert "buildcache check --mirror-url file:///" in script
+
+
+def test_run_in_installed_image_default_command_unchanged(
+    tmp_path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(bc.subprocess, "run", fake_run)
+    run_in_installed_image(
+        engine="podman",
+        image_ref="img",
+        layout=ProjectLayout(project_root=tmp_path),
+        script="true",
+    )
+    cmd = captured["cmd"]
+    assert cmd[0] == "podman"
+    assert "--network=host" not in cmd
+    assert any(part == "-v" for part in cmd)
+
+
+def test_run_in_installed_image_oci_variant_flags(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(bc.subprocess, "run", fake_run)
+    run_in_installed_image(
+        engine="podman",
+        image_ref="img",
+        layout=ProjectLayout(project_root=tmp_path),
+        script="true",
+        env_extra={"OCI_USER": "u", "OCI_PASS": "p"},
+        network_host=True,
+        mount_buildcache=False,
+    )
+    cmd = captured["cmd"]
+    assert "--network=host" in cmd
+    assert "OCI_USER=u" in cmd and "OCI_PASS=p" in cmd
+    assert not any(part == "-v" for part in cmd)
+
+
+def test_publish_oci_parses_count_and_skips_local_mount(tmp_path, monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_run(**kwargs):
+        calls.update(kwargs)
+        return subprocess.CompletedProcess(
+            [], 0, stdout="HPC_CF_PUSHED_SPEC_COUNT=7\nHPC_CF_CHECKED_SPEC_COUNT=7\n"
+        )
+
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(bc, "run_in_installed_image", fake_run)
+    result, count = publish_oci(
+        engine="podman",
+        image_ref="img",
+        env_name="e",
+        layout=ProjectLayout(project_root=tmp_path),
+        mirror_url=OCI_URL,
+        credentials={"OCI_USER": "u", "OCI_PASS": "p"},
+    )
+    assert count == 7
+    assert result.returncode == 0
+    assert calls["mount_buildcache"] is False
+    assert calls["writable"] is False
+    assert calls["env_extra"] == {"OCI_USER": "u", "OCI_PASS": "p"}
+    assert f"binary-cache {OCI_URL}" in " ".join(str(calls["script"]).split())
+
+
+def test_publish_oci_requires_explicit_count(tmp_path, monkeypatch) -> None:
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(
+        bc,
+        "run_in_installed_image",
+        lambda **kwargs: subprocess.CompletedProcess([], 0, stdout="no markers"),
+    )
+    with pytest.raises(RuntimeError, match="checked spec count"):
+        publish_oci(
+            engine="podman",
+            image_ref="img",
+            env_name="e",
+            layout=ProjectLayout(project_root=tmp_path),
+            mirror_url=OCI_URL,
+        )
+
+
+def _oci_spec() -> SimpleNamespace:
+    return SimpleNamespace(
+        spack=SimpleNamespace(
+            version="1.2.0",
+            env_name="cp2k-env",
+            buildcache=SimpleNamespace(
+                enabled=True,
+                padded_length=128,
+                mode=BuildcacheMode.OCI,
+                url=OCI_URL,
+                username_var=None,
+                password_var=None,
+            ),
+        ),
+        images=SimpleNamespace(builder="debian:13"),
+    )
+
+
+def test_verify_action_rejects_oci_mode(tmp_path) -> None:
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_dir = layout.spack_envs_dir / PILOT / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    resolved = SimpleNamespace(
+        environment_dir=env_dir, environment_spec=_oci_spec()
+    )
+    with patch(
+        "hpc_cf.template.resolve_build_input", return_value=resolved
+    ):
+        with pytest.raises(RuntimeError, match="local-mode only"):
+            BuildcacheService(layout).run(
+                BuildcacheRequest(action="verify", env=PILOT)
+            )
+
+
+def test_oci_producer_build_publishes_to_registry_and_marks_healthy(
+    tmp_path,
+) -> None:
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_dir = layout.spack_envs_dir / PILOT / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
+    lock_sha = hashlib.sha256(
+        (env_dir / "spack.lock").read_bytes()
+    ).hexdigest()
+    resolved = SimpleNamespace(
+        environment_dir=env_dir, environment_spec=_oci_spec()
+    )
+    images: dict[str, str] = {}
+    publish_oci_kwargs: dict[str, object] = {}
+    render_kwargs: dict[str, object] = {}
+
+    def fake_build_stage(*, image_ref: str, **_: object) -> None:
+        images[image_ref] = "sha256:producer"
+
+    def fake_promote(*, temporary_ref: str, stable_ref: str, **_: object) -> None:
+        images[stable_ref] = images[temporary_ref]
+
+    def fake_remove(*, image_ref: str, **_: object) -> None:
+        images.pop(image_ref, None)
+
+    def fake_inspect(*, image_ref: str, **_: object) -> str:
+        return images[image_ref]
+
+    def fake_generate(**kwargs):
+        render_kwargs.update(kwargs)
+        return tmp_path / "Dockerfile"
+
+    def fake_publish_oci(**kwargs):
+        publish_oci_kwargs.update(kwargs)
+        return (
+            subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=(
+                    "HPC_CF_PUSHED_SPEC_COUNT=3\n"
+                    "HPC_CF_CHECKED_SPEC_COUNT=3\n"
+                ),
+            ),
+            3,
+        )
+
+    local_publish = MagicMock()
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.template.resolve_image_and_tag",
+            return_value=("cp2k", "2025.2"),
+        ),
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.buildcache.require_verified_source_mirror"),
+        patch("hpc_cf.template.generate_dockerfile", side_effect=fake_generate),
+        patch("hpc_cf.sif.build_docker_stage", side_effect=fake_build_stage),
+        patch("hpc_cf.buildcache.promote_producer_image", side_effect=fake_promote),
+        patch("hpc_cf.buildcache.remove_temporary_image", side_effect=fake_remove),
+        patch("hpc_cf.buildcache.inspect_image_digest", side_effect=fake_inspect),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha", return_value=lock_sha
+        ),
+        patch("hpc_cf.buildcache.publish", local_publish),
+        patch("hpc_cf.buildcache.publish_oci", side_effect=fake_publish_oci),
+    ):
+        assert BuildcacheService(layout).run(
+            BuildcacheRequest(action="build", env=PILOT)
+        ) == 0
+
+    local_publish.assert_not_called()
+    assert publish_oci_kwargs["mirror_url"] == OCI_URL
+    assert render_kwargs.get("buildcache_mode") == "oci"
+    assert render_kwargs.get("buildcache_url") == OCI_URL
+    assert render_kwargs.get("buildcache_producer") is True
+    health = json.loads(layout.buildcache_health_path.read_text(encoding="utf-8"))
+    assert health["healthy"] is True
+    coverage = json.loads(
+        (layout.buildcache_coverage_dir / f"{lock_sha}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert coverage["check_kind"] == "count"
+    assert coverage["checked_spec_count"] == 3

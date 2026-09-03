@@ -454,6 +454,11 @@ class BuildcacheCoverageRecord:
     Coverage is deliberately fixed to non-external specs. External compilers
     and runtime packages are represented in a Spack DAG but are not pushed as
     binary packages.
+
+    ``check_kind`` records how completeness was established: ``live`` means a
+    ``spack buildcache check`` run against the local store (local mode only —
+    the check CLI cannot see oci mirrors); ``count`` means the oci publisher's
+    pushed-vs-planned count gate.
     """
 
     spack_version: str
@@ -463,6 +468,7 @@ class BuildcacheCoverageRecord:
     signing_policy: str
     check_returncode: int
     checked_spec_count: int
+    check_kind: str = "live"
 
 
 class SharedBuildcacheStore:

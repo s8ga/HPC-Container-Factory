@@ -7,10 +7,11 @@ Request DTOs live in :mod:`hpc_cf.requests`.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
-from hpc_cf.environment import BuildcachePolicy
+from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     ProjectLayout,
@@ -84,6 +85,8 @@ class BuildcacheService:
         image_digest: str,
         stable_image_ref: str,
         provenance: dict[str, object],
+        backend_mode: BuildcacheMode,
+        backend_url: str | None,
     ) -> None:
         from hpc_cf.buildcache import (
             failed_publish_output,
@@ -91,6 +94,7 @@ class BuildcacheService:
             inspect_image_digest,
             promote_producer_image,
             publish,
+            publish_oci,
             publish_output_markers,
             publish_success_state,
             require_matching_image_lock,
@@ -107,14 +111,48 @@ class BuildcacheService:
         }
         failed_step = "publish"
         try:
-            try:
-                result, checked_count = publish(
+
+            def run_publish() -> tuple[Any, int]:
+                if backend_mode is BuildcacheMode.OCI:
+                    username_var = spec.spack.buildcache.username_var
+                    password_var = spec.spack.buildcache.password_var
+                    credentials: dict[str, str] = {}
+                    if username_var and password_var:
+                        missing = [
+                            name
+                            for name in (username_var, password_var)
+                            if not os.environ.get(name)
+                        ]
+                        if missing:
+                            raise RuntimeError(
+                                "oci publisher credential env vars not set: "
+                                f"{sorted(missing)}"
+                            )
+                        credentials = {
+                            username_var: os.environ[username_var],
+                            password_var: os.environ[password_var],
+                        }
+                    return publish_oci(
+                        engine=request.engine,
+                        image_ref=temporary_image_ref,
+                        env_name=spec.spack.env_name,
+                        layout=self.layout,
+                        mirror_url=str(backend_url),
+                        username_var=username_var,
+                        password_var=password_var,
+                        credentials=credentials,
+                        timeout_seconds=request.operation_timeout_seconds,
+                    )
+                return publish(
                     engine=request.engine,
                     image_ref=temporary_image_ref,
                     env_name=spec.spack.env_name,
                     layout=self.layout,
                     timeout_seconds=request.operation_timeout_seconds,
                 )
+
+            try:
+                result, checked_count = run_publish()
             except Exception as exc:
                 failed_step = failed_publish_step(exc)
                 markers = publish_output_markers(failed_publish_output(exc))
@@ -171,6 +209,11 @@ class BuildcacheService:
                     signing_policy="unsigned",
                     check_returncode=0,
                     checked_spec_count=checked_count,
+                    check_kind=(
+                        "count"
+                        if backend_mode is BuildcacheMode.OCI
+                        else "live"
+                    ),
                 ),
                 provenance={
                     **provenance,
@@ -273,6 +316,19 @@ class BuildcacheService:
         )
         if not spec.spack.buildcache.enabled:
             raise RuntimeError(f"buildcache is not enabled for {request.env}")
+        # Lazy import: workflows imports this module at top level.
+        from hpc_cf.workflows import resolve_buildcache_backend
+
+        backend_mode, backend_url = resolve_buildcache_backend(
+            spec,
+            mode_override=request.buildcache_mode,
+            url_override=request.buildcache_url,
+        )
+        if request.action == "verify" and backend_mode is BuildcacheMode.OCI:
+            raise RuntimeError(
+                "buildcache verify is local-mode only: the live check cannot "
+                "see oci mirrors; oci admission relies on coverage records"
+            )
         lock_path = resolved.environment_dir / "spack.lock"
         if not lock_path.is_file():
             lock_path = resolved.environment_dir / "spack-env-file" / "spack.lock"
@@ -438,6 +494,8 @@ class BuildcacheService:
                     image_digest=image_digest,
                     stable_image_ref=stable_image_ref,
                     provenance=provenance,
+                    backend_mode=backend_mode,
+                    backend_url=backend_url,
                 )
             remove_temporary_image(
                 engine=request.engine,
@@ -467,6 +525,8 @@ class BuildcacheService:
             allow_reconcretize=False,
             buildcache_policy=BuildcachePolicy.AUTO.value,
             buildcache_producer=True,
+            buildcache_mode=backend_mode.value,
+            buildcache_url=backend_url,
         )
         temporary_image_ref = temporary_producer_image_ref(
             image, tag, run.run_id
@@ -532,6 +592,8 @@ class BuildcacheService:
                             **provenance,
                             "docker_build_error": str(docker_build_error),
                         },
+                        backend_mode=backend_mode,
+                        backend_url=backend_url,
                     )
                 except Exception as publish_exc:
                     raise publish_exc from docker_build_error
@@ -578,6 +640,8 @@ class BuildcacheService:
                 image_digest=image_digest,
                 stable_image_ref=stable_image_ref,
                 provenance=provenance,
+                backend_mode=backend_mode,
+                backend_url=backend_url,
             )
         remove_temporary_image(
             engine=request.engine,
