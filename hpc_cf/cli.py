@@ -122,6 +122,22 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
             "requires --buildcache-mode oci"
         ),
     )
+    parser.add_argument(
+        "--buildcache-username-var",
+        default=None,
+        help=(
+            "Environment variable name holding the OCI registry username "
+            "(requires --buildcache-mode oci; pair with --buildcache-password-var)"
+        ),
+    )
+    parser.add_argument(
+        "--buildcache-password-var",
+        default=None,
+        help=(
+            "Environment variable name holding the OCI registry password/token "
+            "(requires --buildcache-mode oci; pair with --buildcache-username-var)"
+        ),
+    )
 
 
 def add_assets_options(parser: argparse.ArgumentParser) -> None:
@@ -269,6 +285,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra podman/docker build option (repeatable), e.g. --build-opt '--no-cache'",
     )
+    build_parser_cmd.add_argument(
+        "--build-secret",
+        action="append",
+        default=[],
+        metavar="ID=ENVVAR",
+        help=(
+            "Pass a build secret to podman/docker build as "
+            "--secret id=ID,env=ENVVAR (repeatable). The value is read from "
+            "the environment at build time and never lands in a layer"
+        ),
+    )
     buildcache_parser = subparsers.add_parser(
         "buildcache",
         help="Build, verify, or show the shared Spack buildcache",
@@ -313,6 +340,32 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "OCI buildcache mirror URL to publish to (oci:// or oci+http://); "
             "requires --buildcache-mode oci"
+        ),
+    )
+    build_action_parser.add_argument(
+        "--buildcache-username-var",
+        default=None,
+        help=(
+            "Environment variable name holding the OCI registry username "
+            "(requires --buildcache-mode oci)"
+        ),
+    )
+    build_action_parser.add_argument(
+        "--buildcache-password-var",
+        default=None,
+        help=(
+            "Environment variable name holding the OCI registry password/token "
+            "(requires --buildcache-mode oci)"
+        ),
+    )
+    build_action_parser.add_argument(
+        "--build-secret",
+        action="append",
+        default=[],
+        metavar="ID=ENVVAR",
+        help=(
+            "Pass a build secret to the producer image build as "
+            "--secret id=ID,env=ENVVAR (repeatable)"
         ),
     )
     resume_parser = buildcache_actions.add_parser(
@@ -466,6 +519,19 @@ def run_new_cli(argv: list[str]) -> int:
         getattr(args, "buildcache_mode", None) is not BuildcacheMode.OCI
     ):
         parser.error("--buildcache-url requires --buildcache-mode oci")
+
+    username_var = getattr(args, "buildcache_username_var", None)
+    password_var = getattr(args, "buildcache_password_var", None)
+    if bool(username_var) != bool(password_var):
+        parser.error(
+            "--buildcache-username-var and --buildcache-password-var "
+            "must be passed together"
+        )
+    if username_var and getattr(args, "buildcache_mode", None) is not BuildcacheMode.OCI:
+        parser.error(
+            "--buildcache-username-var/--buildcache-password-var require "
+            "--buildcache-mode oci"
+        )
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

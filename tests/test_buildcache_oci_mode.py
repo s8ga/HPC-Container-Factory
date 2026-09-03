@@ -157,20 +157,56 @@ def test_plan_context_local_defaults() -> None:
 
 
 def test_resolve_backend_defaults_to_local() -> None:
-    mode, url = resolve_buildcache_backend(_spec(None))
-    assert mode is BuildcacheMode.LOCAL
-    assert url is None
+    backend = resolve_buildcache_backend(_spec(None))
+    assert backend.mode is BuildcacheMode.LOCAL
+    assert backend.url is None
+    assert backend.username_var is None
+    assert backend.password_var is None
 
 
 def test_resolve_backend_cli_override_beats_env_yaml() -> None:
-    spec = _spec({"mode": "oci", "url": "oci://ghcr.io/a/b"})
-    mode, url = resolve_buildcache_backend(
-        spec,
-        mode_override=BuildcacheMode.LOCAL,
-        url_override=None,
+    # env url survives a local mode override (no creds configured)
+    plain = _spec({"mode": "oci", "url": "oci://ghcr.io/a/b"})
+    backend = resolve_buildcache_backend(
+        plain, mode_override=BuildcacheMode.LOCAL, url_override=None
     )
-    assert mode is BuildcacheMode.LOCAL
-    assert url == "oci://ghcr.io/a/b"  # env url survives a local override
+    assert backend.mode is BuildcacheMode.LOCAL
+    assert backend.url == "oci://ghcr.io/a/b"
+
+    credentialed = _spec(
+        {
+            "mode": "oci",
+            "url": "oci://ghcr.io/a/b",
+            "username_var": "ENV_USER",
+            "password_var": "ENV_PASS",
+        }
+    )
+    # env creds make a local mode override contradictory — fail closed
+    with pytest.raises(ValueError, match="only valid with mode 'oci'"):
+        resolve_buildcache_backend(credentialed, mode_override=BuildcacheMode.LOCAL)
+
+    backend = resolve_buildcache_backend(
+        credentialed,
+        username_var_override="CLI_USER",
+        password_var_override="CLI_PASS",
+    )
+    # CLI credential-var overrides win over env.yaml in oci mode.
+    assert (backend.username_var, backend.password_var) == ("CLI_USER", "CLI_PASS")
+
+
+def test_resolve_backend_rejects_cred_vars_without_oci() -> None:
+    with pytest.raises(ValueError, match="only valid with mode 'oci'"):
+        resolve_buildcache_backend(
+            _spec({"mode": "oci", "url": OCI_URL}),
+            mode_override=BuildcacheMode.LOCAL,
+            username_var_override="A",
+            password_var_override="B",
+        )
+    with pytest.raises(ValueError, match="as a pair"):
+        resolve_buildcache_backend(
+            _spec({"mode": "oci", "url": OCI_URL}),
+            username_var_override="A",
+        )
 
 
 def test_resolve_backend_oci_requires_url_fail_closed() -> None:
@@ -179,9 +215,11 @@ def test_resolve_backend_oci_requires_url_fail_closed() -> None:
 
 
 def test_resolve_backend_env_oci_mode_uses_env_url() -> None:
-    mode, url = resolve_buildcache_backend(_spec({"mode": "oci", "url": OCI_URL}))
-    assert mode is BuildcacheMode.OCI
-    assert url == OCI_URL
+    backend = resolve_buildcache_backend(
+        _spec({"mode": "oci", "url": OCI_URL})
+    )
+    assert backend.mode is BuildcacheMode.OCI
+    assert backend.url == OCI_URL
 
 
 # ── Rendering: local stays clean, oci is explicit ─────────────────────────
@@ -796,3 +834,147 @@ def test_only_build_skips_live_check_and_digest_bind_for_oci(tmp_path) -> None:
     digest_inspect.assert_not_called()
 
 
+
+
+# ── Build secrets and credential plumbing ────────────────────────────────
+
+from hpc_cf.sif import build_docker_like, build_docker_stage  # noqa: E402
+
+
+def _captured_build_commands(tmp_path, monkeypatch, **kwargs) -> list[list[str]]:
+    commands: list[list[str]] = []
+
+    def fake_run_cmd(cmd, **_: object) -> None:
+        commands.append(cmd)
+
+    import hpc_cf.sif as sif_module
+
+    monkeypatch.setattr(sif_module, "run_cmd", fake_run_cmd)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        "FROM debian:trixie AS builder-installed\nFROM debian:trixie AS builder\n",
+        encoding="utf-8",
+    )
+    build_docker_like(
+        dockerfile=dockerfile,
+        image="cp2k",
+        tag="t",
+        engine="podman",
+        network_host=True,
+        **kwargs,
+    )
+    return commands
+
+
+def test_build_secrets_rendered_on_every_stage(tmp_path, monkeypatch) -> None:
+    commands = _captured_build_commands(
+        tmp_path,
+        monkeypatch,
+        build_args=["A=1"],
+        build_opts=["--no-cache"],
+        build_secrets=["buildcache-creds=GHCR_CREDS"],
+    )
+    assert len(commands) == 3  # installed, builder, final
+    for cmd in commands:
+        assert "--network" in cmd and "host" in cmd
+        assert "id=buildcache-creds,env=GHCR_CREDS" in cmd
+        i = cmd.index("--secret")
+        assert cmd[i + 1] == "id=buildcache-creds,env=GHCR_CREDS"
+
+
+def test_build_secrets_default_keeps_command_unchanged(tmp_path, monkeypatch) -> None:
+    commands = _captured_build_commands(tmp_path, monkeypatch)
+    for cmd in commands:
+        assert "--secret" not in cmd
+
+
+def test_build_secret_malformed_entry_fails_closed(tmp_path, monkeypatch) -> None:
+    with pytest.raises(ValueError, match="ID=ENVVAR"):
+        _captured_build_commands(
+            tmp_path, monkeypatch, build_secrets=["no-separator"]
+        )
+
+
+def test_build_docker_stage_secret_flag(tmp_path, monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run_cmd(cmd, **_: object) -> None:
+        commands.append(cmd)
+
+    import hpc_cf.sif as sif_module
+
+    monkeypatch.setattr(sif_module, "run_cmd", fake_run_cmd)
+    build_docker_stage(
+        dockerfile=tmp_path / "D",
+        image_ref="img:tmp",
+        target="builder-installed",
+        engine="podman",
+        network_host=False,
+        build_secrets=["buildcache-creds=GHCR_CREDS"],
+    )
+    assert "id=buildcache-creds,env=GHCR_CREDS" in commands[0]
+
+
+def test_cli_parses_secret_and_credential_args() -> None:
+    from hpc_cf.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "build",
+            "--env",
+            PILOT,
+            "--buildcache-mode",
+            "oci",
+            "--buildcache-url",
+            OCI_URL,
+            "--buildcache-username-var",
+            "OCI_USER",
+            "--buildcache-password-var",
+            "OCI_PASS",
+            "--build-secret",
+            "buildcache-creds=GHCR_CREDS",
+            "--build-secret",
+            "other=OTHER_VAR",
+        ]
+    )
+    assert args.buildcache_mode is BuildcacheMode.OCI
+    assert args.buildcache_url == OCI_URL
+    assert args.buildcache_username_var == "OCI_USER"
+    assert args.buildcache_password_var == "OCI_PASS"
+    assert args.build_secret == [
+        "buildcache-creds=GHCR_CREDS",
+        "other=OTHER_VAR",
+    ]
+
+
+def test_cli_rejects_credential_args_without_oci_mode(capsys) -> None:
+    from hpc_cf.cli import run_new_cli
+
+    argv = [
+        "build",
+        "--env",
+        PILOT,
+        "--buildcache-username-var",
+        "OCI_USER",
+        "--buildcache-password-var",
+        "OCI_PASS",
+    ]
+    with pytest.raises(SystemExit):
+        run_new_cli(argv)
+    assert "require" in capsys.readouterr().err
+
+
+def test_render_honors_credential_var_overrides() -> None:
+    def add_creds(context: dict) -> None:
+        context["spack_buildcache_username_var"] = "CLI_USER"
+        context["spack_buildcache_password_var"] = "CLI_PASS"
+
+    rendered = _render(
+        "only", mode="oci", url=OCI_URL, context_mutate=add_creds
+    )
+    install = next(
+        block for block in rendered.split("RUN ") if "--use-buildcache only" in block
+    )
+    assert "--oci-username-variable CLI_USER" in install
+    assert "--oci-password-variable CLI_PASS" in install

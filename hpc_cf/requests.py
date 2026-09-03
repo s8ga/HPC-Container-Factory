@@ -55,6 +55,9 @@ class BuildRequest:
     buildcache: BuildcachePolicy | None = None
     buildcache_mode: BuildcacheMode | None = None
     buildcache_url: str | None = None
+    buildcache_username_var: str | None = None
+    buildcache_password_var: str | None = None
+    build_secret: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,9 @@ class BuildcacheRequest:
     operation_timeout_seconds: int = 24 * 60 * 60
     buildcache_mode: BuildcacheMode | None = None
     buildcache_url: str | None = None
+    buildcache_username_var: str | None = None
+    buildcache_password_var: str | None = None
+    build_secret: tuple[str, ...] = ()
 
 
 def assets_request_from_args(args: Any) -> AssetsRequest:
@@ -120,6 +126,9 @@ def build_request_from_args(
         buildcache=getattr(args, "buildcache", None),
         buildcache_mode=getattr(args, "buildcache_mode", None),
         buildcache_url=getattr(args, "buildcache_url", None),
+        buildcache_username_var=getattr(args, "buildcache_username_var", None),
+        buildcache_password_var=getattr(args, "buildcache_password_var", None),
+        build_secret=tuple(getattr(args, "build_secret", None) or ()),
     )
 
 
@@ -139,6 +148,9 @@ def buildcache_request_from_args(args: Any) -> BuildcacheRequest:
         ),
         buildcache_mode=getattr(args, "buildcache_mode", None),
         buildcache_url=getattr(args, "buildcache_url", None),
+        buildcache_username_var=getattr(args, "buildcache_username_var", None),
+        buildcache_password_var=getattr(args, "buildcache_password_var", None),
+        build_secret=tuple(getattr(args, "build_secret", None) or ()),
     )
 
 

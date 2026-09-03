@@ -402,7 +402,7 @@ def test_build_service_holds_mirror_read_lock_when_use_mirror(
         resolved.return_value.environment_dir = tmp_path
         resolved.return_value.environment_spec = SimpleNamespace(
             spack=SimpleNamespace(
-                buildcache=SimpleNamespace(enabled=False, policy=BuildcachePolicy.NEVER, mode=BuildcacheMode.LOCAL, url=None),
+                buildcache=SimpleNamespace(enabled=False, policy=BuildcachePolicy.NEVER, mode=BuildcacheMode.LOCAL, url=None, username_var=None, password_var=None),
         )
         )
         BuildService(layout=layout).run(
@@ -451,6 +451,7 @@ def test_build_service_skips_mirror_read_lock_without_mirror(
                 spack=SimpleNamespace(
                     buildcache=SimpleNamespace(
                         enabled=False, policy=BuildcachePolicy.NEVER, mode=BuildcacheMode.LOCAL, url=None,
+                username_var=None, password_var=None,
                     )
                 ),
             )

@@ -342,6 +342,24 @@ def run_cmd(
     subprocess.run(cmd, cwd=run_cwd, env=env, check=True)
 
 
+def _secret_flags(build_secrets: list[str] | None) -> list[str]:
+    """Render ``ID=ENVVAR`` build-secret requests as engine flags.
+
+    The env-var form keeps credential values out of the command line (and
+    therefore out of logs): the engine reads them from the environment at
+    build time and mounts them via ``RUN --mount=type=secret``.
+    """
+    flags: list[str] = []
+    for entry in build_secrets or []:
+        secret_id, sep, env_name = entry.partition("=")
+        if not sep or not secret_id or not env_name:
+            raise ValueError(
+                f"invalid --build-secret entry {entry!r}; expected ID=ENVVAR"
+            )
+        flags += ["--secret", f"id={secret_id},env={env_name}"]
+    return flags
+
+
 def build_docker_like(
     *,
     dockerfile: Path,
@@ -351,6 +369,7 @@ def build_docker_like(
     network_host: bool,
     build_args: list[str] | None = None,
     build_opts: list[str] | None = None,
+    build_secrets: list[str] | None = None,
 ) -> None:
     import shlex
 
@@ -371,6 +390,8 @@ def build_docker_like(
             "Consider adding --network-host for reliable network access."
         )
 
+    secret_flags = _secret_flags(build_secrets)
+
     def _stage_command(target: str, output_tag: str) -> list[str]:
         command = [
             engine, "build", "--target", target,
@@ -378,6 +399,7 @@ def build_docker_like(
         ]
         if network_host:
             command += ["--network", "host"]
+        command += secret_flags
         for arg in build_args or []:
             command += ["--build-arg", arg]
         for opt in build_opts or []:
@@ -406,6 +428,7 @@ def build_docker_like(
     cmd = [engine, "build", "-f", str(dockerfile), "-t", final_tag]
     if network_host:
         cmd += ["--network", "host"]
+    cmd += secret_flags
     for arg in build_args or []:
         cmd += ["--build-arg", arg]
     for opt in build_opts or []:
@@ -423,6 +446,7 @@ def build_docker_stage(
     network_host: bool,
     build_args: list[str] | None = None,
     build_opts: list[str] | None = None,
+    build_secrets: list[str] | None = None,
 ) -> None:
     """Build one named OCI stage for producer workflows."""
     import shlex
@@ -441,6 +465,7 @@ def build_docker_stage(
     ]
     if network_host:
         command += ["--network", "host"]
+    command += _secret_flags(build_secrets)
     for arg in build_args or []:
         command += ["--build-arg", arg]
     for opt in build_opts or []:

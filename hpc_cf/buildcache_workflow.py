@@ -85,8 +85,7 @@ class BuildcacheService:
         image_digest: str,
         stable_image_ref: str,
         provenance: dict[str, object],
-        backend_mode: BuildcacheMode,
-        backend_url: str | None,
+        backend: Any,
     ) -> None:
         from hpc_cf.buildcache import (
             failed_publish_output,
@@ -113,9 +112,9 @@ class BuildcacheService:
         try:
 
             def run_publish() -> tuple[Any, int]:
-                if backend_mode is BuildcacheMode.OCI:
-                    username_var = spec.spack.buildcache.username_var
-                    password_var = spec.spack.buildcache.password_var
+                if backend.mode is BuildcacheMode.OCI:
+                    username_var = backend.username_var
+                    password_var = backend.password_var
                     credentials: dict[str, str] = {}
                     if username_var and password_var:
                         missing = [
@@ -137,7 +136,7 @@ class BuildcacheService:
                         image_ref=temporary_image_ref,
                         env_name=spec.spack.env_name,
                         layout=self.layout,
-                        mirror_url=str(backend_url),
+                        mirror_url=str(backend.url),
                         username_var=username_var,
                         password_var=password_var,
                         credentials=credentials,
@@ -210,9 +209,7 @@ class BuildcacheService:
                     check_returncode=0,
                     checked_spec_count=checked_count,
                     check_kind=(
-                        "count"
-                        if backend_mode is BuildcacheMode.OCI
-                        else "live"
+                        "count" if backend.mode is BuildcacheMode.OCI else "live"
                     ),
                 ),
                 provenance={
@@ -319,12 +316,14 @@ class BuildcacheService:
         # Lazy import: workflows imports this module at top level.
         from hpc_cf.workflows import resolve_buildcache_backend
 
-        backend_mode, backend_url = resolve_buildcache_backend(
+        backend = resolve_buildcache_backend(
             spec,
             mode_override=request.buildcache_mode,
             url_override=request.buildcache_url,
+            username_var_override=request.buildcache_username_var,
+            password_var_override=request.buildcache_password_var,
         )
-        if request.action == "verify" and backend_mode is BuildcacheMode.OCI:
+        if request.action == "verify" and backend.mode is BuildcacheMode.OCI:
             raise RuntimeError(
                 "buildcache verify is local-mode only: the live check cannot "
                 "see oci mirrors; oci admission relies on coverage records"
@@ -494,8 +493,7 @@ class BuildcacheService:
                     image_digest=image_digest,
                     stable_image_ref=stable_image_ref,
                     provenance=provenance,
-                    backend_mode=backend_mode,
-                    backend_url=backend_url,
+                    backend=backend,
                 )
             remove_temporary_image(
                 engine=request.engine,
@@ -525,8 +523,10 @@ class BuildcacheService:
             allow_reconcretize=False,
             buildcache_policy=BuildcachePolicy.AUTO.value,
             buildcache_producer=True,
-            buildcache_mode=backend_mode.value,
-            buildcache_url=backend_url,
+            buildcache_mode=backend.mode.value,
+            buildcache_url=backend.url,
+            buildcache_username_var=backend.username_var,
+            buildcache_password_var=backend.password_var,
         )
         temporary_image_ref = temporary_producer_image_ref(
             image, tag, run.run_id
@@ -592,8 +592,7 @@ class BuildcacheService:
                             **provenance,
                             "docker_build_error": str(docker_build_error),
                         },
-                        backend_mode=backend_mode,
-                        backend_url=backend_url,
+                        backend=backend,
                     )
                 except Exception as publish_exc:
                     raise publish_exc from docker_build_error
@@ -640,8 +639,7 @@ class BuildcacheService:
                 image_digest=image_digest,
                 stable_image_ref=stable_image_ref,
                 provenance=provenance,
-                backend_mode=backend_mode,
-                backend_url=backend_url,
+                backend=backend,
             )
         remove_temporary_image(
             engine=request.engine,

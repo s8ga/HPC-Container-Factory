@@ -384,6 +384,8 @@ def build_context(
     buildcache_producer: bool = False,
     buildcache_mode: str | None = None,
     buildcache_url: str | None = None,
+    buildcache_username_var: str | None = None,
+    buildcache_password_var: str | None = None,
 ) -> dict:
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags.
 
@@ -482,6 +484,10 @@ def build_context(
             context["spack_buildcache_mode"] = buildcache_mode
         if buildcache_url is not None:
             context["spack_buildcache_url"] = buildcache_url
+        if buildcache_username_var is not None:
+            context["spack_buildcache_username_var"] = buildcache_username_var
+        if buildcache_password_var is not None:
+            context["spack_buildcache_password_var"] = buildcache_password_var
         context["spack_buildcache_producer"] = buildcache_producer
 
     if method is BuildMethod.NO_SPACK:
@@ -583,6 +589,8 @@ def generate_dockerfile(
     buildcache_producer: bool = False,
     buildcache_mode: str | None = None,
     buildcache_url: str | None = None,
+    buildcache_username_var: str | None = None,
+    buildcache_password_var: str | None = None,
 ) -> Path:
     root = _layout(layout)
     resolved = resolve_build_input(app_version, template, layout=root)
@@ -598,6 +606,8 @@ def generate_dockerfile(
         buildcache_producer=buildcache_producer,
         buildcache_mode=buildcache_mode,
         buildcache_url=buildcache_url,
+        buildcache_username_var=buildcache_username_var,
+        buildcache_password_var=buildcache_password_var,
     )
     content = render_template(
         resolved.render_template, context, layout=root

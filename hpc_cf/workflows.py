@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import NamedTuple
+
 from hpc_cf.buildcache_workflow import BuildcacheService
 from hpc_cf.environment import BuildcacheMode, BuildcachePolicy, EnvironmentSpec
 from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore, SharedMirrorStore
@@ -45,16 +47,28 @@ __all__ = [
 ]
 
 
+class BuildcacheBackend(NamedTuple):
+    """Effective binary-cache backend after CLI/env.yaml resolution."""
+
+    mode: BuildcacheMode
+    url: str | None
+    username_var: str | None
+    password_var: str | None
+
+
 def resolve_buildcache_backend(
     spec: EnvironmentSpec | None,
     *,
     mode_override: BuildcacheMode | None = None,
     url_override: str | None = None,
-) -> tuple[BuildcacheMode, str | None]:
+    username_var_override: str | None = None,
+    password_var_override: str | None = None,
+) -> BuildcacheBackend:
     """Resolve the effective binary-cache backend (CLI overrides env.yaml).
 
     Fail-closed: oci mode without a mirror URL is a configuration error,
-    whether the URL was expected from env.yaml or a CLI override.
+    and credential variable names are only meaningful in oci mode (they
+    must also always come in pairs).
     """
     mode = mode_override or (
         spec.spack.buildcache.mode if spec is not None else BuildcacheMode.LOCAL
@@ -62,12 +76,27 @@ def resolve_buildcache_backend(
     url = url_override or (
         spec.spack.buildcache.url if spec is not None else None
     )
+    username_var = username_var_override or (
+        spec.spack.buildcache.username_var if spec is not None else None
+    )
+    password_var = password_var_override or (
+        spec.spack.buildcache.password_var if spec is not None else None
+    )
+    if (username_var is None) != (password_var is None):
+        raise ValueError(
+            "buildcache credential variables must be configured as a pair "
+            "(username_var/password_var)"
+        )
+    if mode is not BuildcacheMode.OCI and (username_var or password_var):
+        raise ValueError(
+            "buildcache credential variables are only valid with mode 'oci'"
+        )
     if mode is BuildcacheMode.OCI and not url:
         raise ValueError(
             "buildcache mode 'oci' requires a mirror URL "
             "(env spack.buildcache.url or --buildcache-url)"
         )
-    return mode, url
+    return BuildcacheBackend(mode, url, username_var, password_var)
 
 
 class AssetsService:
@@ -165,10 +194,12 @@ class BuildService:
             request.app_version, request.template, layout=self.layout
         )
         spec = resolved.environment_spec
-        effective_mode, effective_url = resolve_buildcache_backend(
+        backend = resolve_buildcache_backend(
             spec,
             mode_override=request.buildcache_mode,
             url_override=request.buildcache_url,
+            username_var_override=request.buildcache_username_var,
+            password_var_override=request.buildcache_password_var,
         )
         requested_policy = request.buildcache or (
             spec.spack.buildcache.policy
@@ -216,7 +247,7 @@ class BuildService:
                 store,
                 enabled=buildcache_enabled,
                 lock_path=policy_lock,
-                backend_mode=effective_mode,
+                backend_mode=backend.mode,
             )
 
         if request.render_only:
@@ -234,8 +265,10 @@ class BuildService:
                     layout=self.layout,
                     allow_reconcretize=request.allow_reconcretize,
                     buildcache_policy=effective_policy.value,
-                    buildcache_mode=effective_mode.value,
-                    buildcache_url=effective_url,
+                    buildcache_mode=backend.mode.value,
+                    buildcache_url=backend.url,
+                    buildcache_username_var=backend.username_var,
+                    buildcache_password_var=backend.password_var,
                 )
             logger.info("Done")
             return 0
@@ -275,8 +308,10 @@ class BuildService:
                     layout=self.layout,
                     allow_reconcretize=request.allow_reconcretize,
                     buildcache_policy=effective_policy.value,
-                    buildcache_mode=effective_mode.value,
-                    buildcache_url=effective_url,
+                    buildcache_mode=backend.mode.value,
+                    buildcache_url=backend.url,
+                    buildcache_username_var=backend.username_var,
+                    buildcache_password_var=backend.password_var,
                 )
                 if effective_policy is BuildcachePolicy.ONLY:
                     env_dir = resolved.environment_dir
@@ -291,7 +326,7 @@ class BuildService:
                         lock_path,
                         resolved.environment_dir,
                     )
-                    if effective_mode is BuildcacheMode.OCI:
+                    if backend.mode is BuildcacheMode.OCI:
                         # oci admission seam: no local producer image to bind
                         # (consumer machines never carry it) and no live
                         # pre-flight — spack buildcache check cannot see oci
@@ -340,6 +375,7 @@ class BuildService:
                     network_host=request.network_host,
                     build_args=list(request.build_args),
                     build_opts=list(request.build_opts),
+                    build_secrets=list(request.build_secret),
                 )
         logger.info("Done")
         return 0
