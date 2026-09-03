@@ -544,6 +544,7 @@ class BuildcacheService:
                     network_host=request.network_host,
                     build_args=list(request.build_args),
                     build_opts=producer_build_opts,
+                    build_secrets=list(request.build_secret),
                 )
         except Exception as docker_build_error:
             # Soft-fail producer installs normally tag the image (exit 0).

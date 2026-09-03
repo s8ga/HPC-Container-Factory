@@ -1330,6 +1330,81 @@ def test_producer_auto_only_lifecycle_preserves_producer_digest(
     assert verified_refs[-1] == producer_ref
 
 
+def test_producer_build_passes_build_secrets_to_stage(tmp_path: Path) -> None:
+    """Regression: --build-secret must reach the producer stage build.
+
+    The oci-mode producer Dockerfile reads credentials through
+    ``RUN --mount=type=secret``; a build command without ``--secret``
+    fails at that step (observed on the first GHCR dispatch).
+    """
+    from hpc_cf.environment import BuildcacheMode
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_dir = layout.spack_envs_dir / PILOT / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
+    spec = SimpleNamespace(
+        spack=SimpleNamespace(
+            buildcache=SimpleNamespace(
+                enabled=True,
+                padded_length=128,
+                mode=BuildcacheMode.OCI,
+                url="oci://ghcr.io/s8ga/hpc-cf-buildcache",
+                username_var="OCI_USER",
+                password_var="OCI_PASS",
+            ),
+            version="1.1.0",
+            env_name="cp2k-env",
+        ),
+        images=SimpleNamespace(builder="debian:13"),
+    )
+    resolved = SimpleNamespace(environment_dir=env_dir, environment_spec=spec)
+    captured: dict[str, object] = {}
+
+    def fake_build_stage(**kwargs: object) -> None:
+        captured.update(kwargs)
+        raise RuntimeError("stop before publish machinery")
+
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.template.resolve_image_and_tag",
+            return_value=("cp2k", "2025.2"),
+        ),
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.buildcache.require_verified_source_mirror"),
+        patch(
+            "hpc_cf.template.generate_dockerfile",
+            return_value=tmp_path / "Dockerfile",
+        ),
+        patch("hpc_cf.sif.build_docker_stage", side_effect=fake_build_stage),
+        patch(
+            "hpc_cf.buildcache.inspect_image_digest",
+            side_effect=RuntimeError("no image"),
+        ),
+        patch(
+            "hpc_cf.buildcache.inspect_image_lock_sha",
+            return_value=_lock_sha(env_dir / "spack.lock"),
+        ),
+        patch("hpc_cf.buildcache.remove_temporary_image"),
+        pytest.raises(RuntimeError, match="stop before publish machinery"),
+    ):
+        BuildcacheService(layout).run(
+            BuildcacheRequest(
+                action="build",
+                env=PILOT,
+                buildcache_mode=BuildcacheMode.OCI,
+                buildcache_url="oci://ghcr.io/s8ga/hpc-cf-buildcache",
+                buildcache_username_var="OCI_USER",
+                buildcache_password_var="OCI_PASS",
+                build_secret=("buildcache-creds=GHCR_CREDS",),
+            )
+        )
+
+    assert captured["build_secrets"] == ["buildcache-creds=GHCR_CREDS"]
+
+
 def test_interleaved_producers_use_unique_temporary_tags_and_serial_promotions(
     tmp_path: Path,
 ) -> None:
