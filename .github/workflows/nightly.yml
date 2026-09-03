@@ -132,7 +132,10 @@ jobs:
 
       - name: Redirect podman storage to /mnt (larger partition)
         run: |
-          mkdir -p /mnt/podman-storage /mnt/podman-run
+          # /mnt holds the larger ephemeral disk but is root-owned; the
+          # runner user needs sudo to create the redirect roots.
+          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
+          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
           cat > /mnt/containers.conf <<'EOF'
           [storage]
           driver = "overlay"
@@ -235,7 +238,10 @@ jobs:
 
       - name: Redirect podman storage to /mnt (larger partition)
         run: |
-          mkdir -p /mnt/podman-storage /mnt/podman-run
+          # /mnt holds the larger ephemeral disk but is root-owned; the
+          # runner user needs sudo to create the redirect roots.
+          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
+          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
           cat > /mnt/containers.conf <<'EOF'
           [storage]
           driver = "overlay"
@@ -384,7 +390,10 @@ jobs:
 
       - name: Redirect podman storage to /mnt (larger partition)
         run: |
-          mkdir -p /mnt/podman-storage /mnt/podman-run
+          # /mnt holds the larger ephemeral disk but is root-owned; the
+          # runner user needs sudo to create the redirect roots.
+          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
+          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
           cat > /mnt/containers.conf <<'EOF'
           [storage]
           driver = "overlay"
