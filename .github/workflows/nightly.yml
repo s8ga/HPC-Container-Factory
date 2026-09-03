@@ -129,21 +129,6 @@ jobs:
       # of after the mirror download.
       - name: Validate environment config
         run: ./venv/bin/python -m hpc_cf validate --env "${ENV_NAME}" --profile config
-
-      - name: Redirect podman storage to /mnt (larger partition)
-        run: |
-          # /mnt holds the larger ephemeral disk but is root-owned; the
-          # runner user needs sudo to create the redirect roots.
-          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
-          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
-          cat > /mnt/containers.conf <<'EOF'
-          [storage]
-          driver = "overlay"
-          runroot = "/mnt/podman-run"
-          graphroot = "/mnt/podman-storage"
-          EOF
-          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
-
       - name: Download Spack source tarball
         run: |
           mkdir -p assets
@@ -235,21 +220,6 @@ jobs:
             echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
             echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
           } >> "$GITHUB_ENV"
-
-      - name: Redirect podman storage to /mnt (larger partition)
-        run: |
-          # /mnt holds the larger ephemeral disk but is root-owned; the
-          # runner user needs sudo to create the redirect roots.
-          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
-          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
-          cat > /mnt/containers.conf <<'EOF'
-          [storage]
-          driver = "overlay"
-          runroot = "/mnt/podman-run"
-          graphroot = "/mnt/podman-storage"
-          EOF
-          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
-
       - name: Read Spack version from env.yaml
         run: |
           ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
@@ -387,21 +357,6 @@ jobs:
             echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
             echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
           } >> "$GITHUB_ENV"
-
-      - name: Redirect podman storage to /mnt (larger partition)
-        run: |
-          # /mnt holds the larger ephemeral disk but is root-owned; the
-          # runner user needs sudo to create the redirect roots.
-          sudo mkdir -p /mnt/podman-storage /mnt/podman-run
-          sudo chown "$(id -un):$(id -gn)" /mnt/podman-storage /mnt/podman-run
-          cat > /mnt/containers.conf <<'EOF'
-          [storage]
-          driver = "overlay"
-          runroot = "/mnt/podman-run"
-          graphroot = "/mnt/podman-storage"
-          EOF
-          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
-
       - name: Download Spack source tarball
         run: |
           mkdir -p assets
