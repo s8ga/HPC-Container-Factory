@@ -22,7 +22,7 @@ from hpc_cf.buildcache_ops import (
     build_verify_script,
 )
 from hpc_cf.config import IMAGE_SPACK_ROOT
-from hpc_cf.environment import BuildcachePolicy
+from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     BuildcacheRun,
@@ -161,15 +161,17 @@ def require_verified_source_mirror(
     )
 
 
-def _healthy(store: SharedBuildcacheStore) -> bool:
+def _healthy(store: SharedBuildcacheStore, *, oci: bool = False) -> bool:
     """True only when health claims healthy *and* its coverage file exists.
 
     Fail-closed: a healthy claim without a visible coverage file (crash window
     after ``mark_healthy`` / before rename under the old order, or a corrupted
-    sidecar) must not admit consumers.
+    sidecar) must not admit consumers. The local store-directory requirement
+    is waived for oci backends: the binaries live in the registry, and the
+    sidecar records may sit on a machine without any local store.
     """
     layout = store.layout
-    if not layout.spack_buildcache_dir.is_dir():
+    if not oci and not layout.spack_buildcache_dir.is_dir():
         return False
     try:
         health = store.read_health()
@@ -180,17 +182,40 @@ def _healthy(store: SharedBuildcacheStore) -> bool:
     coverage_path = health.get("coverage_path")
     if not isinstance(coverage_path, str) or not coverage_path:
         return False
-    return Path(coverage_path).is_file()
+    path = Path(coverage_path)
+    if not path.is_file():
+        return False
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    # Health alone must not cross backends: a healthy sidecar whose coverage
+    # record came from the other backend proves nothing about this one.
+    return _coverage_check_kind_matches(record, oci=oci)
+
+
+def _coverage_check_kind_matches(record: dict, *, oci: bool) -> bool:
+    """Backend-kind gate: records must come from a matching producer.
+
+    A ``count`` record proves registry coverage only (its binaries were
+    pushed to an oci mirror); a ``live``/legacy record proves local-store
+    coverage only. Cross-backend admission would start an install whose
+    cache cannot serve it. Records predating the field count as ``live``.
+    """
+    kind = record.get("check_kind", "live")
+    return kind == ("count" if oci else "live")
 
 
 def _has_successful_lock_coverage(
     store: SharedBuildcacheStore,
     lock_path: Path | None,
+    *,
+    oci: bool = False,
 ) -> bool:
     """True when this lock has a successful non-external coverage record."""
     if lock_path is None or not lock_path.is_file():
         return False
-    if not store.layout.spack_buildcache_dir.is_dir():
+    if not oci and not store.layout.spack_buildcache_dir.is_dir():
         return False
     path = coverage_path_for_lock(store.layout, lock_path)
     try:
@@ -202,6 +227,7 @@ def _has_successful_lock_coverage(
         and record.get("check_returncode") == 0
         and record.get("coverage") == "non_external"
         and record.get("external_specs_excluded") is True
+        and _coverage_check_kind_matches(record, oci=oci)
     )
 
 
@@ -211,12 +237,15 @@ def resolve_consumer_policy(
     *,
     enabled: bool = True,
     lock_path: Path | None = None,
+    backend_mode: BuildcacheMode = BuildcacheMode.LOCAL,
 ) -> BuildcachePolicy:
     """Resolve auto fallback and strict only fail-closed behavior.
 
     Global ``health.json`` unhealthy still allows ``auto``/``only`` when the
     current environment has successful lock-SHA coverage (another env's failed
-    publish must not block a covered consumer).
+    publish must not block a covered consumer). For oci backends the coverage
+    record must carry ``check_kind: count`` (registry producer); a local-dir
+    requirement would be meaningless on a consumer-only machine.
     """
     if requested is BuildcachePolicy.NEVER:
         return requested
@@ -224,11 +253,19 @@ def resolve_consumer_policy(
         if requested is BuildcachePolicy.AUTO:
             return BuildcachePolicy.NEVER
         raise RuntimeError("buildcache is not enabled for this environment")
-    if _healthy(store) or _has_successful_lock_coverage(store, lock_path):
+    oci = backend_mode is BuildcacheMode.OCI
+    if _healthy(store, oci=oci) or _has_successful_lock_coverage(
+        store, lock_path, oci=oci
+    ):
         return requested
     if requested is BuildcachePolicy.AUTO:
         logger.warning("Buildcache missing or unhealthy; falling back to source install")
         return BuildcachePolicy.NEVER
+    if oci:
+        raise RuntimeError(
+            "oci buildcache has no successful coverage record for this lock; "
+            "policy 'only' fails closed"
+        )
     if not store.layout.spack_buildcache_dir.is_dir():
         raise RuntimeError("buildcache store does not exist; policy 'only' fails closed")
     raise RuntimeError("buildcache store is missing healthy state or is unhealthy")
@@ -321,11 +358,19 @@ def require_coverage(
     lock_path: Path,
     *,
     spack_version: str,
-    builder_image: str,
+    builder_image: str | None,
     padded_length: int,
     environment_provenance: dict[str, object],
+    backend_mode: BuildcacheMode = BuildcacheMode.LOCAL,
 ) -> dict[str, object]:
-    """Require a successful non-external coverage record for this exact lock."""
+    """Require a successful non-external coverage record for this exact lock.
+
+    ``builder_image=None`` (oci mode) skips the local digest bind — consumer
+    machines do not carry the producer image — but still requires the record
+    to carry a producer digest. The record's ``check_kind`` must match the
+    backend: ``count`` for oci, ``live`` (or legacy records without the
+    field) for local.
+    """
     path = coverage_path_for_lock(layout, lock_path)
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
@@ -333,6 +378,11 @@ def require_coverage(
         raise RuntimeError(
             f"buildcache coverage missing or invalid for lock {lock_path}"
         ) from exc
+    digest_ok = (
+        (bool(record.get("builder_image_digest")))
+        if builder_image is None
+        else (record.get("builder_image_digest") == builder_image)
+    )
     if (
         record.get("schema_version") != 2
         or
@@ -340,9 +390,12 @@ def require_coverage(
         or record.get("coverage") != "non_external"
         or record.get("external_specs_excluded") is not True
         or record.get("spack_version") != spack_version
-        or record.get("builder_image_digest") != builder_image
+        or not digest_ok
         or record.get("padded_length") != padded_length
         or record.get("environment_provenance") != environment_provenance
+        or not _coverage_check_kind_matches(
+            record, oci=backend_mode is BuildcacheMode.OCI
+        )
     ):
         raise RuntimeError(f"buildcache coverage is incompatible: {path}")
     return record

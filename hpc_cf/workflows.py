@@ -216,6 +216,7 @@ class BuildService:
                 store,
                 enabled=buildcache_enabled,
                 lock_path=policy_lock,
+                backend_mode=effective_mode,
             )
 
         if request.render_only:
@@ -286,29 +287,51 @@ class BuildService:
                         raise RuntimeError(
                             "buildcache only requires an EnvironmentSpec"
                         )
-                    producer_ref = producer_image_ref(resolved_image, resolved_tag)
                     environment_provenance = collect_environment_provenance(
                         lock_path,
                         resolved.environment_dir,
                     )
-                    require_coverage(
-                        self.layout,
-                        lock_path,
-                        spack_version=spec.spack.version,
-                        builder_image=inspect_image_digest(
+                    if effective_mode is BuildcacheMode.OCI:
+                        # oci admission seam: no local producer image to bind
+                        # (consumer machines never carry it) and no live
+                        # pre-flight — spack buildcache check cannot see oci
+                        # mirrors. The count-kind coverage record is the
+                        # authority; install-time fail-closed under
+                        # --use-buildcache only is the runtime net. If check
+                        # ever works against oci (upstream fix, a
+                        # spack-python manifest probe, or a workflow-level
+                        # skopeo tag comparison), restore a pre-flight here.
+                        require_coverage(
+                            self.layout,
+                            lock_path,
+                            spack_version=spec.spack.version,
+                            builder_image=None,
+                            padded_length=spec.spack.buildcache.padded_length,
+                            environment_provenance=environment_provenance,
+                            backend_mode=BuildcacheMode.OCI,
+                        )
+                    else:
+                        producer_ref = producer_image_ref(
+                            resolved_image, resolved_tag
+                        )
+                        require_coverage(
+                            self.layout,
+                            lock_path,
+                            spack_version=spec.spack.version,
+                            builder_image=inspect_image_digest(
+                                engine=request.engine,
+                                image_ref=producer_ref,
+                                layout=self.layout,
+                            ),
+                            padded_length=spec.spack.buildcache.padded_length,
+                            environment_provenance=environment_provenance,
+                        )
+                        verify(
                             engine=request.engine,
                             image_ref=producer_ref,
+                            env_name=spec.spack.env_name,
                             layout=self.layout,
-                        ),
-                        padded_length=spec.spack.buildcache.padded_length,
-                        environment_provenance=environment_provenance,
-                    )
-                    verify(
-                        engine=request.engine,
-                        image_ref=producer_ref,
-                        env_name=spec.spack.env_name,
-                        layout=self.layout,
-                    )
+                        )
                 build_docker_like(
                     dockerfile=dockerfile,
                     image=resolved_image,

@@ -573,3 +573,226 @@ def test_oci_producer_build_publishes_to_registry_and_marks_healthy(
     )
     assert coverage["check_kind"] == "count"
     assert coverage["checked_spec_count"] == 3
+
+
+# ── Consumer admission: oci variants ─────────────────────────────────────
+
+from hpc_cf.buildcache import (  # noqa: E402
+    coverage_path_for_lock,
+    require_coverage,
+    resolve_consumer_policy,
+)
+from hpc_cf.environment import BuildcachePolicy  # noqa: E402
+from hpc_cf.execution import SharedBuildcacheStore  # noqa: E402
+
+
+def _write_coverage_record(
+    layout,
+    lock_path,
+    *,
+    check_kind: str = "count",
+    spack_version: str = "1.2.0",
+    padded_length: int = 128,
+    environment_provenance: dict | None = None,
+) -> Path:
+    path = coverage_path_for_lock(layout, lock_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "spack_version": spack_version,
+                "builder_image_digest": "sha256:producer",
+                "environment_provenance": environment_provenance or {},
+                "padded_length": padded_length,
+                "signing_policy": "unsigned",
+                "check_returncode": 0,
+                "checked_spec_count": 3,
+                "check_kind": check_kind,
+                "coverage": "non_external",
+                "external_specs_excluded": True,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _admission_layout(tmp_path, *, record_kind: str | None):
+    """tmp layout + lock; count/live coverage record written when asked."""
+    layout = ProjectLayout(project_root=tmp_path)
+    env_dir = layout.spack_envs_dir / PILOT / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    lock_path = env_dir / "spack.lock"
+    lock_path.write_text('{"lock": true}\n', encoding="utf-8")
+    if record_kind is not None:
+        path = _write_coverage_record(layout, lock_path, check_kind=record_kind)
+        layout.buildcache_state_dir.mkdir(parents=True, exist_ok=True)
+        layout.buildcache_health_path.write_text(
+            json.dumps({"healthy": True, "coverage_path": str(path)}) + "\n",
+            encoding="utf-8",
+        )
+    return layout, lock_path
+
+
+def test_oci_policy_admits_on_count_record_without_local_store(tmp_path) -> None:
+    layout, lock_path = _admission_layout(tmp_path, record_kind="count")
+    store = SharedBuildcacheStore(layout)
+    # No local buildcache directory exists at all — registry-only consumer.
+    assert not layout.spack_buildcache_dir.is_dir()
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.AUTO, store, lock_path=lock_path,
+            backend_mode=BuildcacheMode.OCI,
+        )
+        is BuildcachePolicy.AUTO
+    )
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store, lock_path=lock_path,
+            backend_mode=BuildcacheMode.OCI,
+        )
+        is BuildcachePolicy.ONLY
+    )
+
+
+def test_oci_policy_fails_closed_without_coverage(tmp_path) -> None:
+    layout, lock_path = _admission_layout(tmp_path, record_kind=None)
+    store = SharedBuildcacheStore(layout)
+    assert (
+        resolve_consumer_policy(
+            BuildcachePolicy.AUTO, store, lock_path=lock_path,
+            backend_mode=BuildcacheMode.OCI,
+        )
+        is BuildcachePolicy.NEVER
+    )
+    with pytest.raises(RuntimeError, match="no successful coverage record"):
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store, lock_path=lock_path,
+            backend_mode=BuildcacheMode.OCI,
+        )
+
+
+def test_coverage_kind_never_crosses_backends(tmp_path) -> None:
+    from hpc_cf.environment import BuildcachePolicy
+
+    # A live (local-producer) record must not admit an oci-only consumer.
+    layout, lock_path = _admission_layout(tmp_path, record_kind="live")
+    layout.spack_buildcache_dir.mkdir(parents=True, exist_ok=True)
+    store = SharedBuildcacheStore(layout)
+    with pytest.raises(RuntimeError):
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store, lock_path=lock_path,
+            backend_mode=BuildcacheMode.OCI,
+        )
+    # A count (registry) record must not admit a local-only consumer.
+    layout2, lock2 = _admission_layout(tmp_path / "b", record_kind="count")
+    layout2.spack_buildcache_dir.mkdir(parents=True, exist_ok=True)
+    store2 = SharedBuildcacheStore(layout2)
+    with pytest.raises(RuntimeError):
+        resolve_consumer_policy(
+            BuildcachePolicy.ONLY, store2, lock_path=lock2,
+            backend_mode=BuildcacheMode.LOCAL,
+        )
+
+
+def test_require_coverage_oci_skips_digest_bind_but_keeps_gates(tmp_path) -> None:
+    layout, lock_path = _admission_layout(tmp_path, record_kind="count")
+    record = require_coverage(
+        layout,
+        lock_path,
+        spack_version="1.2.0",
+        builder_image=None,
+        padded_length=128,
+        environment_provenance={},
+        backend_mode=BuildcacheMode.OCI,
+    )
+    assert record["check_kind"] == "count"
+
+    # Kind mismatch: a live record cannot serve oci admission.
+    with pytest.raises(RuntimeError, match="incompatible"):
+        require_coverage(
+            layout,
+            lock_path,
+            spack_version="1.2.0",
+            builder_image=None,
+            padded_length=128,
+            environment_provenance={},
+            backend_mode=BuildcacheMode.LOCAL,
+        )
+
+
+def test_only_build_skips_live_check_and_digest_bind_for_oci(tmp_path) -> None:
+    from hpc_cf.buildcache import collect_environment_provenance
+    from hpc_cf.workflows import BuildRequest, BuildService
+
+    layout = ProjectLayout(project_root=tmp_path)
+    env_dir = layout.spack_envs_dir / PILOT / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    lock_path = env_dir / "spack.lock"
+    lock_path.write_text('{"concrete_specs": {}}\n', encoding="utf-8")
+    provenance = collect_environment_provenance(lock_path, env_dir)
+    _write_coverage_record(
+        layout, lock_path, check_kind="count", environment_provenance=provenance
+    )
+    layout.buildcache_state_dir.mkdir(parents=True, exist_ok=True)
+    layout.buildcache_health_path.write_text(
+        json.dumps(
+            {
+                "healthy": True,
+                "coverage_path": str(coverage_path_for_lock(layout, lock_path)),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec = SimpleNamespace(
+        spack=SimpleNamespace(
+            version="1.2.0",
+            env_name="cp2k-env",
+            buildcache=SimpleNamespace(
+                enabled=True,
+                padded_length=128,
+                policy=None,
+                mode=BuildcacheMode.OCI,
+                url=OCI_URL,
+                username_var=None,
+                password_var=None,
+            ),
+        ),
+    )
+    resolved = SimpleNamespace(environment_dir=env_dir, environment_spec=spec)
+    built: list[str] = []
+    live_verify = MagicMock()
+    digest_inspect = MagicMock()
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.template.resolve_image_and_tag",
+            return_value=("cp2k", "2025.2"),
+        ),
+        patch("hpc_cf.env.run_static_checks"),
+        patch("hpc_cf.template.generate_dockerfile", return_value=tmp_path / "D"),
+        patch(
+            "hpc_cf.sif.build_docker_like",
+            side_effect=lambda **kwargs: built.append(kwargs.get("tag", "")),
+        ),
+        patch("hpc_cf.buildcache.verify", live_verify),
+        patch("hpc_cf.buildcache.inspect_image_digest", digest_inspect),
+    ):
+        assert BuildService(layout).run(
+            BuildRequest(
+                app_version=PILOT,
+                buildcache=BuildcachePolicy.ONLY,
+                buildcache_mode=BuildcacheMode.OCI,
+                buildcache_url=OCI_URL,
+                use_mirror=False,
+            )
+        ) == 0
+    assert built == ["2025.2"]
+    live_verify.assert_not_called()
+    digest_inspect.assert_not_called()
+
+
