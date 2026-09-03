@@ -8,7 +8,10 @@ artifacts/**
 
 Dockerfile
 
-.github/**
+# Ignore local scratch inside .github (prompts etc.) but keep CI workflows
+# committable — a bare `.github/**` would also exclude workflow files.
+.github/*
+!.github/workflows
 
 .spack/**
 

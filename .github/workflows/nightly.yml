@@ -1,0 +1,471 @@
+# On-demand floating build pipeline, triggered manually via
+# workflow_dispatch — no schedule by design: the operator decides when a
+# build fits. Fully remote: cold-starts converge by re-running failed jobs,
+# no local seeding step is required (public repo: standard runners, GHCR
+# packages and artifacts are all free).
+#
+# Three jobs, chosen so the retry unit matches the expensive unit:
+#
+#   solve   — validate + floating concretize (--allow-concretize) + source
+#             mirror + verify. Publishes the mirror (including its .hpc_cf
+#             verification manifests — the producer gate reads them in-place)
+#             as an OCI data image, and the floating lock as an artifact.
+#   produce — restores mirror + lock, then runs the producer
+#             (buildcache build --buildcache-mode oci) which installs with
+#             --use-buildcache auto against the GHCR mirror and pushes
+#             binaries straight to the registry — no snapshot transport.
+#             THIS is the job that exceeds the 6h platform cap on a cold
+#             cache; re-running it retries the producer only — no re-solve,
+#             no mirror re-download, same lock SHA, and every already-pushed
+#             binary is reused from the registry. The factory sidecar
+#             (coverage/health, KBs) travels to the image job as an artifact.
+#   image   — consumer build (--buildcache only) admitted by the count-kind
+#             coverage record; pushes the runtime image to ghcr.io.
+#
+# The GHCR buildcache package is hash-addressed and must NEVER be pruned by
+# version count: delete-package-versions would drop digests that kept spec
+# tags still reference. Lock-aware cleanup is a separate future task.
+#
+# Cold-start protocol (first run after enabling, or after big drift):
+#   dispatch once → produce goes red at its operation timeout → press
+#   "Re-run failed jobs" (solve stays green, artifacts/images persist) →
+#   repeat until produce is green; image then runs automatically.
+#   Each retry reuses pushed binaries, so convergence typically takes a
+#   few retries on 4 vCPU.
+#
+# The floating spack.lock produced on each run is NOT committed back — the
+# committed locks remain the deterministic release-track pins. The lock
+# travels between jobs as a workflow artifact because admission gates key
+# on lock SHA: every job in this run must see the same lock.
+#
+# VASP and MKL/ROCm environments are intentionally outside this workflow
+# (licensing / out of the opensource buildcache track).
+
+name: nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: Environment name under spack-envs/
+        required: false
+        default: cp2k_opensource-2026.2-force-avx512
+      ref:
+        description: Git ref to build (default NIGHTLY_REF, then the dispatched branch)
+        required: false
+        default: ""
+
+# Persistent default build ref for manual runs (e.g. "v2"), used when the
+# dispatch input is left empty. Empty = build the branch the workflow was
+# dispatched against. Requires this file to exist on the default branch once,
+# so GitHub registers the workflow for dispatch.
+env:
+  NIGHTLY_REF: ""
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Keyed per environment so future multi-env runs can proceed in parallel;
+  # a repeated dispatch of the same env queues instead of being cancelled.
+  group: nightly-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  cancel-in-progress: false # never kill a publication mid-run
+
+jobs:
+  solve:
+    name: solve (floating concretize + mirror)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      date: ${{ steps.vars.outputs.date }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          tool-cache: false
+          swap: false
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        id: vars
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          # GHCR rejects image references containing uppercase characters.
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="$(date -u +%Y%m%d)"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "SPACK_VER=${SPACK_VER}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
+          } >> "$GITHUB_ENV"
+          echo "date=${NIGHTLY_DATE}" >> "$GITHUB_OUTPUT"
+
+      # Cheap fast-fail: schema/config breakage surfaces in ~1 minute instead
+      # of after the mirror download.
+      - name: Validate environment config
+        run: ./venv/bin/python -m hpc_cf validate --env "${ENV_NAME}" --profile config
+
+      - name: Redirect podman storage to /mnt (larger partition)
+        run: |
+          mkdir -p /mnt/podman-storage /mnt/podman-run
+          cat > /mnt/containers.conf <<'EOF'
+          [storage]
+          driver = "overlay"
+          runroot = "/mnt/podman-run"
+          graphroot = "/mnt/podman-storage"
+          EOF
+          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
+
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      - name: Assets — floating concretize + source mirror + verify
+        id: assets
+        run: ./venv/bin/python -m hpc_cf assets --env "${ENV_NAME}" --allow-concretize
+
+      - name: Upload floating lock artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: floating-lock
+          path: spack-envs/${{ env.ENV_NAME }}/spack-env-file/spack.lock
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      # The .hpc_cf verification manifests live INSIDE assets/spack-mirror,
+      # so this single tree satisfies the producer's verified-mirror gate
+      # after restore — no re-download on producer retries.
+      - name: Publish source-mirror data image to GHCR
+        run: |
+          DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
+          tar -C assets -cf - spack-mirror | podman import - "$DATED"
+          podman tag "$DATED" "${INPUTS_REPO}:${ENV_NAME}"
+          podman push "$DATED"
+          podman push "${INPUTS_REPO}:${ENV_NAME}"
+
+      - name: Prune old mirror images (best-effort)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: hpc-cf-inputs
+          package-type: container
+          min-versions-to-keep: 3
+          delete-only-untagged-versions: false
+
+  produce:
+    name: produce (install + publish binaries)
+    needs: solve
+    runs-on: ubuntu-latest
+    # Backstop below the 360-min platform cap. The producer step carries its
+    # own, tighter --operation-timeout-seconds so a slow install fails inside
+    # hpc_cf and the always()-snapshot step below still gets to run.
+    timeout-minutes: 350
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          tool-cache: false
+          swap: false
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="${{ needs.solve.outputs.date }}"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "OWNER=${OWNER}"
+            echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
+            echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
+          } >> "$GITHUB_ENV"
+
+      - name: Redirect podman storage to /mnt (larger partition)
+        run: |
+          mkdir -p /mnt/podman-storage /mnt/podman-run
+          cat > /mnt/containers.conf <<'EOF'
+          [storage]
+          driver = "overlay"
+          runroot = "/mnt/podman-run"
+          graphroot = "/mnt/podman-storage"
+          EOF
+          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
+
+      - name: Read Spack version from env.yaml
+        run: |
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          echo "SPACK_VER=${SPACK_VER}" >> "$GITHUB_ENV"
+
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      # The inputs package is created private by the first push, so the
+      # anonymous pull below would be rejected — authenticate first.
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      # Same-run mirror (dated tag) — keeps lock, DAG and sources identical
+      # across producer retries via "Re-run failed jobs".
+      - name: Restore source mirror from solve
+        run: |
+          set -euo pipefail
+          podman pull "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
+          podman create --name in-restore "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
+          podman cp in-restore:/spack-mirror assets/
+          podman rm in-restore
+          podman rmi -f "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}" || true
+
+      - name: Download floating lock artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: floating-lock
+          path: downloaded-lock
+
+      - name: Place floating lock
+        run: |
+          cp "downloaded-lock/spack.lock" \
+            "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+
+      # The producer timeout is deliberately tighter than the job timeout:
+      # failing inside hpc_cf lets the always()-step below publish the
+      # snapshot of already-pushed binaries, so the next retry resumes
+      # instead of repeating the same work.
+      - name: Producer build — install and publish to the GHCR buildcache
+        id: producer
+        env:
+          OCI_USER: ${{ github.actor }}
+          OCI_PASS: ${{ github.token }}
+          # Sourced inside the build by RUN --mount=type=secret.
+          GHCR_CREDS: |
+            OCI_USER=${{ github.actor }}
+            OCI_PASS=${{ github.token }}
+        run: |
+          ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
+            --engine podman --operation-timeout-seconds 12600 \
+            --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
+            --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
+            --build-secret buildcache-creds=GHCR_CREDS
+
+      # The registry keeps the binaries; only the factory-owned sidecar
+      # (coverage records, health, run logs — KBs) must travel to the image
+      # job for count-kind admission. Upload even on failure for debugging.
+      - name: Upload buildcache sidecar state
+        if: always() && steps.producer.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: buildcache-state
+          path: assets/spack-buildcache-state/
+          if-no-files-found: warn
+          retention-days: 7
+
+  image:
+    name: image (consumer, --buildcache only)
+    needs: produce
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          tool-cache: false
+          swap: false
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="${{ needs.solve.outputs.date }}"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "SPACK_VER=${SPACK_VER}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "IMAGE_NAME=${ENV_NAME%%-*}"
+            echo "ENV_SUFFIX=${ENV_NAME#*-}"
+            echo "OWNER=${OWNER}"
+            echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
+            echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
+          } >> "$GITHUB_ENV"
+
+      - name: Redirect podman storage to /mnt (larger partition)
+        run: |
+          mkdir -p /mnt/podman-storage /mnt/podman-run
+          cat > /mnt/containers.conf <<'EOF'
+          [storage]
+          driver = "overlay"
+          runroot = "/mnt/podman-run"
+          graphroot = "/mnt/podman-storage"
+          EOF
+          echo "CONTAINERS_CONF=/mnt/containers.conf" >> "$GITHUB_ENV"
+
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      # The app Dockerfile COPYs assets/bootstrap-<ver>, so the consumer job
+      # needs the same bootstrap mirror the producer used (actions/cache hit
+      # from the solve/produce jobs of this or an earlier run).
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Download buildcache sidecar state
+        uses: actions/download-artifact@v8
+        with:
+          name: buildcache-state
+          path: assets/spack-buildcache-state/
+
+      - name: Download floating lock artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: floating-lock
+          path: downloaded-lock
+
+      - name: Place floating lock
+        run: |
+          cp "downloaded-lock/spack.lock" \
+            "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+
+      - name: Consumer build (--buildcache only, no source mirror)
+        env:
+          OCI_USER: ${{ github.actor }}
+          OCI_PASS: ${{ github.token }}
+          GHCR_CREDS: |
+            OCI_USER=${{ github.actor }}
+            OCI_PASS=${{ github.token }}
+        run: |
+          ./venv/bin/python -m hpc_cf build --env "${ENV_NAME}" --engine podman \
+            --image "${IMAGE_NAME}" --tag "nightly-${NIGHTLY_DATE}" \
+            --buildcache only --no-mirror \
+            --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
+            --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
+            --build-secret buildcache-creds=GHCR_CREDS
+
+      - name: Remove builder/installed images (keep runtime image)
+        run: |
+          podman images --format '{{.Repository}}:{{.Tag}}' \
+            | grep -E '^localhost/' \
+            | grep -v ":nightly-${NIGHTLY_DATE}$" \
+            | xargs -r podman rmi -f || true
+
+      - name: Push runtime image to GHCR
+        run: |
+          set -euo pipefail
+          SRC="localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
+          podman push "$SRC" "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          podman push "$SRC" "${IMG_REPO}:${ENV_SUFFIX}-nightly"
+          podman inspect --format '{{.Digest}}' \
+            "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+
+      - name: Prune old nightly images (best-effort)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ env.IMAGE_NAME }}
+          package-type: container
+          min-versions-to-keep: 7
+          delete-only-untagged-versions: false
