@@ -9,6 +9,8 @@ import threading
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+
+from hpc_cf.environment import BuildcacheMode
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -509,7 +511,7 @@ def test_buildcache_service_resolves_image_digest_under_publisher_lock(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -572,7 +574,7 @@ def test_buildcache_build_runs_build_input_preflight_before_image_build(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True),
+            buildcache=SimpleNamespace(enabled=True, mode=BuildcacheMode.LOCAL, url=None),
         ),
     )
     resolved = SimpleNamespace(environment_dir=env_dir, environment_spec=spec)
@@ -609,7 +611,7 @@ def test_buildcache_build_requires_verified_source_mirror_before_image_build(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True),
+            buildcache=SimpleNamespace(enabled=True, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
         ),
     )
@@ -728,7 +730,7 @@ def test_buildcache_service_preserves_failed_operation_output(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -777,7 +779,7 @@ def test_publisher_timeout_releases_lock_marks_unhealthy_and_keeps_log(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -930,7 +932,7 @@ def test_environment_policy_is_default_and_cli_is_override(
     cli_policy: str | None,
     expected: str,
 ) -> None:
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import BuildRequest, BuildService
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -958,6 +960,8 @@ def test_environment_policy_is_default_and_cli_is_override(
                 buildcache=SimpleNamespace(
                     enabled=True,
                     policy=BuildcachePolicy.parse(env_policy),
+                    mode=BuildcacheMode.LOCAL,
+                    url=None,
                 ),
             )
         )
@@ -979,7 +983,7 @@ def test_environment_policy_is_default_and_cli_is_override(
 def test_disabled_environment_default_never_but_cli_only_still_rejected(
     tmp_path: Path,
 ) -> None:
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import BuildRequest, BuildService
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -990,6 +994,8 @@ def test_disabled_environment_default_never_but_cli_only_still_rejected(
                 buildcache=SimpleNamespace(
                     enabled=False,
                     policy=BuildcachePolicy.NEVER,
+                    mode=BuildcacheMode.LOCAL,
+                    url=None,
                 ),
             )
         ),
@@ -1107,7 +1113,7 @@ def test_provenance_models_unavailable_fields_as_unknown(tmp_path: Path) -> None
 
 
 def test_build_service_holds_shared_lock_across_consumer_build(tmp_path: Path) -> None:
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import BuildRequest, BuildService
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -1147,8 +1153,8 @@ def test_build_service_holds_shared_lock_across_consumer_build(tmp_path: Path) -
         resolved.return_value.environment_dir = tmp_path
         resolved.return_value.environment_spec = SimpleNamespace(
             spack=SimpleNamespace(
-                buildcache=SimpleNamespace(enabled=True),
-            )
+                buildcache=SimpleNamespace(enabled=True, mode=BuildcacheMode.LOCAL, url=None),
+        )
         )
         BuildService(layout=layout).run(
             BuildRequest(
@@ -1164,7 +1170,7 @@ def test_build_service_rechecks_health_after_acquiring_consumer_lock(
 ) -> None:
     from contextlib import contextmanager
 
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import BuildRequest, BuildService
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -1197,8 +1203,8 @@ def test_build_service_rechecks_health_after_acquiring_consumer_lock(
         resolved.return_value.environment_dir = tmp_path
         resolved.return_value.environment_spec = SimpleNamespace(
             spack=SimpleNamespace(
-                buildcache=SimpleNamespace(enabled=True),
-            )
+                buildcache=SimpleNamespace(enabled=True, mode=BuildcacheMode.LOCAL, url=None),
+        )
         )
         BuildService(layout=layout).run(
             BuildRequest(
@@ -1213,7 +1219,7 @@ def test_build_service_rechecks_health_after_acquiring_consumer_lock(
 def test_producer_auto_only_lifecycle_preserves_producer_digest(
     tmp_path: Path,
 ) -> None:
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import (
         BuildcacheRequest,
         BuildcacheService,
@@ -1227,7 +1233,7 @@ def test_producer_auto_only_lifecycle_preserves_producer_digest(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -1333,7 +1339,7 @@ def test_interleaved_producers_use_unique_temporary_tags_and_serial_promotions(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -1421,7 +1427,7 @@ def test_failed_interleaved_producer_cleans_only_its_temporary_tag(
     (env_dir / "spack.lock").write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -1523,7 +1529,7 @@ def _producer_service_inputs(tmp_path: Path):
     lock_path.write_text('{"lock": true}\n', encoding="utf-8")
     spec = SimpleNamespace(
         spack=SimpleNamespace(
-            buildcache=SimpleNamespace(enabled=True, padded_length=128),
+            buildcache=SimpleNamespace(enabled=True, padded_length=128, mode=BuildcacheMode.LOCAL, url=None),
             version="1.1.0",
             env_name="cp2k-env",
         ),
@@ -2118,7 +2124,7 @@ def test_publish_success_state_renames_coverage_before_mark_healthy(
 def test_requested_auto_acquires_consumer_lock_before_single_resolve(
     tmp_path: Path,
 ) -> None:
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
     from hpc_cf.workflows import BuildRequest, BuildService
 
     layout = ProjectLayout(project_root=tmp_path)
@@ -2176,8 +2182,8 @@ def test_requested_auto_acquires_consumer_lock_before_single_resolve(
         resolved.return_value.environment_dir = tmp_path
         resolved.return_value.environment_spec = SimpleNamespace(
             spack=SimpleNamespace(
-                buildcache=SimpleNamespace(enabled=True),
-            )
+                buildcache=SimpleNamespace(enabled=True, mode=BuildcacheMode.LOCAL, url=None),
+        )
         )
         BuildService(layout=layout).run(
             BuildRequest(

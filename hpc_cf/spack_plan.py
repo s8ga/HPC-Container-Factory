@@ -12,6 +12,7 @@ from typing import Literal
 
 from hpc_cf.environment import (
     BuildcacheCoverage,
+    BuildcacheMode,
     BuildcachePolicy,
     CustomRepo,
     EnvironmentSpec,
@@ -62,6 +63,10 @@ class BuildcachePlan:
     padded_length: int
     policy: BuildcachePolicy
     coverage: BuildcacheCoverage
+    mode: BuildcacheMode = BuildcacheMode.LOCAL
+    url: str | None = None
+    username_var: str | None = None
+    password_var: str | None = None
 
     @property
     def check_excludes_external(self) -> bool:
@@ -163,6 +168,10 @@ def build_spack_environment_plan(spec: EnvironmentSpec) -> SpackEnvironmentPlan:
             padded_length=spec.spack.buildcache.padded_length,
             policy=spec.spack.buildcache.policy,
             coverage=spec.spack.buildcache.coverage,
+            mode=spec.spack.buildcache.mode,
+            url=spec.spack.buildcache.url,
+            username_var=spec.spack.buildcache.username_var,
+            password_var=spec.spack.buildcache.password_var,
         ),
     )
 
@@ -181,6 +190,10 @@ def plan_context(plan: SpackEnvironmentPlan) -> dict:
         "spack_buildcache_padded_length": plan.buildcache.padded_length,
         "spack_buildcache_policy": plan.buildcache.policy.value,
         "spack_buildcache_coverage": plan.buildcache.coverage.value,
+        "spack_buildcache_mode": plan.buildcache.mode.value,
+        "spack_buildcache_url": plan.buildcache.url,
+        "spack_buildcache_username_var": plan.buildcache.username_var,
+        "spack_buildcache_password_var": plan.buildcache.password_var,
         "spack_buildcache_check_excludes_external": (
             plan.buildcache.check_excludes_external
         ),

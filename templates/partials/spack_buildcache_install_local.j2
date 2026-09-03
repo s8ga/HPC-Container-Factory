@@ -1,0 +1,97 @@
+{# Install from the shared filesystem binary cache (consumer or producer).
+   Register is inlined so the RUN stays one Dockerfile instruction.
+   Uses bash for mapfile/process-substitution when installing concrete specs
+   that binary reuse left uninstalled (required for full-env buildcache push).
+
+   Producer builds soft-fail install: if at least one non-external concrete
+   spec is on disk, the stage exits 0 so the image is tagged and the publisher
+   can push those binaries even when the full env install did not finish.
+
+   Optional libint_parallel_cap (int): install libint first with -j capped at
+   that value (peak-memory guard for CP2K), then install remaining packages
+   with -j $(nproc). When unset, install the full concrete env in one step.
+
+   Never emit bash array-length expansions that contain a hash character in this
+   Dockerfile fragment: the Dockerfile lexer treats hash as a line comment even
+   inside shell quotes. #}
+RUN --mount=type=bind,source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly \
+{% if spack_buildcache_policy == 'auto' %}
+    --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+{% endif %}
+    bash -o pipefail -c 'set -euo pipefail; \
+    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache \
+        file:///opt/spack-buildcache; \
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    libint_jobs="$(nproc)"; \
+    if [ "${libint_jobs}" -gt {{ libint_parallel_cap | int }} ]; then libint_jobs={{ libint_parallel_cap | int }}; fi; \
+{% endif %}
+{% if spack_buildcache_producer %}
+    set +e; \
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "${libint_jobs}" -p 20 libint; \
+    _hpc_cf_libint_rc=$?; \
+    echo "Installing remaining packages with -j $(nproc)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+    _hpc_cf_install_rc=$?; \
+    if [ "${_hpc_cf_libint_rc}" -ne 0 ]; then _hpc_cf_install_rc="${_hpc_cf_libint_rc}"; fi; \
+{% else %}
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+    _hpc_cf_install_rc=$?; \
+{% endif %}
+    mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
+    if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
+        echo "Installing concrete specs skipped by binary reuse"; \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+            -j "$(nproc)" -p 20 "${_hpc_cf_missing[@]}"; \
+        _hpc_cf_missing_rc=$?; \
+        if [ "${_hpc_cf_missing_rc}" -ne 0 ]; then _hpc_cf_install_rc="${_hpc_cf_missing_rc}"; fi; \
+    fi; \
+    set -e; \
+    mapfile -t _hpc_cf_installed < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and s.installed))"); \
+    _hpc_cf_installed_count=$(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); print(sum(1 for s in e.all_specs() if (not s.external) and s.installed))"); \
+    echo "HPC_CF_INSTALL_RC=${_hpc_cf_install_rc}"; \
+    echo "HPC_CF_INSTALLED_SPEC_COUNT=${_hpc_cf_installed_count}"; \
+    if [ -z "${_hpc_cf_installed[0]:-}" ]; then \
+        echo "Producer install left no non-external concrete specs on disk" >&2; \
+        exit 1; \
+    fi; \
+    if [ "${_hpc_cf_install_rc}" -ne 0 ]; then \
+        echo "HPC_CF_PARTIAL_INSTALL=1"; \
+        echo "Producer install incomplete; keeping image for partial buildcache push"; \
+        exit 0; \
+    fi'
+{% else %}
+{% if libint_parallel_cap is defined and libint_parallel_cap %}
+    echo "Installing libint with -j ${libint_jobs} (memory-capped)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "${libint_jobs}" -p 20 libint; \
+    echo "Installing remaining packages with -j $(nproc)..."; \
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+{% else %}
+    spack -e {{ spack_env_name }} install --only-concrete \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20; \
+{% endif %}
+    mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
+    if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
+        echo "Installing concrete specs skipped by binary reuse"; \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+            -j "$(nproc)" -p 20 "${_hpc_cf_missing[@]}"; \
+    fi'
+{% endif %}

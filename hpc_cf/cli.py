@@ -12,7 +12,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from hpc_cf.environment import BuildcachePolicy
+from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.sif import (
     build_sif,
     ensure_apptainer,
@@ -102,6 +102,24 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         help=(
             "Binary-cache policy override: auto, only, or never "
             "(default: env spack.buildcache.policy)"
+        ),
+    )
+    parser.add_argument(
+        "--buildcache-mode",
+        type=BuildcacheMode.parse,
+        choices=list(BuildcacheMode),
+        default=None,
+        help=(
+            "Binary-cache backend override: local or oci "
+            "(default: env spack.buildcache.mode)"
+        ),
+    )
+    parser.add_argument(
+        "--buildcache-url",
+        default=None,
+        help=(
+            "OCI buildcache mirror URL (oci:// or oci+http://); "
+            "requires --buildcache-mode oci"
         ),
     )
 
@@ -278,6 +296,25 @@ def build_parser() -> argparse.ArgumentParser:
             default=24 * 60 * 60,
             help="Publisher/checker container timeout (default: 86400 seconds)",
         )
+    build_action_parser = buildcache_actions.choices["build"]
+    build_action_parser.add_argument(
+        "--buildcache-mode",
+        type=BuildcacheMode.parse,
+        choices=list(BuildcacheMode),
+        default=None,
+        help=(
+            "Binary-cache backend override for the producer: local or oci "
+            "(default: env spack.buildcache.mode)"
+        ),
+    )
+    build_action_parser.add_argument(
+        "--buildcache-url",
+        default=None,
+        help=(
+            "OCI buildcache mirror URL to publish to (oci:// or oci+http://); "
+            "requires --buildcache-mode oci"
+        ),
+    )
     resume_parser = buildcache_actions.add_parser(
         "resume",
         help="Resume the latest validated unhealthy producer publication",
@@ -424,6 +461,11 @@ def run_new_cli(argv: list[str]) -> int:
         and getattr(args, "allow_reconcretize", False)
     ):
         parser.error("--buildcache only cannot be combined with --allow-reconcretize")
+
+    if getattr(args, "buildcache_url", None) and (
+        getattr(args, "buildcache_mode", None) is not BuildcacheMode.OCI
+    ):
+        parser.error("--buildcache-url requires --buildcache-mode oci")
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

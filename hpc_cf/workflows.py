@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 
 from hpc_cf.buildcache_workflow import BuildcacheService
-from hpc_cf.environment import BuildcachePolicy
+from hpc_cf.environment import BuildcacheMode, BuildcachePolicy, EnvironmentSpec
 from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore, SharedMirrorStore
 from hpc_cf.requests import (
     AssetsRequest,
@@ -41,7 +41,33 @@ __all__ = [
     "build_request_from_args",
     "buildcache_request_from_args",
     "profile_for_assets_action",
+    "resolve_buildcache_backend",
 ]
+
+
+def resolve_buildcache_backend(
+    spec: EnvironmentSpec | None,
+    *,
+    mode_override: BuildcacheMode | None = None,
+    url_override: str | None = None,
+) -> tuple[BuildcacheMode, str | None]:
+    """Resolve the effective binary-cache backend (CLI overrides env.yaml).
+
+    Fail-closed: oci mode without a mirror URL is a configuration error,
+    whether the URL was expected from env.yaml or a CLI override.
+    """
+    mode = mode_override or (
+        spec.spack.buildcache.mode if spec is not None else BuildcacheMode.LOCAL
+    )
+    url = url_override or (
+        spec.spack.buildcache.url if spec is not None else None
+    )
+    if mode is BuildcacheMode.OCI and not url:
+        raise ValueError(
+            "buildcache mode 'oci' requires a mirror URL "
+            "(env spack.buildcache.url or --buildcache-url)"
+        )
+    return mode, url
 
 
 class AssetsService:
@@ -139,6 +165,11 @@ class BuildService:
             request.app_version, request.template, layout=self.layout
         )
         spec = resolved.environment_spec
+        effective_mode, effective_url = resolve_buildcache_backend(
+            spec,
+            mode_override=request.buildcache_mode,
+            url_override=request.buildcache_url,
+        )
         requested_policy = request.buildcache or (
             spec.spack.buildcache.policy
             if spec is not None
@@ -202,6 +233,8 @@ class BuildService:
                     layout=self.layout,
                     allow_reconcretize=request.allow_reconcretize,
                     buildcache_policy=effective_policy.value,
+                    buildcache_mode=effective_mode.value,
+                    buildcache_url=effective_url,
                 )
             logger.info("Done")
             return 0
@@ -241,6 +274,8 @@ class BuildService:
                     layout=self.layout,
                     allow_reconcretize=request.allow_reconcretize,
                     buildcache_policy=effective_policy.value,
+                    buildcache_mode=effective_mode.value,
+                    buildcache_url=effective_url,
                 )
                 if effective_policy is BuildcachePolicy.ONLY:
                     env_dir = resolved.environment_dir

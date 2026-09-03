@@ -198,14 +198,72 @@ class BuildcacheCoverage(Enum):
             ) from exc
 
 
+class BuildcacheMode(Enum):
+    """Binary-cache backend: local filesystem store or OCI registry mirror.
+
+    Explicit discriminator (not inferred from ``url`` presence) so local
+    mode stays structurally free of oci code paths.
+    """
+
+    LOCAL = "local"
+    OCI = "oci"
+
+    @classmethod
+    def parse(cls, value: str | BuildcacheMode | None) -> BuildcacheMode:
+        if isinstance(value, BuildcacheMode):
+            return value
+        if value is None or value == "":
+            return cls.LOCAL
+        if not isinstance(value, str):
+            raise ValueError(
+                f"buildcache mode must be a string; got {type(value).__name__}"
+            )
+        try:
+            return cls(value)
+        except ValueError as exc:
+            known = ", ".join(item.value for item in cls)
+            raise ValueError(
+                f"Unknown buildcache mode {value!r}; expected one of: {known}"
+            ) from exc
+
+
+def _parse_buildcache_url(value: Any) -> str:
+    """Validate an oci:// or oci+http:// mirror URL (fail-closed)."""
+    url = _require_str(value, path="spack.buildcache.url").strip()
+    if not url.startswith(("oci://", "oci+http://")):
+        raise ValueError(
+            "spack.buildcache.url must start with oci:// or oci+http://; "
+            f"got {url!r}"
+        )
+    rest = url.split("://", 1)[1]
+    host, _, path = rest.partition("/")
+    if not host or not path.strip("/"):
+        raise ValueError(
+            "spack.buildcache.url must include a registry host and a "
+            f"repository path; got {url!r}"
+        )
+    return url
+
+
 @dataclass
 class BuildcacheConfig:
-    """Per-environment binary-cache contract."""
+    """Per-environment binary-cache contract.
+
+    ``mode`` selects where the cache lives: ``local`` (default) bind-mounts
+    the shared filesystem store; ``oci`` registers a registry mirror and
+    must not leak into any local-mode rendering. The two credential fields
+    hold *environment variable names* (mirroring Spack's mirrors.yaml
+    access_pair semantics), never credentials themselves.
+    """
 
     enabled: bool = False
     padded_length: int = 128
     policy: BuildcachePolicy = BuildcachePolicy.NEVER
     coverage: BuildcacheCoverage = BuildcacheCoverage.NON_EXTERNAL
+    mode: BuildcacheMode = BuildcacheMode.LOCAL
+    url: str | None = None
+    username_var: str | None = None
+    password_var: str | None = None
 
 
 @dataclass
@@ -388,6 +446,10 @@ class EnvironmentSpec:
                     "padded_length": self.spack.buildcache.padded_length,
                     "policy": self.spack.buildcache.policy.value,
                     "coverage": self.spack.buildcache.coverage.value,
+                    "mode": self.spack.buildcache.mode.value,
+                    "url": self.spack.buildcache.url,
+                    "username_var": self.spack.buildcache.username_var,
+                    "password_var": self.spack.buildcache.password_var,
                 },
                 "custom_repos": repos,
             },
@@ -426,6 +488,7 @@ _SPACK_KEYS = frozenset({
 _PHASE_POLICY_KEYS = frozenset({"update_builtin", "repo_scope"})
 _BUILDCACHE_KEYS = frozenset({
     "enabled", "padded_length", "policy", "coverage",
+    "mode", "url", "username_var", "password_var",
 })
 _CUSTOM_REPO_KEYS = frozenset({
     "url",
@@ -545,11 +608,46 @@ def _parse_buildcache(raw: Any) -> BuildcacheConfig:
         coverage = BuildcacheCoverage.parse(data.get("coverage"))
     except ValueError as exc:
         raise ValueError(f"spack.buildcache.coverage: {exc}") from exc
+    try:
+        mode = BuildcacheMode.parse(data.get("mode"))
+    except ValueError as exc:
+        raise ValueError(f"spack.buildcache.mode: {exc}") from exc
+    username_var = _optional_str(
+        data.get("username_var"), path="spack.buildcache.username_var"
+    )
+    password_var = _optional_str(
+        data.get("password_var"), path="spack.buildcache.password_var"
+    )
+    if (username_var is None) != (password_var is None):
+        raise ValueError(
+            "spack.buildcache.username_var and password_var must be set together"
+        )
+    if mode is BuildcacheMode.OCI:
+        if "url" not in data:
+            raise ValueError(
+                "spack.buildcache.url is required when mode is 'oci'"
+            )
+        url: str | None = _parse_buildcache_url(data["url"])
+    else:
+        if "url" in data:
+            raise ValueError(
+                "spack.buildcache.url is only valid with mode 'oci'"
+            )
+        if username_var is not None or password_var is not None:
+            raise ValueError(
+                "spack.buildcache.username_var/password_var are only valid "
+                "with mode 'oci'"
+            )
+        url = None
     return BuildcacheConfig(
         enabled=enabled,
         padded_length=padded_length,
         policy=policy,
         coverage=coverage,
+        mode=mode,
+        url=url,
+        username_var=username_var,
+        password_var=password_var,
     )
 
 

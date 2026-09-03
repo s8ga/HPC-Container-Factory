@@ -369,7 +369,7 @@ def test_build_service_holds_mirror_read_lock_when_use_mirror(
     import subprocess
     from types import SimpleNamespace
 
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 
     layout = ProjectLayout(project_root=tmp_path)
     entered = False
@@ -402,8 +402,8 @@ def test_build_service_holds_mirror_read_lock_when_use_mirror(
         resolved.return_value.environment_dir = tmp_path
         resolved.return_value.environment_spec = SimpleNamespace(
             spack=SimpleNamespace(
-                buildcache=SimpleNamespace(enabled=False, policy=BuildcachePolicy.NEVER),
-            )
+                buildcache=SimpleNamespace(enabled=False, policy=BuildcachePolicy.NEVER, mode=BuildcacheMode.LOCAL, url=None),
+        )
         )
         BuildService(layout=layout).run(
             BuildRequest(
@@ -422,7 +422,7 @@ def test_build_service_skips_mirror_read_lock_without_mirror(
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from hpc_cf.environment import BuildcachePolicy
+    from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 
     layout = ProjectLayout(project_root=tmp_path)
     built = False
@@ -450,10 +450,10 @@ def test_build_service_skips_mirror_read_lock_without_mirror(
             environment_spec=SimpleNamespace(
                 spack=SimpleNamespace(
                     buildcache=SimpleNamespace(
-                        enabled=False, policy=BuildcachePolicy.NEVER
-                    ),
-                )
-            ),
+                        enabled=False, policy=BuildcachePolicy.NEVER, mode=BuildcacheMode.LOCAL, url=None,
+                    )
+                ),
+            )
         )
         BuildService(layout=layout).run(
             BuildRequest(

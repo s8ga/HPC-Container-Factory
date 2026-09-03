@@ -10,6 +10,7 @@ import pytest
 from hpc_cf.environment import (
     SUPPORTED_SCHEMA_VERSION,
     BuildcacheCoverage,
+    BuildcacheMode,
     BuildcachePolicy,
     BuildMethod,
     EnvironmentSpec,
@@ -95,11 +96,17 @@ def test_parse_buildcache_config_and_roundtrip() -> None:
     assert spec.spack.buildcache.padded_length == 128
     assert spec.spack.buildcache.policy is BuildcachePolicy.AUTO
     assert spec.spack.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
+    assert spec.spack.buildcache.mode is BuildcacheMode.LOCAL
+    assert spec.spack.buildcache.url is None
     assert spec.as_dict()["spack"]["buildcache"] == {
         "enabled": True,
         "padded_length": 128,
         "policy": "auto",
         "coverage": "non_external",
+        "mode": "local",
+        "url": None,
+        "username_var": None,
+        "password_var": None,
     }
 
 

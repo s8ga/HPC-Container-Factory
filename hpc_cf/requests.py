@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from hpc_cf.environment import BuildcachePolicy
+from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.validation import ValidationProfile
 
 
@@ -53,6 +53,8 @@ class BuildRequest:
     render_only: bool = False
     allow_reconcretize: bool = False
     buildcache: BuildcachePolicy | None = None
+    buildcache_mode: BuildcacheMode | None = None
+    buildcache_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,8 @@ class BuildcacheRequest:
     build_opts: tuple[str, ...] = ()
     output_format: str = "text"
     operation_timeout_seconds: int = 24 * 60 * 60
+    buildcache_mode: BuildcacheMode | None = None
+    buildcache_url: str | None = None
 
 
 def assets_request_from_args(args: Any) -> AssetsRequest:
@@ -114,6 +118,8 @@ def build_request_from_args(
         render_only=render_only,
         allow_reconcretize=bool(getattr(args, "allow_reconcretize", False)),
         buildcache=getattr(args, "buildcache", None),
+        buildcache_mode=getattr(args, "buildcache_mode", None),
+        buildcache_url=getattr(args, "buildcache_url", None),
     )
 
 
@@ -131,6 +137,8 @@ def buildcache_request_from_args(args: Any) -> BuildcacheRequest:
         operation_timeout_seconds=getattr(
             args, "operation_timeout_seconds", 24 * 60 * 60
         ),
+        buildcache_mode=getattr(args, "buildcache_mode", None),
+        buildcache_url=getattr(args, "buildcache_url", None),
     )
 
 
