@@ -301,7 +301,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
-            --engine podman --operation-timeout-seconds 12600 \
+            --engine podman --operation-timeout-seconds 17100 \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
             --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
             --build-secret buildcache-creds=GHCR_CREDS
