@@ -320,6 +320,14 @@ jobs:
           cp "downloaded-lock/spack.lock" \
             "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
 
+      # The install stage is where binaries are actually produced, and
+      # hosted runners may be reassigned to different VM hardware between
+      # jobs and runs. Record the physical CPU as its own step so the
+      # record stays queryable even when the long build below is killed.
+      # Binaries still target the pinned microarch, not this CPU.
+      - name: Record builder CPU
+        run: lscpu
+
       # The producer timeout is deliberately tighter than the job timeout:
       # failing inside hpc_cf lets the always()-step below publish the
       # snapshot of already-pushed binaries, so the next retry resumes
