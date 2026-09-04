@@ -6,6 +6,14 @@
    value lands in any image layer. Auto policy still bind-mounts the source
    mirror read-only for fallback.
 
+   The producer registers the mirror with --autopush so every installed
+   package reaches the registry immediately: a killed install (operation
+   timeout) keeps all completed binaries, making retries strictly
+   convergent. Re-pushes are byte-identical (the producer install tree is
+   the canonical padded root) and deduplicated by the registry. Consumers
+   must NOT autopush — their install tree is a relocated short root, and
+   pushing it would overwrite producer binaries under the same spec tag.
+
    Behavior pinned by TestOciBuildcachePoC (evidence:
    artifacts/oci-registry-lab/notes.md): strict-only install pulls and
    relocates from padded paths; auto treats an oci miss as recoverable and
@@ -25,7 +33,8 @@ RUN{% if spack_buildcache_policy == 'auto' %}
 {% if spack_buildcache_username_var %}
     set -a; . /run/secrets/buildcache-creds; set +a; \
 {% endif %}
-    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache{% if spack_buildcache_username_var %} \
+    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache{% if spack_buildcache_producer %} \
+        --autopush{% endif %}{% if spack_buildcache_username_var %} \
         --oci-username-variable {{ spack_buildcache_username_var }} \
         --oci-password-variable {{ spack_buildcache_password_var }}{% endif %} \
         {{ spack_buildcache_url }}; \

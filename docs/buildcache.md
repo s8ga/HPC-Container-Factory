@@ -65,7 +65,14 @@ Lab evidence for every behavioral claim above:
 Build the padded `builder-installed` stage into a run-unique temporary image
 and publish it. The producer install uses `--use-buildcache auto` with both
 the buildcache and source mirror mounted read-only, so already-published
-hashes are extracted and misses fall back to source:
+hashes are extracted and misses fall back to source. On the **oci** backend
+the producer registers the mirror with `--autopush`: every installed package
+reaches the registry immediately, so an install killed by the operation
+timeout keeps all completed binaries and retries converge strictly.
+Re-pushes are byte-identical (the producer install tree is the canonical
+padded root) and deduplicated by the registry. Consumers never autopush —
+their relocated short-root trees must not overwrite producer binaries under
+the same spec tag.
 
 ```bash
 ./venv/bin/python -m hpc_cf buildcache build \
@@ -359,5 +366,5 @@ concurrent publisher/consumer stress beyond flock unit coverage.
 - GHCR Bearer-token E2E for the oci backend (local lab validated push/pull
   and admission against a plain registry; authenticated-registry auth ran as
   far as Basic allowed — see lab notes), GPG signing, Spack 1.2 index views,
-  lock-aware oci cache cleanup, VASP integration, cache GC/quotas, autopush,
+  lock-aware oci cache cleanup, VASP integration, cache GC/quotas,
   cross-distribution relocation, and complete OS/base-image air-gap support

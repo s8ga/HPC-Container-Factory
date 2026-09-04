@@ -129,7 +129,10 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
  must not block a covered consumer). Without coverage, keep prior fail-closed /
  `auto`→`never` behavior. `only` still runs live verify/provenance as coded.
  Producer installs use `--use-buildcache auto` (with padding) so published
- hashes can be reused; misses fall back to the source mirror. Producer Docker
+ hashes can be reused; misses fall back to the source mirror. On the oci
+ backend the producer mirror is registered `--autopush` (producer-only: a
+ killed install keeps every completed package in the registry; consumers
+ must not push relocated short-root trees). Producer Docker
  builds always pass `--no-cache` (CLI `--build-opt` may append more flags).
  Publication uses run-unique temporary tags, then
  promote only after a successful check under the publisher lock; coverage,

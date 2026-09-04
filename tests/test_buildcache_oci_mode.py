@@ -243,6 +243,7 @@ def test_oci_render_registers_registry_mirror_without_bind_mount() -> None:
     assert "file:///opt/spack-buildcache" not in install
     assert "spack-mirror" not in install  # only policy never mounts sources
     assert "--oci-" not in install  # no credentials configured
+    assert "--autopush" not in install  # consumers never push relocated trees
 
 
 def test_oci_render_auto_keeps_source_mirror_fallback() -> None:
@@ -280,6 +281,9 @@ def test_oci_producer_render_keeps_soft_fail_and_counts() -> None:
     assert "HPC_CF_INSTALL_RC=" in install
     assert "HPC_CF_INSTALLED_SPEC_COUNT=" in install
     assert "HPC_CF_PARTIAL_INSTALL=1" in install
+    # Producer-only autopush: a killed install keeps every completed
+    # package in the registry, so retries converge strictly.
+    assert "mirror add --scope env:cp2k-env --unsigned binary-cache \\\n        --autopush" in install
 
 
 def test_all_env_local_renders_have_zero_oci_traces() -> None:
