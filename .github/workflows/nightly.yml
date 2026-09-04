@@ -103,18 +103,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
 
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          tool-cache: false
-          # Correct input name is swap-storage (a bare `swap` key is
-          # rejected); true matches the default the validated runs used.
-          swap-storage: true
+      # No disk cleanup here: prepare peaks around ~5GB (workspace, mirror
+      # tree, builder container) and the raw runner has ample headroom.
+
 
       - name: Install python dependencies
         run: |
@@ -276,18 +267,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
 
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          tool-cache: false
-          # Correct input name is swap-storage (a bare `swap` key is
-          # rejected); true matches the default the validated runs used.
-          swap-storage: true
+      # Raw rm of the fat preinstalled trees: the composite action spent
+      # ~100s here mostly in apt purge bookkeeping; a one-shot VM does not
+      # need apt state. Also drop the hosted toolcache (~10-20GB) which no
+      # job of ours uses (no setup-* actions). Producer installs peak at
+      # 25-40GB plus image layers, so this job genuinely needs the room.
+      - name: Free disk space (raw)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
 
       - name: Install python dependencies
         run: |
@@ -407,18 +399,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
 
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          tool-cache: false
-          # Correct input name is swap-storage (a bare `swap` key is
-          # rejected); true matches the default the validated runs used.
-          swap-storage: true
+      # Raw rm of the fat preinstalled trees: the composite action spent
+      # ~100s here mostly in apt purge bookkeeping; a one-shot VM does not
+      # need apt state. Also drop the hosted toolcache (~10-20GB) which no
+      # job of ours uses (no setup-* actions). Producer installs peak at
+      # 25-40GB plus image layers, so this job genuinely needs the room.
+      - name: Free disk space (raw)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
 
       - name: Install python dependencies
         run: |
