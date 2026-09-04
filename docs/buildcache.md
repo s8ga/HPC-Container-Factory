@@ -152,13 +152,19 @@ machines or users.
 
 For the oci backend the trust root moves from "local filesystem + flock" to
 "the registry account and its tokens": write access is enforced by registry
-authentication (only credential holders can push), read access by package
-visibility (keep the buildcache package private), and integrity by OCI
-content addressing. An unsigned oci cache is acceptable exactly as long as
-that package stays private — publishing it openly would require GPG signing
-first. Credential values live only in CI secrets / process environments and
-enter builds via secret mounts; variable *names* are the only thing env.yaml
-or rendered Dockerfiles ever contain.
+authentication (only credential holders can push), and integrity by OCI
+content addressing. The GHCR packages stay **public on purpose**: private
+packages count against a small personal storage/bandwidth quota that a
+multi-GB cache would exhaust, while public packages are free and unlimited;
+and the cache holds nothing that is not already public — the source repo,
+pins, and Dockerfiles are public and credential values never enter image
+layers (secret mounts only). An unsigned public cache is fine for the
+factory's own consumers, which authenticate; outsiders can read it but have
+no reason to trust unsigned binaries. If the cache is ever repurposed for
+open distribution, GPG signing comes first. Credential values live only in
+CI secrets / process environments and enter builds via secret mounts;
+variable *names* are the only thing env.yaml or rendered Dockerfiles ever
+contain.
 
 To inspect which packages are present in the opaque cache (operator inventory,
 not a factory API), use Spack's own listing against the mount, for example:
