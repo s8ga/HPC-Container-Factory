@@ -226,9 +226,10 @@ jobs:
     name: produce (install + publish binaries)
     needs: solve
     runs-on: ubuntu-latest
-    # Backstop below the 360-min platform cap. The producer step carries its
-    # own, tighter --operation-timeout-seconds so a slow install fails inside
-    # hpc_cf and the always()-snapshot step below still gets to run.
+    # Backstop below the 360-min platform cap. The producer step carries
+    # its own --operation-timeout-seconds (330 of these 350 minutes) so a
+    # slow install fails inside hpc_cf and the always()-step below still
+    # gets to run; the remaining ~15 min cover the restore prelude.
     timeout-minutes: 350
     steps:
       - name: Check out source
@@ -343,7 +344,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
-            --engine podman --operation-timeout-seconds 17100 \
+            --engine podman --operation-timeout-seconds 19800 \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
             --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
             --build-secret buildcache-creds=GHCR_CREDS
