@@ -548,12 +548,14 @@ jobs:
             echo "IMAGE_NAME=${ENV_NAME%%-*}"
             echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-nightly-${NIGHTLY_DATE}.sif"
             # Channel management: stable builds get a permanent per-build
-            # release (never pruned); nightly/master share one rolling
-            # release whose assets are pruned to the newest 7 below.
+            # release marked latest (never pruned); nightly/master share one
+            # rolling PRE-release whose SIF assets are pruned to the newest 5.
             if [ "${{ inputs.pinned }}" = "true" ]; then
               echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
+              echo "RELEASE_CREATE_FLAGS=--latest"
             else
               echo "RELEASE_TAG=nightly-${ENV_NAME}"
+              echo "RELEASE_CREATE_FLAGS=--prerelease"
             fi
           } >> "$GITHUB_ENV"
 
@@ -590,9 +592,9 @@ jobs:
           # Rolling per-env release; the tag moves with each run.
           gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
             || gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
-                 --target "$GITHUB_SHA" --latest \
-                 --title "nightly ${ENV_NAME}" \
-                 --notes "Automated nightly build. Artifacts are unsigned; \
+                 --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
+                 --title "${RELEASE_TAG}" \
+                 --notes "Automated build. Artifacts are unsigned; \
           see docs/buildcache.md for the trust model."
           gh release upload "${RELEASE_TAG}" "${SIF_NAME}" "${SIF_NAME}.sha256" \
             --repo "$GITHUB_REPOSITORY" --clobber
@@ -608,7 +610,7 @@ jobs:
           # program — bash treats it as a literal backslash and jq fails to
           # parse (verified locally; masked until now by continue-on-error).
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[7:][] | .id')
+            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[5:][] | .id')
           for id in $IDS; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
           done
