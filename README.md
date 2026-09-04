@@ -125,4 +125,9 @@ uv pip install -r requirements.txt
 
 ## License
 
-MIT
+MIT — see [`LICENCE`](LICENCE).
+
+Note: Spack package recipes (`package.py` files) and the Spack build logic
+used by this repository are governed by the upstream Spack open source
+license. The relevant Spack license documents are available in
+`assets/spack-src/LICENSE-APACHE` and `assets/spack-src/LICENSE-MIT`.
