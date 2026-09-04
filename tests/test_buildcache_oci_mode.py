@@ -452,6 +452,39 @@ def test_run_in_installed_image_oci_variant_flags(tmp_path, monkeypatch) -> None
     assert "--network=host" in cmd
     assert "OCI_USER=u" in cmd and "OCI_PASS=p" in cmd
     assert not any(part == "-v" for part in cmd)
+    # Default keeps the local-mode keep-id mapping (host-store writes).
+    assert "--userns=keep-id:uid=0,gid=0" in cmd
+
+
+def test_run_in_installed_image_oci_drops_userns_mapping(
+    tmp_path, monkeypatch
+) -> None:
+    """oci publishers never write to host-mounted paths, so the keep-id
+    mapping is unnecessary — and its non-default kernel path is what some
+    hosted runners reject with ``crun: writing gid_map: Invalid argument``.
+    The rootless default mapping (container root = invoking user) suffices.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(bc.subprocess, "run", fake_run)
+    run_in_installed_image(
+        engine="podman",
+        image_ref="img",
+        layout=ProjectLayout(project_root=tmp_path),
+        script="true",
+        env_extra={"OCI_USER": "u", "OCI_PASS": "p"},
+        mount_buildcache=False,
+        userns_keep_id=False,
+    )
+    cmd = captured["cmd"]
+    assert "--userns=keep-id:uid=0,gid=0" not in cmd
+    assert "--userns" not in cmd  # rootless default mapping, nothing custom
 
 
 def test_publish_oci_parses_count_and_skips_local_mount(tmp_path, monkeypatch) -> None:
@@ -478,6 +511,7 @@ def test_publish_oci_parses_count_and_skips_local_mount(tmp_path, monkeypatch) -
     assert result.returncode == 0
     assert calls["mount_buildcache"] is False
     assert calls["writable"] is False
+    assert calls["userns_keep_id"] is False
     assert calls["env_extra"] == {"OCI_USER": "u", "OCI_PASS": "p"}
     assert f"binary-cache {OCI_URL}" in " ".join(str(calls["script"]).split())
 

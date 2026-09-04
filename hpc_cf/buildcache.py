@@ -536,14 +536,18 @@ def run_in_installed_image(
     env_extra: dict[str, str] | None = None,
     network_host: bool = False,
     mount_buildcache: bool = True,
+    userns_keep_id: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run a dedicated publisher/checker with the store mounted read-write.
 
     The extra parameters are inert by default so the local-mode command line
     is unchanged: *env_extra* appends ``--env`` pairs (oci credentials),
-    *network_host* adds ``--network=host`` (local plain-HTTP registries), and
+    *network_host* adds ``--network=host`` (local plain-HTTP registries),
     *mount_buildcache=False* drops the store bind mount (oci pushes go to the
-    registry, not the local filesystem).
+    registry, not the local filesystem), and *userns_keep_id=False* drops the
+    keep-id mapping (only needed when the container writes to host-mounted
+    paths; the non-default mapping is also the path rejected by some hosted
+    runner kernels with ``crun: writing gid_map: Invalid argument``).
     """
     sandboxed_script = (
         'mkdir -p "$SPACK_USER_CONFIG_PATH"\n'
@@ -558,7 +562,7 @@ def run_in_installed_image(
         "run",
         "--rm",
     ]
-    if engine == "podman":
+    if engine == "podman" and userns_keep_id:
         command.append("--userns=keep-id:uid=0,gid=0")
     if network_host:
         command.append("--network=host")
@@ -660,6 +664,7 @@ def publish_oci(
         timeout_seconds=timeout_seconds,
         env_extra=credentials,
         mount_buildcache=False,
+        userns_keep_id=False,
     )
     match = _COUNT_RE.search(result.stdout or "")
     if match is None:
