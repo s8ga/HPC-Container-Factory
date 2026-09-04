@@ -267,20 +267,6 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
 
-      # Raw rm of the fat preinstalled trees: the composite action spent
-      # ~100s here mostly in apt purge bookkeeping; a one-shot VM does not
-      # need apt state. Also drop the hosted toolcache (~10-20GB) which no
-      # job of ours uses (no setup-* actions). Producer installs peak at
-      # 25-40GB plus image layers, so this job genuinely needs the room.
-      - name: Free disk space (raw)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache
-          sudo swapoff -a || true
-          sudo rm -f /mnt/swapfile
-          sudo docker image prune -af >/dev/null 2>&1 || true
-          df -h /
-
       - name: Install python dependencies
         run: |
           python3 -m venv venv
@@ -288,6 +274,7 @@ jobs:
 
       - name: Resolve job variables
         run: |
+          df -h /
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
           NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
@@ -399,20 +386,6 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
 
-      # Raw rm of the fat preinstalled trees: the composite action spent
-      # ~100s here mostly in apt purge bookkeeping; a one-shot VM does not
-      # need apt state. Also drop the hosted toolcache (~10-20GB) which no
-      # job of ours uses (no setup-* actions). Producer installs peak at
-      # 25-40GB plus image layers, so this job genuinely needs the room.
-      - name: Free disk space (raw)
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache
-          sudo swapoff -a || true
-          sudo rm -f /mnt/swapfile
-          sudo docker image prune -af >/dev/null 2>&1 || true
-          df -h /
-
       - name: Install python dependencies
         run: |
           python3 -m venv venv
@@ -420,6 +393,7 @@ jobs:
 
       - name: Resolve job variables
         run: |
+          df -h /
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
           test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
