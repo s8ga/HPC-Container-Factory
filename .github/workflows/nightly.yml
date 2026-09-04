@@ -1,4 +1,4 @@
-# On-demand floating build pipeline, triggered manually via
+# On-demand build pipeline (nightly floating / stable pinned), manually
 # workflow_dispatch — no schedule by design: the operator decides when a
 # build fits. Fully remote: cold-starts converge by re-running failed jobs,
 # no local seeding step is required (public repo: standard runners, GHCR
@@ -6,10 +6,10 @@
 #
 # Three jobs, chosen so the retry unit matches the expensive unit:
 #
-#   solve   — validate + floating concretize (--allow-concretize) + source
+#   solve   — validate + concretize (floating or committed lock) + source
 #             mirror + verify. Publishes the mirror (including its .hpc_cf
 #             verification manifests — the producer gate reads them in-place)
-#             as an OCI data image, and the floating lock as an artifact.
+#             as an OCI data image, and the run's lock as an artifact.
 #   produce — restores mirror + lock, then runs the producer
 #             (buildcache build --buildcache-mode oci) which installs with
 #             --use-buildcache auto against the GHCR mirror and pushes
@@ -33,10 +33,17 @@
 #   Each retry reuses pushed binaries, so convergence typically takes a
 #   few retries on 4 vCPU.
 #
-# The floating spack.lock produced on each run is NOT committed back — the
-# committed locks remain the deterministic release-track pins. The lock
-# travels between jobs as a workflow artifact because admission gates key
-# on lock SHA: every job in this run must see the same lock.
+# Two build modes (workflow_dispatch input `pinned`):
+#   nightly (default) — floating: solve re-concretizes (--allow-concretize)
+#             inside the env's pinned constraints and feeds the buildcache.
+#   stable — consumes the committed spack.lock read-only and fails closed
+#             when it is missing or stale; the release-track guard. Cache
+#             reuse aligns exactly where hashes match the committed pins.
+#
+# The lock produced/consumed by each run travels between jobs as a
+# workflow artifact (name: build-lock) because admission gates key on
+# lock SHA: every job in this run must see the same lock. Floating locks
+# are never committed back — committed locks stay the release-track pins.
 #
 # VASP and MKL/ROCm environments are intentionally outside this workflow
 # (licensing / out of the opensource buildcache track).
@@ -54,6 +61,11 @@ on:
         description: Git ref to build (default NIGHTLY_REF, then the dispatched branch)
         required: false
         default: ""
+      pinned:
+        description: "Stable build: consume the committed spack.lock (no re-concretize)"
+        required: false
+        type: boolean
+        default: false
 
 # Persistent default build ref for manual runs (e.g. "v2"), used when the
 # dispatch input is left empty. Empty = build the branch the workflow was
@@ -69,12 +81,15 @@ permissions:
 concurrency:
   # Keyed per environment so future multi-env runs can proceed in parallel;
   # a repeated dispatch of the same env queues instead of being cancelled.
+  # nightly and stable of one env also serialize: both publish the same
+  # dated mirror data-image tag, and a mirrored race would mismatch
+  # the verify manifests against the other run's lock.
   group: nightly-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:
   solve:
-    name: solve (floating concretize + mirror)
+    name: solve (concretize + mirror)
     runs-on: ubuntu-latest
     timeout-minutes: 150
     outputs:
@@ -143,14 +158,33 @@ jobs:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
 
-      - name: Assets — floating concretize + source mirror + verify
-        id: assets
-        run: ./venv/bin/python -m hpc_cf assets --env "${ENV_NAME}" --allow-concretize
+      # Stable (pinned) builds consume the committed lock and must fail
+      # fast — before the spack download and mirror work — when it is
+      # missing at this ref.
+      - name: Stable builds require a committed lock
+        if: ${{ inputs.pinned }}
+        run: |
+          test -f "spack-envs/${ENV_NAME}/spack-env-file/spack.lock" || {
+            echo "::error::stable build requires a committed spack.lock for ${ENV_NAME} at this ref"
+            exit 1
+          }
 
-      - name: Upload floating lock artifact
+      - name: Assets — concretize + source mirror + verify
+        id: assets
+        run: |
+          ARGS=(--env "${ENV_NAME}")
+          # nightly: float within the env's pinned constraints; stable:
+          # consume the committed lock — assets fails closed without
+          # --allow-concretize when the lock is missing or stale.
+          if [ "${{ inputs.pinned }}" != "true" ]; then
+            ARGS+=(--allow-concretize)
+          fi
+          ./venv/bin/python -m hpc_cf assets "${ARGS[@]}"
+
+      - name: Upload build lock artifact
         uses: actions/upload-artifact@v7
         with:
-          name: floating-lock
+          name: build-lock
           path: spack-envs/${{ env.ENV_NAME }}/spack-env-file/spack.lock
           if-no-files-found: error
           retention-days: 14
@@ -275,13 +309,13 @@ jobs:
           podman rm in-restore
           podman rmi -f "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}" || true
 
-      - name: Download floating lock artifact
+      - name: Download build lock artifact
         uses: actions/download-artifact@v8
         with:
-          name: floating-lock
+          name: build-lock
           path: downloaded-lock
 
-      - name: Place floating lock
+      - name: Place build lock
         run: |
           cp "downloaded-lock/spack.lock" \
             "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
@@ -397,13 +431,13 @@ jobs:
           name: buildcache-state
           path: assets/spack-buildcache-state/
 
-      - name: Download floating lock artifact
+      - name: Download build lock artifact
         uses: actions/download-artifact@v8
         with:
-          name: floating-lock
+          name: build-lock
           path: downloaded-lock
 
-      - name: Place floating lock
+      - name: Place build lock
         run: |
           cp "downloaded-lock/spack.lock" \
             "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
