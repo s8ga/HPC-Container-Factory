@@ -372,5 +372,13 @@ concurrent publisher/consumer stress beyond flock unit coverage.
 - GHCR Bearer-token E2E for the oci backend (local lab validated push/pull
   and admission against a plain registry; authenticated-registry auth ran as
   far as Basic allowed — see lab notes), GPG signing, Spack 1.2 index views,
-  lock-aware oci cache cleanup, VASP integration, cache GC/quotas,
-  cross-distribution relocation, and complete OS/base-image air-gap support
+  VASP integration, cache GC/quotas, cross-distribution relocation, and
+  complete OS/base-image air-gap support
+- **Lock-aware oci cache cleanup** — the buildcache package is never pruned
+  by count (hash-addressed tags; count-based deletion would drop digests
+  that spec tags still reference). The intended GC: collect the live hash
+  set from all committed `spack.lock`s, list package versions via the
+  registry/user API, and delete tags neither in that set nor younger than
+  a grace window (master-track binaries are dead weight once their lock is
+  superseded). Trigger once the master track has produced weeks of daily
+  hashes; until then the whole package measures in single-digit GB.
