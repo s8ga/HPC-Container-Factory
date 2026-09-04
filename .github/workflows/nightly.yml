@@ -4,13 +4,13 @@
 # no local seeding step is required (public repo: standard runners, GHCR
 # packages and artifacts are all free).
 #
-# Three jobs, chosen so the retry unit matches the expensive unit:
+# Four jobs, chosen so the retry unit matches the expensive unit:
 #
-#   solve   — validate + concretize (floating or committed lock) + source
+#   prepare — validate + concretize (floating or committed lock) + source
 #             mirror + verify. Publishes the mirror (including its .hpc_cf
 #             verification manifests — the producer gate reads them in-place)
 #             as an OCI data image, and the run's lock as an artifact.
-#   produce — restores mirror + lock, then runs the producer
+#   binaries — restores mirror + lock, then runs the producer
 #             (buildcache build --buildcache-mode oci) which installs with
 #             --use-buildcache auto against the GHCR mirror and pushes
 #             binaries straight to the registry — no snapshot transport.
@@ -19,7 +19,7 @@
 #             no mirror re-download, same lock SHA, and every already-pushed
 #             binary is reused from the registry. The factory sidecar
 #             (coverage/health, KBs) travels to the image job as an artifact.
-#   image   — consumer build (--buildcache only) admitted by the count-kind
+#   runtime — consumer build (--buildcache only) admitted by the count-kind
 #             coverage record; pushes the runtime image to ghcr.io.
 #   sif     — converts the runtime image to a SIF with apptainer and attaches
 #             it (plus its sha256) to a rolling public GitHub Release: the
@@ -31,13 +31,13 @@
 #
 # Cold-start protocol (first run after enabling, or after big drift):
 #   dispatch once → produce goes red at its operation timeout → press
-#   "Re-run failed jobs" (solve stays green, artifacts/images persist) →
+#   "Re-run failed jobs" (prepare stays green, artifacts/images persist) →
 #   repeat until produce is green; image then runs automatically.
 #   Each retry reuses pushed binaries, so convergence typically takes a
 #   few retries on 4 vCPU.
 #
 # Two build modes (workflow_dispatch input `pinned`):
-#   nightly (default) — floating: solve re-concretizes (--allow-concretize)
+#   nightly (default) — floating: prepare re-concretizes (--allow-concretize)
 #             inside the env's pinned constraints and feeds the buildcache.
 #   stable — consumes the committed spack.lock read-only and fails closed
 #             when it is missing or stale; the release-track guard. Cache
@@ -91,8 +91,8 @@ concurrency:
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:
-  solve:
-    name: solve (concretize + mirror)
+  prepare:
+    name: prepare (lock + source mirror)
     runs-on: ubuntu-latest
     timeout-minutes: 150
     outputs:
@@ -161,12 +161,23 @@ jobs:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
 
-      # Authenticated pull keeps seeding working even if the package
-      # visibility ever changes; also covers the publish below.
-      - name: Log in to GHCR
+      # Single static binary used for all inputs-image traffic (seed pull,
+      # publish push, remote tag): one streamed pass per direction, no
+      # container-storage round trips.
+      - name: Install crane
         run: |
-          echo "${{ github.token }}" | podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp crane
+          /tmp/crane version
+
+      # crane needs its own credential store for the publish push below;
+      # the package is public, so pulls stay anonymous-capable.
+      - name: Log in to GHCR (crane)
+        run: |
+          /tmp/crane auth login ghcr.io \
+            -u "${{ github.actor }}" -p "${{ github.token }}"
 
       # Delta optimization: seed the mirror tree from the previous run's
       # floating inputs image. spack mirror create skips files that already
@@ -181,9 +192,6 @@ jobs:
       - name: Seed source mirror from the previous inputs image
         run: |
           set -euo pipefail
-          curl -fsSL \
-            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
-            | tar -xz -C /tmp crane
           if /tmp/crane manifest "${INPUTS_REPO}:${ENV_NAME}" >/dev/null 2>&1; then
             /tmp/crane export "${INPUTS_REPO}:${ENV_NAME}" - | tar -x -C assets
             echo "seeded $(find assets/spack-mirror -type f | wc -l) files from the previous mirror"
@@ -225,20 +233,21 @@ jobs:
       # The .hpc_cf verification manifests live INSIDE assets/spack-mirror,
       # so this single tree satisfies the producer's verified-mirror gate
       # after restore — no re-download on producer retries.
+      #
+      # Streamed end to end with crane: deterministic tar -> gzip ->
+      # registry, one pass with no container-storage round trip (podman
+      # import + push moved the tree through storage and compressed it
+      # there first). An unchanged tree re-yields the same digest, so on
+      # no-drift days the push degrades to a manifest write (blob
+      # HEAD-skip); `crane tag` floats the pointer without re-pushing.
       - name: Publish source-mirror data image to GHCR
         run: |
+          set -euo pipefail
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
-          # Deterministic archive: sorted names and a fixed mtime/owner make
-          # an unchanged tree produce a byte-identical layer, so GHCR's blob
-          # dedup keeps no-drift days at zero extra storage. The dummy CMD
-          # stays because podman import produces a config-less image and the
-          # produce job restores it with `podman create`, which needs one.
           tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
             --numeric-owner -cf - spack-mirror | \
-            podman import --change 'CMD ["/bin/true"]' - "$DATED"
-          podman tag "$DATED" "${INPUTS_REPO}:${ENV_NAME}"
-          podman push "$DATED"
-          podman push "${INPUTS_REPO}:${ENV_NAME}"
+            /tmp/crane append -f - --oci-empty-base -t "$DATED"
+          /tmp/crane tag "$DATED" "${ENV_NAME}"
 
       # v5 still declares node20; GitHub force-runs it on node24 (the
       # official deprecation bridge), so the warning is accepted until
@@ -252,9 +261,9 @@ jobs:
           min-versions-to-keep: 3
           delete-only-untagged-versions: false
 
-  produce:
-    name: produce (install + publish binaries)
-    needs: solve
+  binaries:
+    name: binaries (install + publish buildcache)
+    needs: prepare
     runs-on: ubuntu-latest
     # Backstop below the 360-min platform cap. The producer step carries
     # its own --operation-timeout-seconds (330 of these 350 minutes) so a
@@ -289,7 +298,7 @@ jobs:
         run: |
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          NIGHTLY_DATE="${{ needs.solve.outputs.date }}"
+          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
           {
             echo "ENV_NAME=${ENV_NAME}"
             echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
@@ -322,19 +331,12 @@ jobs:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
 
-      # The inputs package is public by decision (docs/buildcache.md), so the
-      # crane stream below works anonymously; the login stays as a hedge in
-      # case visibility ever changes back.
-      - name: Log in to GHCR
-        run: |
-          echo "${{ github.token }}" | podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-
       # Same-run mirror (dated tag) — keeps lock, DAG and sources identical
       # across producer retries via "Re-run failed jobs". Streamed straight
       # out of the registry with crane: one download + extract pass instead
-      # of a container-storage round trip.
-      - name: Restore source mirror from solve
+      # of a container-storage round trip. The inputs package is public, so
+      # no credentials are needed here.
+      - name: Restore source mirror from prepare
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -394,9 +396,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  image:
-    name: image (consumer, --buildcache only)
-    needs: produce
+  runtime:
+    name: runtime (consumer build, buildcache only)
+    needs: binaries
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -436,7 +438,7 @@ jobs:
           PY
           )"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          NIGHTLY_DATE="${{ needs.solve.outputs.date }}"
+          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
           {
             echo "ENV_NAME=${ENV_NAME}"
             echo "SPACK_VER=${SPACK_VER}"
@@ -455,7 +457,7 @@ jobs:
 
       # The app Dockerfile COPYs assets/bootstrap-<ver>, so the consumer job
       # needs the same bootstrap mirror the producer used (actions/cache hit
-      # from the solve/produce jobs of this or an earlier run).
+      # from the prepare/binaries jobs of this or an earlier run).
       - name: Cache Spack bootstrap mirror
         uses: actions/cache@v6
         with:
@@ -515,7 +517,7 @@ jobs:
           podman inspect --format '{{.Digest}}' \
             "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
 
-      # Same node20-v5 note as the solve job's prune step.
+      # Same node20-v5 note as the prepare job's prune step.
       - name: Prune old nightly images (best-effort)
         continue-on-error: true
         uses: actions/delete-package-versions@v5
@@ -531,8 +533,8 @@ jobs:
   # entrypoint; the richer def-file flow (run_* wrappers) stays with local
   # `hpc_cf sif` for now.
   sif:
-    name: sif (apptainer convert + release asset)
-    needs: image
+    name: sif (apptainer convert + release)
+    needs: runtime
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -543,7 +545,7 @@ jobs:
         run: |
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          NIGHTLY_DATE="${{ needs.solve.outputs.date }}"
+          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
           {
             echo "ENV_NAME=${ENV_NAME}"
             echo "ENV_SUFFIX=${ENV_NAME#*-}"
