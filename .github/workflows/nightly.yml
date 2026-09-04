@@ -174,14 +174,18 @@ jobs:
       # actually drifted (a master nightly usually moves only cp2k itself).
       # A missing image (first run, pruned away) falls back to the cold full
       # download — seeding is strictly an optimization, never a gate.
+      #
+      # crane export streams the layer straight into tar: one download +
+      # extract pass, no container-storage round trip (podman pull + cp + rmi
+      # would move the whole tree two extra times).
       - name: Seed source mirror from the previous inputs image
         run: |
           set -euo pipefail
-          if podman pull "${INPUTS_REPO}:${ENV_NAME}" 2>/dev/null; then
-            podman create --name in-seed "${INPUTS_REPO}:${ENV_NAME}" >/dev/null
-            podman cp in-seed:/spack-mirror assets/
-            podman rm in-seed >/dev/null
-            podman rmi "${INPUTS_REPO}:${ENV_NAME}" >/dev/null 2>&1 || true
+          curl -fsSL \
+            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp crane
+          if /tmp/crane manifest "${INPUTS_REPO}:${ENV_NAME}" >/dev/null 2>&1; then
+            /tmp/crane export "${INPUTS_REPO}:${ENV_NAME}" - | tar -x -C assets
             echo "seeded $(find assets/spack-mirror -type f | wc -l) files from the previous mirror"
           else
             echo "no previous inputs image; cold mirror download"
@@ -318,23 +322,26 @@ jobs:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
 
-      # The inputs package is created private by the first push, so the
-      # anonymous pull below would be rejected — authenticate first.
+      # The inputs package is public by decision (docs/buildcache.md), so the
+      # crane stream below works anonymously; the login stays as a hedge in
+      # case visibility ever changes back.
       - name: Log in to GHCR
         run: |
           echo "${{ github.token }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
       # Same-run mirror (dated tag) — keeps lock, DAG and sources identical
-      # across producer retries via "Re-run failed jobs".
+      # across producer retries via "Re-run failed jobs". Streamed straight
+      # out of the registry with crane: one download + extract pass instead
+      # of a container-storage round trip.
       - name: Restore source mirror from solve
         run: |
           set -euo pipefail
-          podman pull "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
-          podman create --name in-restore "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
-          podman cp in-restore:/spack-mirror assets/
-          podman rm in-restore
-          podman rmi -f "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}" || true
+          curl -fsSL \
+            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp crane
+          /tmp/crane export \
+            "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}" - | tar -x -C assets
 
       - name: Download build lock artifact
         uses: actions/download-artifact@v8
