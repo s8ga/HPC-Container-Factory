@@ -159,6 +159,7 @@ def build_publish_script_oci(
         'if ((${#installed_hashes[@]} < ${#spec_hashes[@]})); then\n'
         '    echo "HPC_CF_PARTIAL_PUBLISH=1"\n'
         "fi\n"
+        f"spack -e {env} mirror remove binary-cache >/dev/null 2>&1 || true\n"
         f"spack -e {env} mirror add --unsigned{cred_flags} binary-cache "
         f"{shlex.quote(mirror_url)}\n"
         f"spack -e {env} buildcache push --unsigned --fail-fast binary-cache "

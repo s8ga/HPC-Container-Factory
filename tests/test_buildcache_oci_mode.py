@@ -367,6 +367,14 @@ def test_oci_publish_script_pins_registry_flow() -> None:
         f"{OCI_URL}" in normalized
     )
     assert "buildcache push --unsigned --fail-fast binary-cache" in normalized
+    # Idempotent registration: the producer install step (autopush) has
+    # already registered binary-cache in the env scope, and that config
+    # persists inside the built image — mirror add would fail with
+    # "already exists" without the best-effort remove first.
+    assert (
+        "spack -e cp2k-env mirror remove binary-cache "
+        ">/dev/null 2>&1 || true spack -e cp2k-env mirror add"
+    ) in normalized
     assert "HPC_CF_PUSHED_SPEC_COUNT=" in script
     assert "HPC_CF_CHECKED_SPEC_COUNT=" in script
     assert "HPC_CF_BUILDCACHE_STEP=oci-count-check" in script
