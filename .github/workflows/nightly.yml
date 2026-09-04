@@ -511,10 +511,11 @@ jobs:
           delete-only-untagged-versions: false
 
   # The distribution endpoint of this pipeline: a downloadable SIF on a
-  # rolling public GitHub Release (the opensource runtime SIF is well under
-  # the 2GB release-asset cap). Plain docker:// conversion inherits the OCI
-  # entrypoint; the richer def-file flow (run_* wrappers) stays with local
-  # `hpc_cf sif` for now.
+  # rolling public GitHub Release (the runtime SIF is well under the 2GB
+  # release-asset cap). Built by the factory's own `hpc_cf build-sif` so the
+  # nightly SIF gets the exact local flow — env def template (MOTD shell
+  # wrapper, labels, runscript) and mksquashfs compression — from one
+  # source of truth.
   sif:
     name: sif (apptainer convert + release)
     needs: runtime
@@ -524,6 +525,16 @@ jobs:
       # Release-asset upload only; every other job stays contents: read.
       contents: write
     steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
       - name: Resolve job variables
         run: |
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
@@ -534,6 +545,7 @@ jobs:
             echo "ENV_SUFFIX=${ENV_NAME#*-}"
             echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
             echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
+            echo "IMAGE_NAME=${ENV_NAME%%-*}"
             echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-nightly-${NIGHTLY_DATE}.sif"
             echo "RELEASE_TAG=nightly-${ENV_NAME}"
           } >> "$GITHUB_ENV"
@@ -546,11 +558,20 @@ jobs:
           sudo apt-get install -y /tmp/apptainer.deb
           apptainer --version
 
-      - name: Build SIF from the runtime image
+      - name: Build SIF via the factory (def template + compression)
         run: |
           set -euo pipefail
-          apptainer build "${SIF_NAME}" \
-            "docker://${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          # build-sif exports from a LOCAL image: pull the runtime image
+          # and tag it where the factory's auto-detection looks for it.
+          podman pull "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          podman tag "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}" \
+            "${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
+          ./venv/bin/python -m hpc_cf build-sif \
+            --env "${ENV_NAME}" \
+            --docker-image "${IMAGE_NAME}" \
+            --docker-tag "nightly-${NIGHTLY_DATE}" \
+            --output "${SIF_NAME}" \
+            --yes
           du -h "${SIF_NAME}"
           sha256sum "${SIF_NAME}" | tee "${SIF_NAME}.sha256"
 
