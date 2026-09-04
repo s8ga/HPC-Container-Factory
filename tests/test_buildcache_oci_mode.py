@@ -634,16 +634,22 @@ def test_oci_producer_build_publishes_to_registry_and_marks_healthy(
         patch("hpc_cf.buildcache.remove_temporary_image", side_effect=fake_remove),
         patch("hpc_cf.buildcache.inspect_image_digest", side_effect=fake_inspect),
         patch(
-            "hpc_cf.buildcache.inspect_image_lock_sha", return_value=lock_sha
-        ),
+            "hpc_cf.buildcache.inspect_image_lock_sha"
+        ) as lock_sha_inspect,
         patch("hpc_cf.buildcache.publish", local_publish),
         patch("hpc_cf.buildcache.publish_oci", side_effect=fake_publish_oci),
     ):
+        lock_sha_inspect.return_value = lock_sha
         assert BuildcacheService(layout).run(
             BuildcacheRequest(action="build", env=PILOT)
         ) == 0
 
     local_publish.assert_not_called()
+    # The post-publish lock-bind container must launch with the oci
+    # launcher: no keep-id userns mapping, no local store mount.
+    launch_kwargs = lock_sha_inspect.call_args.kwargs
+    assert launch_kwargs["userns_keep_id"] is False
+    assert launch_kwargs["mount_buildcache"] is False
     assert publish_oci_kwargs["mirror_url"] == OCI_URL
     assert render_kwargs.get("buildcache_mode") == "oci"
     assert render_kwargs.get("buildcache_url") == OCI_URL

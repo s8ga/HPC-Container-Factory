@@ -415,8 +415,16 @@ def inspect_image_lock_sha(
     env_name: str,
     layout: ProjectLayout,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    userns_keep_id: bool = True,
+    mount_buildcache: bool = True,
 ) -> str:
-    """Return the SHA-256 of ``spack.lock`` inside a producer image."""
+    """Return the SHA-256 of ``spack.lock`` inside a producer image.
+
+    The launch parameters default to the local-mode launcher; oci callers
+    pass ``userns_keep_id=False`` (no host-mounted writes, and the custom
+    mapping is what some hosted runner kernels reject) and
+    ``mount_buildcache=False`` (the registry mirror replaces the store).
+    """
     lock_path = image_env_lock_path(env_name)
     script = (
         "python3 -c "
@@ -437,6 +445,8 @@ def inspect_image_lock_sha(
         layout=layout,
         script=script,
         timeout_seconds=timeout_seconds,
+        userns_keep_id=userns_keep_id,
+        mount_buildcache=mount_buildcache,
     )
     match = _IMAGE_LOCK_SHA_RE.search(result.stdout or "")
     if match is None:
@@ -454,6 +464,8 @@ def require_matching_image_lock(
     layout: ProjectLayout,
     lock_path: Path,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    userns_keep_id: bool = True,
+    mount_buildcache: bool = True,
 ) -> str:
     """Fail closed when the producer image lock differs from the host lock."""
     host_sha = hashlib.sha256(lock_path.read_bytes()).hexdigest()
@@ -463,6 +475,8 @@ def require_matching_image_lock(
         env_name=env_name,
         layout=layout,
         timeout_seconds=timeout_seconds,
+        userns_keep_id=userns_keep_id,
+        mount_buildcache=mount_buildcache,
     )
     if image_sha != host_sha:
         raise RuntimeError(

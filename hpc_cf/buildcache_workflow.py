@@ -109,6 +109,14 @@ class BuildcacheService:
             "stable_image_ref": stable_image_ref,
         }
         failed_step = "publish"
+        # Every container launched on the oci producer path drops the
+        # keep-id userns mapping (no host-mounted writes; the custom
+        # mapping is rejected by some hosted runner kernels) and the
+        # local store mount (the registry mirror replaces it).
+        launch: dict[str, bool] = {
+            "userns_keep_id": backend.mode is not BuildcacheMode.OCI,
+            "mount_buildcache": backend.mode is not BuildcacheMode.OCI,
+        }
         try:
 
             def run_publish() -> tuple[Any, int]:
@@ -194,6 +202,7 @@ class BuildcacheService:
                 layout=self.layout,
                 lock_path=lock_path,
                 timeout_seconds=request.operation_timeout_seconds,
+                **launch,
             )
             failed_step = "coverage"
             publish_success_state(
@@ -396,6 +405,8 @@ class BuildcacheService:
                         layout=self.layout,
                         lock_path=lock_path,
                         timeout_seconds=request.operation_timeout_seconds,
+                        userns_keep_id=backend.mode is not BuildcacheMode.OCI,
+                        mount_buildcache=backend.mode is not BuildcacheMode.OCI,
                     )
                     failed_step = "coverage"
                     publish_success_state(
