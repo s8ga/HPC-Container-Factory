@@ -94,7 +94,9 @@ jobs:
           large-packages: true
           docker-images: true
           tool-cache: false
-          swap: false
+          # Correct input name is swap-storage (a bare `swap` key is
+          # rejected); true matches the default the validated runs used.
+          swap-storage: true
 
       - name: Install python dependencies
         run: |
@@ -174,6 +176,9 @@ jobs:
           podman push "$DATED"
           podman push "${INPUTS_REPO}:${ENV_NAME}"
 
+      # v5 still declares node20; GitHub force-runs it on node24 (the
+      # official deprecation bridge), so the warning is accepted until
+      # upstream ships a node24 major.
       - name: Prune old mirror images (best-effort)
         continue-on-error: true
         uses: actions/delete-package-versions@v5
@@ -206,7 +211,9 @@ jobs:
           large-packages: true
           docker-images: true
           tool-cache: false
-          swap: false
+          # Correct input name is swap-storage (a bare `swap` key is
+          # rejected); true matches the default the validated runs used.
+          swap-storage: true
 
       - name: Install python dependencies
         run: |
@@ -331,7 +338,9 @@ jobs:
           large-packages: true
           docker-images: true
           tool-cache: false
-          swap: false
+          # Correct input name is swap-storage (a bare `swap` key is
+          # rejected); true matches the default the validated runs used.
+          swap-storage: true
 
       - name: Install python dependencies
         run: |
@@ -430,6 +439,7 @@ jobs:
           podman inspect --format '{{.Digest}}' \
             "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
 
+      # Same node20-v5 note as the solve job's prune step.
       - name: Prune old nightly images (best-effort)
         continue-on-error: true
         uses: actions/delete-package-versions@v5
