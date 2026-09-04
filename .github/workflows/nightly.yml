@@ -260,6 +260,10 @@ jobs:
     name: binaries (install + publish buildcache)
     needs: prepare
     runs-on: ubuntu-latest
+    # Forwarded so dependents read a DIRECT dependency's output;
+    # needs.prepare.outputs.* would be empty in indirect consumers.
+    outputs:
+      date: ${{ needs.prepare.outputs.date }}
     # Backstop below the 360-min platform cap. The producer step carries
     # its own --operation-timeout-seconds (330 of these 350 minutes) so a
     # slow install fails inside hpc_cf and the always()-step below still
@@ -383,6 +387,8 @@ jobs:
     name: runtime (consumer build, buildcache only)
     needs: binaries
     runs-on: ubuntu-latest
+    outputs:
+      date: ${{ needs.binaries.outputs.date }}
     timeout-minutes: 120
     steps:
       - name: Check out source
@@ -409,7 +415,7 @@ jobs:
           PY
           )"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
+          NIGHTLY_DATE="${{ needs.binaries.outputs.date }}"
           {
             echo "ENV_NAME=${ENV_NAME}"
             echo "SPACK_VER=${SPACK_VER}"
@@ -483,10 +489,16 @@ jobs:
         run: |
           set -euo pipefail
           SRC="localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
-          podman push "$SRC" "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
-          podman push "$SRC" "${IMG_REPO}:${ENV_SUFFIX}-nightly"
-          podman inspect --format '{{.Digest}}' \
-            "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          DATED="${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          FLOATING="${IMG_REPO}:${ENV_SUFFIX}-nightly"
+          # Tag the local image with the remote refs first: podman inspect
+          # resolves against the local store, so inspecting a remote-only
+          # name fails even after a successful push.
+          podman tag "$SRC" "$DATED"
+          podman tag "$SRC" "$FLOATING"
+          podman push "$DATED"
+          podman push "$FLOATING"
+          podman inspect --format '{{.Digest}}' "$DATED"
 
       # Same node20-v5 note as the prepare job's prune step.
       - name: Prune old nightly images (best-effort)
@@ -516,7 +528,7 @@ jobs:
         run: |
           ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
+          NIGHTLY_DATE="${{ needs.runtime.outputs.date }}"
           {
             echo "ENV_NAME=${ENV_NAME}"
             echo "ENV_SUFFIX=${ENV_NAME#*-}"
