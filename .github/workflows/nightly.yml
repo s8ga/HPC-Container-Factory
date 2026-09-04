@@ -225,19 +225,23 @@ jobs:
       # so this single tree satisfies the producer's verified-mirror gate
       # after restore — no re-download on producer retries.
       #
-      # Streamed end to end with crane: deterministic tar -> gzip ->
-      # registry, one pass with no container-storage round trip (podman
-      # import + push moved the tree through storage and compressed it
-      # there first). An unchanged tree re-yields the same digest, so on
-      # no-drift days the push degrades to a manifest write (blob
-      # HEAD-skip); `crane tag` floats the pointer without re-pushing.
+      # zstd compresses ~10x faster than gzip at a similar ratio; crane
+      # detects the zstd magic on FILE input and passes the layer through
+      # as OCI tar+zstd without re-compressing (stdin input would re-gzip
+      # — verified locally against a scratch registry). -T1 keeps the
+      # digest deterministic regardless of runner core count. An unchanged
+      # tree re-yields the same digest, so no-drift pushes degrade to a
+      # blob HEAD-skip; `crane tag` floats the pointer without re-pushing.
       - name: Publish source-mirror data image to GHCR
         run: |
           set -euo pipefail
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
           tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
             --numeric-owner -cf - spack-mirror | \
-            /tmp/crane append -f - --oci-empty-base -t "$DATED"
+            zstd -q -3 -T1 -o /tmp/mirror-layer.tar.zst
+          /tmp/crane append -f /tmp/mirror-layer.tar.zst \
+            --oci-empty-base -t "$DATED"
+          rm -f /tmp/mirror-layer.tar.zst
           /tmp/crane tag "$DATED" "${ENV_NAME}"
 
       # v5 still declares node20; GitHub force-runs it on node24 (the
