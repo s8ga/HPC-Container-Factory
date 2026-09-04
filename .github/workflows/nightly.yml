@@ -161,6 +161,32 @@ jobs:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
 
+      # Authenticated pull keeps seeding working even if the package
+      # visibility ever changes; also covers the publish below.
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      # Delta optimization: seed the mirror tree from the previous run's
+      # floating inputs image. spack mirror create skips files that already
+      # exist with matching checksums, so upstream downloads shrink to what
+      # actually drifted (a master nightly usually moves only cp2k itself).
+      # A missing image (first run, pruned away) falls back to the cold full
+      # download — seeding is strictly an optimization, never a gate.
+      - name: Seed source mirror from the previous inputs image
+        run: |
+          set -euo pipefail
+          if podman pull "${INPUTS_REPO}:${ENV_NAME}" 2>/dev/null; then
+            podman create --name in-seed "${INPUTS_REPO}:${ENV_NAME}" >/dev/null
+            podman cp in-seed:/spack-mirror assets/
+            podman rm in-seed >/dev/null
+            podman rmi "${INPUTS_REPO}:${ENV_NAME}" >/dev/null 2>&1 || true
+            echo "seeded $(find assets/spack-mirror -type f | wc -l) files from the previous mirror"
+          else
+            echo "no previous inputs image; cold mirror download"
+          fi
+
       # Stable (pinned) builds consume the committed lock and must fail
       # fast — before the spack download and mirror work — when it is
       # missing at this ref.
@@ -192,22 +218,19 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Log in to GHCR
-        run: |
-          echo "${{ github.token }}" | podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-
       # The .hpc_cf verification manifests live INSIDE assets/spack-mirror,
       # so this single tree satisfies the producer's verified-mirror gate
       # after restore — no re-download on producer retries.
       - name: Publish source-mirror data image to GHCR
         run: |
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
-          # An imported image has no CMD/ENTRYPOINT (the tar only contains
-          # the mirror tree), and the produce job restores it with
-          # `podman create`, which requires one. Stamp a dummy command —
-          # create never executes it.
-          tar -C assets -cf - spack-mirror | \
+          # Deterministic archive: sorted names and a fixed mtime/owner make
+          # an unchanged tree produce a byte-identical layer, so GHCR's blob
+          # dedup keeps no-drift days at zero extra storage. The dummy CMD
+          # stays because podman import produces a config-less image and the
+          # produce job restores it with `podman create`, which needs one.
+          tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
+            --numeric-owner -cf - spack-mirror | \
             podman import --change 'CMD ["/bin/true"]' - "$DATED"
           podman tag "$DATED" "${INPUTS_REPO}:${ENV_NAME}"
           podman push "$DATED"
