@@ -15,6 +15,9 @@ PARTIALS_DIR = TEMPLATES_DIR / "partials"
 
 # Baseline total of the 9 per-env Dockerfile.j2 files before dedupe (step 4).
 PRE_DEDUPE_ENV_DOCKERFILE_LINES = 3585
+# The budget scales with the live inventory so the guard keeps measuring
+# per-env thinness rather than forbidding new environments.
+PRE_DEDUPE_BASELINE_ENV_COUNT = 9
 
 REQUIRED_PARTIALS = (
     "spack_install.j2",
@@ -133,12 +136,15 @@ def test_duplicate_template_lines_reduced_at_least_40_percent() -> None:
         if not p.name.endswith("_oci.j2")
     )
     effective = env_lines + partial_lines
-    assert env_lines <= PRE_DEDUPE_ENV_DOCKERFILE_LINES * 0.60, (
-        f"per-env lines {env_lines} not ≤ 60% of {PRE_DEDUPE_ENV_DOCKERFILE_LINES}"
+    env_files = list(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
+    budget = PRE_DEDUPE_ENV_DOCKERFILE_LINES * (
+        len(env_files) / PRE_DEDUPE_BASELINE_ENV_COUNT
     )
-    assert effective <= PRE_DEDUPE_ENV_DOCKERFILE_LINES * 0.70, (
-        f"env+partials {effective} not ≤ 70% of baseline "
-        f"{PRE_DEDUPE_ENV_DOCKERFILE_LINES}"
+    assert env_lines <= budget * 0.60, (
+        f"per-env lines {env_lines} not ≤ 60% of scaled baseline {budget:.0f}"
+    )
+    assert effective <= budget * 0.70, (
+        f"env+partials {effective} not ≤ 70% of scaled baseline {budget:.0f}"
     )
 
 

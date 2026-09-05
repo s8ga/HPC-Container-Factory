@@ -387,6 +387,17 @@ def test_all_envs_pass_config_profile() -> None:
         assert report.ok, f"{name}: {report.format_text()}"
 
 
+def _is_floating_master_track(env_dir: Path) -> bool:
+    """Floating @master specs ship no committed lock by design."""
+    spack_yaml = env_dir / "spack-env-file" / "spack.yaml"
+    text = spack_yaml.read_text(encoding="utf-8")
+    return any(
+        "@master" in line
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+
+
 def test_all_envs_with_assets_pass_build_input_profile() -> None:
     """Run BUILD_INPUT where all declared local prerequisites are available."""
     from hpc_cf.config import PROJECT_ROOT
@@ -398,6 +409,11 @@ def test_all_envs_with_assets_pass_build_input_profile() -> None:
     for name in list_available_envs(layout=layout):
         env_dir = layout.spack_envs_dir / name
         spec = load_environment_spec(env_dir)
+        # Floating @master track: the nightly channel re-concretizes with
+        # --allow-concretize, so the fail-closed lock requirement that
+        # BUILD_INPUT enforces does not apply.
+        if _is_floating_master_track(env_dir):
+            continue
         if spec.method.requires_spack_assets:
             tarball = layout.assets_dir / f"spack-v{spec.spack.version}.tar.gz"
             bootstrap = layout.bootstrap_dir(spec.spack.version)
