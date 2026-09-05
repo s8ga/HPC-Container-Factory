@@ -4,7 +4,7 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     { echo "=== {{ build_manifest_title }} ==="; \
       echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
-      echo ""; spack find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
+      echo ""; spack -e {{ spack_env_name }} find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
     echo "=== Generating Dependency Graph ===" && \
     spack -e {{ spack_env_name }} graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
