@@ -58,10 +58,6 @@ spack:
       require:
         - "+fortran"
 
-    libxsmm:
-      require:
-        - "+fortran"
-
     openblas:
       require:
         - "+dynamic_dispatch"
