@@ -591,8 +591,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      # Release-asset upload only; every other job stays contents: read.
+      # Release-asset upload plus the verified-image tag float (GHCR push);
+      # every other job stays contents: read.
       contents: write
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@v7
