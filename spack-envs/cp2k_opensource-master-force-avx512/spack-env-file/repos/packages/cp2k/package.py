@@ -386,6 +386,9 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
         depends_on("gauxc+pic", when="+pic")
 
     depends_on("tblite build_system=cmake", when="+tblite")
+    # cp2k 2027.1+ (the master track) needs the tblite 0.7 API; cp2k's own
+    # tools/spack pins tblite@0.7.0 (backport of spack-packages 52a93f63).
+    depends_on("tblite@0.7:", when="@2027.1: +tblite")
     # Force openmp propagation on some providers of blas / fftw-api
     with when("+openmp"):
         depends_on("fftw+openmp", when="^[virtuals=fftw-api] fftw")
@@ -1424,6 +1427,11 @@ class CMakeBuilder(cmake.CMakeBuilder):
                     self.define("CP2K_LAPACK_FOUND", True),
                     self.define("CP2K_LAPACK_LINK_LIBRARIES", lapack.libs.joined(";")),
                     self.define("CP2K_BLAS_FOUND", True),
+                    # cp2k 2027-line FindBlas lists the include dirs in its
+                    # REQUIRED_VARS; without this define configure fails with
+                    # "Could NOT find Blas (missing: CP2K_BLAS_INCLUDE_DIRS)"
+                    # (backport of spack-packages beea26f4).
+                    self.define("CP2K_BLAS_INCLUDE_DIRS", blas.prefix.include),
                     self.define("CP2K_BLAS_LINK_LIBRARIES", blas.libs.joined(";")),
                     self.define("CP2K_SCALAPACK_FOUND", True),
                     self.define("CP2K_SCALAPACK_INCLUDE_DIRS", spec["scalapack"].prefix.include),

@@ -189,7 +189,7 @@ spack:
 
   repos:
     builtin:
-      commit: fc7222b5b8ababa8588be2e23ff39b33ecc9ce12  # 2026-07-09
+      commit: 4b27eea0cc4158da30b27d19eafcd402ee9939bb  # 2026-09-05 (master track tracks latest; 0.6-era pin lacked tblite 0.7)
 
   specs:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)
@@ -229,7 +229,7 @@ spack:
     - "spfft@1.1.1"
     - "spglib@2.7.0"
     - "spla@1.6.1"
-    - "tblite@0.6.0"
+    - "tblite@0.7.0"
     - "trexio@2.5.0"
     # CPU stack: +ace/+libfci/+mimic/+spla wired in local package.py; LibGint needs +cuda.
     # NLCG omitted (CP2K not officially supported; empty-enum crash if enabled).
