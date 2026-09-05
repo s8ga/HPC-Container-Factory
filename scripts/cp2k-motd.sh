@@ -76,6 +76,12 @@ LINE=$(repeat '-' "$W")
 IMAGE_NAME="${HPC_CONTAINER_NAME:-unknown}"
 IMAGE_TAG="${HPC_CONTAINER_TAG:-unknown}"
 BUILD_TS="${HPC_CONTAINER_BUILD_TS:-}"
+# Baked build identity (e.g. master@<commit>) wins over the static tag:
+# floating tracks resolve their real version only at lock time, so the
+# image bakes /etc/hpc-container-ident during build.
+if [ -r /etc/hpc-container-ident ]; then
+    IMAGE_TAG="$(cat /etc/hpc-container-ident)"
+fi
 
 # ── Hardware detection ───────────────────────────────────────────────────
 detect_simd() {

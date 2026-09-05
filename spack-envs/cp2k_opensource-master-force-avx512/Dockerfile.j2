@@ -99,6 +99,15 @@ LABEL stage="builder" \
 {% set build_manifest_title = "CP2K master Build Manifest" %}
 {% include 'partials/spack_post_install.j2' %}
 
+# Bake the build identity for the container MOTD: the resolved cp2k commit
+# from the imported lock (floating master track), falling back to the
+# version string. The runtime MOTD prefers this file over the static
+# HPC_CONTAINER_TAG env so a meaningless 'latest' never masks what was
+# actually built.
+RUN set -euo pipefail; \
+    spack python -c "import json; lock = json.load(open('/opt/spack-env-file/spack.lock')); node = next(s for s in lock['concrete_specs'].values() if s['name'] == 'cp2k'); params = node.get('parameters', {}); ident = ('master@' + params['commit'][:12]) if params.get('commit') else str(node['version']); open('/opt/hpc-container-ident', 'w').write(ident)" && \
+    echo "baked ident: $(cat /opt/hpc-container-ident)"
+
 {% if not build_only %}
 # ============================================================================
 # STAGE 3: RUNTIME - Minimal container with only CP2K and runtime libraries
@@ -138,6 +147,9 @@ COPY --from=builder --chown=hpc:hpc /opt/spack /opt/spack
 # 2. Spack view (symlinks into /opt/spack, provides unified bin/lib/share layout)
 COPY --from=builder --chown=hpc:hpc /opt/spack-view /opt/spack-view
 
+# 2b. Baked build identity (resolved cp2k commit) — read by the MOTD.
+COPY --from=builder /opt/hpc-container-ident /etc/hpc-container-ident
+
 # Fail the image build if Skala checkpoint is missing from the view (MODEL SKALA).
 # The cp2k_dev recipe names the file with an upstream rev suffix
 # (skala-1.1-rev1.fun today); match any rev so a silent upstream rename
@@ -172,15 +184,18 @@ FROM runtime AS final
 ARG DEFAULT_IMAGE_NAME="{{ default_image_name }}"
 ARG DEFAULT_IMAGE_TAG="{{ default_image_tag }}"
 
-LABEL version="2026.2" \
-      description="Optimized CP2K 2026.2 container" \
+LABEL version="master-nightly" \
+      description="CP2K master (floating nightly track, AVX-512)" \
       maintainer="s8ga" \
       image_name="{{ default_image_name }}" \
       image_tag="{{ default_image_tag }}" \
       timestamp="{{ timestamp }}"
 
-ENV HPC_CONTAINER_NAME="{{ default_image_name }}" \
-    HPC_CONTAINER_TAG="{{ default_image_tag }}" \
+# Static tag kept honest ('master-nightly', not the resolver's 'latest');
+# the precise build identity (master@<commit>) is baked by the builder
+# into /etc/hpc-container-ident and preferred by the MOTD.
+ENV HPC_CONTAINER_NAME="cp2k_opensource-master-force-avx512" \
+    HPC_CONTAINER_TAG="master-nightly" \
     HPC_CONTAINER_BUILD_TS="{{ timestamp }}"
 
 ENV MPI_RUNVAR=" --bind-to none "
