@@ -1,5 +1,7 @@
-# On-demand build pipeline (nightly floating / stable pinned), manually
-# workflow_dispatch — no schedule by design: the operator decides when a
+# Reusable CP2K build pipeline, called by the channel entry points
+# (nightly-cp2k / stable-cp2k) — workflow_call only, no schedule here:
+# the operator decides when a build fits (the nightly wrapper will gain
+# the cron once the master env exists).
 # build fits. Fully remote: cold-starts converge by re-running failed jobs,
 # no local seeding step is required (public repo: standard runners, GHCR
 # packages and artifacts are all free).
@@ -36,7 +38,7 @@
 #   Each retry reuses pushed binaries, so convergence typically takes a
 #   few retries on 4 vCPU.
 #
-# Two build modes (workflow_dispatch input `pinned`):
+# Two build modes (channel input):
 #   nightly (default) — floating: prepare re-concretizes (--allow-concretize)
 #             inside the env's pinned constraints and feeds the buildcache.
 #   stable — consumes the committed spack.lock read-only and fails closed
@@ -51,43 +53,44 @@
 # VASP and MKL/ROCm environments are intentionally outside this workflow
 # (licensing / out of the opensource buildcache track).
 
-name: nightly
+name: cp2k-pipeline
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       env_name:
         description: Environment name under spack-envs/
         required: false
+        type: string
         default: cp2k_opensource-2026.2-force-avx512
       ref:
-        description: Git ref to build (default NIGHTLY_REF, then the dispatched branch)
+        description: Git ref to build (default DEFAULT_REF, then the caller's branch)
         required: false
+        type: string
         default: ""
-      pinned:
-        description: "Stable build: consume the committed spack.lock (no re-concretize)"
+      channel:
+        description: "stable: consume the committed spack.lock, permanent releases; nightly: floating, rolling pre-release"
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: nightly
 
 # Persistent default build ref for manual runs (e.g. "v2"), used when the
 # dispatch input is left empty. Empty = build the branch the workflow was
 # dispatched against. Requires this file to exist on the default branch once,
 # so GitHub registers the workflow for dispatch.
 env:
-  NIGHTLY_REF: ""
+  DEFAULT_REF: ""
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  # Keyed per environment so future multi-env runs can proceed in parallel;
-  # a repeated dispatch of the same env queues instead of being cancelled.
-  # nightly and stable of one env also serialize: both publish the same
-  # dated mirror data-image tag, and a mirrored race would mismatch
-  # the verify manifests against the other run's lock.
-  group: nightly-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  # Keyed by caller workflow + environment: channels run independently,
+  # a repeated dispatch of the same channel+env queues instead of being
+  # cancelled (both channels publish the same dated mirror tag when they
+  # share an env, so those still serialize).
+  group: ${{ github.workflow }}-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:
@@ -101,7 +104,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
       # No disk cleanup here: prepare peaks around ~5GB (workspace, mirror
       # tree, builder container) and the raw runner has ample headroom.
@@ -194,7 +197,7 @@ jobs:
       # fast — before the spack download and mirror work — when it is
       # missing at this ref.
       - name: Stable builds require a committed lock
-        if: ${{ inputs.pinned }}
+        if: ${{ inputs.channel == 'stable' }}
         run: |
           test -f "spack-envs/${ENV_NAME}/spack-env-file/spack.lock" || {
             echo "::error::stable build requires a committed spack.lock for ${ENV_NAME} at this ref"
@@ -208,7 +211,7 @@ jobs:
           # nightly: float within the env's pinned constraints; stable:
           # consume the committed lock — assets fails closed without
           # --allow-concretize when the lock is missing or stale.
-          if [ "${{ inputs.pinned }}" != "true" ]; then
+          if [ "${{ inputs.channel }}" != "stable" ]; then
             ARGS+=(--allow-concretize)
           fi
           ./venv/bin/python -m hpc_cf assets "${ARGS[@]}"
@@ -273,7 +276,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
       - name: Install python dependencies
         run: |
@@ -394,7 +397,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
       - name: Install python dependencies
         run: |
@@ -528,7 +531,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.NIGHTLY_REF || github.ref }}
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
       - name: Install python dependencies
         run: |
@@ -550,7 +553,7 @@ jobs:
             # Channel management: stable builds get a permanent per-build
             # release marked latest (never pruned); nightly/master share one
             # rolling PRE-release whose SIF assets are pruned to the newest 5.
-            if [ "${{ inputs.pinned }}" = "true" ]; then
+            if [ "${{ inputs.channel }}" = "stable" ]; then
               echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
               echo "RELEASE_CREATE_FLAGS=--latest"
             else
@@ -626,7 +629,7 @@ jobs:
 
       # Keep the newest 7 dated SIF assets; older ones are pruned best-effort.
       - name: Prune old SIF assets (nightly channel only, best-effort)
-        if: ${{ always() && !inputs.pinned }}
+        if: ${{ always() && inputs.channel == 'nightly' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
