@@ -1,10 +1,19 @@
 {# Write BUILD_MANIFEST.txt and a dependency graph.
-   Requires: build_manifest_title (set in the per-env template). #}
+   Requires: build_manifest_title (set in the per-env template).
+   The manifest carries TWO views of the same solve:
+   - `spack find -d`: the flat installed package list with dependency
+     edges (what is in the image);
+   - `spack spec` (appended): the fully resolved concrete DAG per root —
+     variants, compiler, target, virtual-provider choices — which is
+     where the env's `packages:` require/prefer decisions are visible.
+   `spack -e` scopes both without activating the environment. #}
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     { echo "=== {{ build_manifest_title }} ==="; \
       echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
       echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
-      echo ""; spack -e {{ spack_env_name }} find -d; } > /opt/spack-view/BUILD_MANIFEST.txt && \
+      echo ""; spack -e {{ spack_env_name }} find -d; \
+      echo ""; echo "=== Resolved specs (spack spec) ==="; \
+      spack -e {{ spack_env_name }} spec; } > /opt/spack-view/BUILD_MANIFEST.txt && \
     echo "=== Generating Dependency Graph ===" && \
     spack -e {{ spack_env_name }} graph --color --dot > /opt/spack-view/DependencyGraph.dot && \
     echo "Manifest saved: $(wc -l < /opt/spack-view/BUILD_MANIFEST.txt) lines"
