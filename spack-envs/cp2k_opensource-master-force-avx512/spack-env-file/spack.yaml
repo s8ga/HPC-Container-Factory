@@ -70,6 +70,17 @@ spack:
       require:
         - netlib-scalapack
 
+    yasm:
+      # Newer builtin recipes made yasm multi-build-system
+      # (autotools|cmake), so the global all.prefer build_system=cmake
+      # started steering it onto the cmake path — which misses
+      # depends_on("cxx", type="build") and dies at the CMake compiler
+      # probe ("SPACK_CXX_* variables not set"). isa-l only needs the
+      # yasm assembler binaries; pin the proven autotools path until
+      # upstream fixes the cmake variant.
+      require:
+        - "build_system=autotools"
+
     adios2:
       require:
         - "~bzip2"
