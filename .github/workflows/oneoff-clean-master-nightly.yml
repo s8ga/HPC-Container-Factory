@@ -1,0 +1,32 @@
+# One-off: delete the image version pushed by the failed nightly runs
+# (master-force-avx512-nightly / -nightly-20260905 / -release share one
+# digest). The in-flight nightly repopulates all three. Delete after run.
+name: oneoff-clean-master-nightly
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete master nightly image versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO_PATH="/user/packages/container/cp2k_opensource/versions"
+          mapfile -t IDS < <(gh api --paginate "$REPO_PATH" \
+            -q '.[] | select(any(.metadata.container.tags[]; startswith("master-force-avx512"))) | "\(.id)\t\(.metadata.container.tags | join(","))"')
+          if [ "${#IDS[@]}" -eq 0 ]; then
+            echo "no master nightly versions found"
+            exit 0
+          fi
+          for entry in "${IDS[@]}"; do
+            id="${entry%%	*}"
+            echo "deleting $entry"
+            gh api -X DELETE "$REPO_PATH/$id"
+          done
