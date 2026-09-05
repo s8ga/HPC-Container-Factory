@@ -611,8 +611,15 @@ jobs:
             || gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
                  --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
                  --title "${RELEASE_TAG}" \
-                 --notes "Automated build. Artifacts are unsigned; \
-          see docs/buildcache.md for the trust model."
+                 --notes "Automated build of CP2K (opensource, AVX-512).
+
+          Run it:
+            apptainer exec ${SIF_NAME} cp2k.psmp --version
+
+          Assets: the SIF image, its sha256 checksum, and
+          BUILD_MANIFEST-*.txt (the full package list of this build,
+          recorded by Spack). The source for the tagged commit lives
+          in this repository."
           gh release upload "${RELEASE_TAG}" "${SIF_NAME}" "${SIF_NAME}.sha256" \
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
             --repo "$GITHUB_REPOSITORY" --clobber
