@@ -86,8 +86,11 @@ on:
 env:
   DEFAULT_REF: ""
 
+# NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
+# the caller grants. The sif job creates releases, so contents must stay
+# write here (callers stable-cp2k / nightly-cp2k grant the same).
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
