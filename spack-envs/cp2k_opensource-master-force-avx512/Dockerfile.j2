@@ -120,7 +120,7 @@ LABEL stage="runtime" \
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/opt/spack-view/bin:/opt/bin:$PATH" \
     CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data" \
-    GAUXC_SKALA_MODEL="/opt/spack-view/share/gauxc/onedft_models/skala-1.1.fun"
+    GAUXC_SKALA_MODEL="/opt/spack-view/share/gauxc/onedft_models/skala-1.1-rev1.fun"
 
 {% include 'partials/runtime_apt_debian.j2' %}
 
@@ -139,7 +139,12 @@ COPY --from=builder --chown=hpc:hpc /opt/spack /opt/spack
 COPY --from=builder --chown=hpc:hpc /opt/spack-view /opt/spack-view
 
 # Fail the image build if Skala checkpoint is missing from the view (MODEL SKALA).
-RUN test -f "${GAUXC_SKALA_MODEL}"
+# The cp2k_dev recipe names the file with an upstream rev suffix
+# (skala-1.1-rev1.fun today); match any rev so a silent upstream rename
+# cannot break the build — exactly one .fun file is installed for the
+# CPU-only (+~cuda) build.
+RUN test -f "${GAUXC_SKALA_MODEL}" \
+    || test "$(find /opt/spack-view/share/gauxc/onedft_models -maxdepth 1 -name 'skala-*.fun' | wc -l)" -eq 1
 
 # 3. CP2K test files for regtesting (sparse-checkout from git clone in builder)
 COPY --from=builder --chown=hpc:hpc /opt/cp2k/tests /opt/cp2k/tests
