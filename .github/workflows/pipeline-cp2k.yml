@@ -693,7 +693,13 @@ jobs:
             BUILD_LINE="Build: ${ENV_NAME} — source pinned by the repository git tag"
           fi
           cat > release-notes.md <<NOTES
-          Automated build of CP2K (opensource, AVX-512).
+          Automated build of CP2K (opensource, force-avx512 track).
+
+          Binary baseline: AVX2 (x86_64_v3) — runs on any Haswell (2013)
+          or newer x86-64 CPU. AVX-512 kernels are compiled into the
+          dispatched math libraries (openblas, fftw, elpa) and selected
+          at runtime by CPU dispatch, so AVX-512 hosts gain extra speed
+          from the same image.
 
           ${BUILD_LINE}
 
