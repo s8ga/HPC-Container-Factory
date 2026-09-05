@@ -1444,14 +1444,14 @@ class CMakeBuilder(cmake.CMakeBuilder):
                 ]
             )
 
-        # Override CMAKE_BUILD_TYPE to CP2K's "Generic" CONFIG so its
-        # cmake/CompilerConfiguration.cmake uses -O3 -mtune=generic -funroll-loops
-        # instead of the Release CONFIG which injects -march=native and silently
-        # overrides Spack's target microarchitecture (e.g. x86_64_v3). This is
-        # appended after std_cmake_args (which sets Release); CMake single-config
-        # uses the last -DCMAKE_BUILD_TYPE on the command line, so Generic wins.
-        # No -march at all -> Spack's compiler-wrapper target flags are the sole
-        # source of architecture flags.
-        args.append("-DCMAKE_BUILD_TYPE=Generic")
+        # NOTE: deliberately NO CMAKE_BUILD_TYPE override on the master
+        # track. It existed to defeat the -march=native;-mtune=native that
+        # Release injected, but the 2027 line (master) removed that
+        # injection from cmake/CompilerConfiguration.cmake entirely
+        # (spack-packages dropped its filter_file workaround too), so
+        # Release (-O3 -funroll-loops, NDEBUG) now composes cleanly with
+        # Spack's wrapper target flags (x86_64_v3). The release-track env
+        # forks (2026.2F etc.) still force Generic because support/v2026.2
+        # sources DO inject -march=native — keep the override THERE.
 
         return args
