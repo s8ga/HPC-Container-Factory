@@ -148,6 +148,43 @@ jobs:
       # of after the mirror download.
       - name: Validate environment config
         run: ./venv/bin/python -m hpc_cf validate --env "${ENV_NAME}" --profile config
+
+      # Master track: float the cp2k_dev recipe repo with upstream. Resolve
+      # the branch tip ONCE per run and inject it as the pin on both sides
+      # (custom_repos.commit + template_vars.cp2k_dev_repo_commit) so assets
+      # and the image clone share one sha — a plain no-commit float would
+      # let the two clones race when upstream pushes mid-run. The committed
+      # env.yaml value stays as the anchor for local manual runs.
+      # Scoped: only fires for an env whose cp2k.git custom repo tracks
+      # branch master; support-branch envs keep their static pins.
+      - name: Resolve floating cp2k_dev recipe pin (nightly master track)
+        if: ${{ inputs.channel == 'nightly' }}
+        run: |
+          set -euo pipefail
+          ENV_YAML="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          if ! grep -A4 'url: https://github.com/cp2k/cp2k.git' "$ENV_YAML" \
+              | grep -q 'branch: master'; then
+            echo "cp2k custom repo is not tracking branch master; keep static pin"
+            exit 0
+          fi
+          TIP_SHA="$(git ls-remote https://github.com/cp2k/cp2k.git refs/heads/master | cut -f1)"
+          if ! [[ "$TIP_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not resolve the cp2k master tip: '${TIP_SHA}'" >&2
+            exit 1
+          fi
+          OLD_SHA="$(grep -m1 'cp2k_dev_repo_commit: ' "$ENV_YAML" | awk '{print $2}')"
+          if [ -z "$OLD_SHA" ] || ! [[ "$OLD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::no valid cp2k_dev_repo_commit template var to replace" >&2
+            exit 1
+          fi
+          sed -i "s/${OLD_SHA}/${TIP_SHA}/g" "$ENV_YAML"
+          HITS="$(grep -c "${TIP_SHA}" "$ENV_YAML")"
+          if [ "$HITS" -ne 2 ]; then
+            echo "::error::expected the new pin in exactly 2 places (custom_repos + template_vars), found ${HITS}" >&2
+            exit 1
+          fi
+          echo "cp2k_dev recipe pin floated to master tip ${TIP_SHA} (was ${OLD_SHA})"
+
       - name: Download Spack source tarball
         run: |
           mkdir -p assets

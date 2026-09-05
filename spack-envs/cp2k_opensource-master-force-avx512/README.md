@@ -28,10 +28,14 @@
 ## 配置入口
 
 - `spack-env-file/env.yaml`：镜像、Spack 版本、自定义 repo 和模板变量。
-  `cp2k_branch`/`cp2k_dev_repo_commit` 保持 `support/v2026.2` pin——它们钉的是
-  cp2k_dev **recipe repo**（含 `version("master", branch="master")` 声明），
-  与 CP2K 源码的浮动无关。
-- `spack-env-file/spack.yaml`：CP2K spec、依赖版本、variants 和 builtin repo pin。
+  cp2k_dev **recipe repo**（tblite/gauxc/libint/pace 的来源命名空间）跟随
+  `branch: master`：nightly 流水线每次 run 用 `git ls-remote` 解析 master tip，
+  把同一 sha 注入 `custom_repos.commit` 与 `cp2k_dev_repo_commit` 两侧——repo
+  随上游浮动，但 assets 与镜像克隆共享一个 sha（避免同 run 内两侧各自拉
+  tip 的竞态），run 的记录可重放。env.yaml 里的静态 sha 只是本地手动跑的锚点。
+  这与 CP2K 源码的浮动无关（源码走 spec 浮动、lock 记录）。
+- `spack-env-file/spack.yaml`：CP2K spec、依赖版本、variants 和 builtin repo
+  pin（master 轨道跟踪 spack-packages 最新 tip）。
 - `Dockerfile.j2`：该环境的容器模板。
 - `spack-env-file/spack.lock`：不存在是常态（浮动轨道）；只有钉住构建才会临时产生。
 
