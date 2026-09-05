@@ -1,0 +1,26 @@
+# One-off: float the master -release tag that the sif job failed to push
+# (job-level packages downgrade). Delete this file after it has run once.
+name: oneoff-float-release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  float:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Float the verified-image tag
+        env:
+          DATE: "20260905"
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          VERIFIED="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cp2k_opensource:master-force-avx512-release"
+          podman pull "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cp2k_opensource:master-force-avx512-nightly-${DATE}"
+          podman tag "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cp2k_opensource:master-force-avx512-nightly-${DATE}" "$VERIFIED"
+          podman push "$VERIFIED"
+          echo "verified image: ${VERIFIED}"
