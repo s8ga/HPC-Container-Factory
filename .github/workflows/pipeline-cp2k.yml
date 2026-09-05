@@ -670,6 +670,13 @@ jobs:
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt"
           podman cp manifest-extract:/opt/spack-view/DependencyGraph.dot \
             "DependencyGraph-${ENV_NAME}-${NIGHTLY_DATE}.dot" || true
+          # Baked build identity (master@<commit>); absent on release-track
+          # envs, whose source is pinned by the repo git tag instead.
+          if podman cp manifest-extract:/etc/hpc-container-ident BUILD_IDENT 2>/dev/null; then
+            echo "RELEASE_IDENT=$(cat BUILD_IDENT)" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_IDENT=" >> "$GITHUB_ENV"
+          fi
           podman rm manifest-extract >/dev/null
           ls -la BUILD_MANIFEST-*.txt
 
@@ -678,12 +685,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Rolling per-env release; the tag moves with each run.
-          gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
-            || gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
-                 --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
-                 --title "${RELEASE_TAG}" \
-                 --notes "Automated build of CP2K (opensource, AVX-512).
+          # Notes are regenerated every run so the rolling nightly release
+          # always names the exact commit its latest assets were built from.
+          if [ -n "${RELEASE_IDENT}" ]; then
+            BUILD_LINE="Build: ${RELEASE_IDENT} (full sha in BUILD_MANIFEST)"
+          else
+            BUILD_LINE="Build: ${ENV_NAME} — source pinned by the repository git tag"
+          fi
+          cat > release-notes.md <<NOTES
+          Automated build of CP2K (opensource, AVX-512).
+
+          ${BUILD_LINE}
 
           Run it:
             apptainer exec ${SIF_NAME} cp2k.psmp --version
@@ -694,16 +706,25 @@ jobs:
             ${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}   archive of this build
             ${IMG_REPO}:${ENV_SUFFIX}-nightly                          latest build attempt (nightly track; may predate a failed publish)
             ${IMG_REPO}:${ENV_SUFFIX}-release                          latest end-to-end-verified build
+
           To pin an exact build, reference its immutable sha256 digest
-          (shown on the package page) instead of the tag name — a bare
-          at-sign prefix here would render as a user mention.
+          (shown on the package page) instead of the tag name.
 
             docker run --rm -it ${IMG_REPO}:${ENV_SUFFIX}-release cp2k.psmp --version
 
           Assets: the SIF image, its sha256 checksum, and
           BUILD_MANIFEST-*.txt (the full package list of this build,
           recorded by Spack). The source for the tagged commit lives
-          in this repository."
+          in this repository.
+          NOTES
+          # Rolling per-env release; the tag moves with each run.
+          if gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
+                 --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
+                 --title "${RELEASE_TAG}" --notes-file release-notes.md
+          fi
           gh release upload "${RELEASE_TAG}" "${SIF_NAME}" "${SIF_NAME}.sha256" \
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
             --repo "$GITHUB_REPOSITORY" --clobber
