@@ -694,7 +694,9 @@ jobs:
             ${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}   archive of this build
             ${IMG_REPO}:${ENV_SUFFIX}-nightly                          latest build attempt (nightly track; may predate a failed publish)
             ${IMG_REPO}:${ENV_SUFFIX}-release                          latest end-to-end-verified build
-          Pin exactly with the digest (@sha256:...) shown on the package page.
+          To pin an exact build, reference its immutable sha256 digest
+          (shown on the package page) instead of the tag name — a bare
+          at-sign prefix here would render as a user mention.
 
             docker run --rm -it ${IMG_REPO}:${ENV_SUFFIX}-release cp2k.psmp --version
 
