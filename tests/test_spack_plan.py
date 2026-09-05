@@ -636,6 +636,12 @@ def test_custom_repos_template_vars_cross_check_dockerfile(env_dir: Path) -> Non
             continue
         tv_val = spec.template_vars[tv_key]
         repo_val = getattr(repo, attr)
+        if attr == "commit" and repo_val is None:
+            # Floating repo (no commit pin): the template var is the
+            # documented fallback anchor, not a dual-write of a current
+            # pin — the run's authoritative sha comes from
+            # resolved-repos.yaml (see AGENTS.md, floating custom repos).
+            continue
         assert repo_val, (
             f"{env_dir.name}: custom_repos.{attr} missing while template_vars.{tv_key}={tv_val!r}"
         )

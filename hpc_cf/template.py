@@ -25,6 +25,7 @@ from hpc_cf.env import list_available_envs
 from hpc_cf.environment import (
     BuildMethod,
     EnvironmentSpec,
+    apply_resolved_repo_pins,
     load_environment_spec,
     load_environment_spec_from_template,
 )
@@ -188,6 +189,19 @@ def _try_load_env_spec(env_dir: Path) -> EnvironmentSpec | None:
         return None
 
 
+def _load_spec_applying_repo_pins(env_dir: Path) -> EnvironmentSpec | None:
+    """Load the spec, then apply assets-resolved pins for floating repos.
+
+    resolve_build_input is the single entry the dockerfile/build flows
+    share, so applying here keeps every consumer (render, image build)
+    on the sha recorded in resolved-repos.yaml beside spack.yaml.
+    """
+    spec = _try_load_env_spec(env_dir)
+    if spec is None:
+        return None
+    return apply_resolved_repo_pins(spec, env_dir)
+
+
 def resolve_build_input(
     app_version: str | None = None,
     explicit_template: Path | None = None,
@@ -220,7 +234,7 @@ def resolve_build_input(
                 f"Specified template not found: {explicit_template}"
             )
         env_dir = template_path.parent
-        spec = _try_load_env_spec(env_dir)
+        spec = _load_spec_applying_repo_pins(env_dir)
         if spec is None:
             logger.warning(
                 "Template %s has no adjacent env.yaml — "
@@ -255,7 +269,7 @@ def resolve_build_input(
     confine_to_root(env_dir, root=project_root, label="--app-version/--env")
     per_env = env_dir / "Dockerfile.j2"
     if per_env.exists():
-        spec = _try_load_env_spec(env_dir)
+        spec = _load_spec_applying_repo_pins(env_dir)
         return ResolvedBuildInput(
             environment_spec=spec,
             environment_dir=env_dir,
@@ -266,7 +280,7 @@ def resolve_build_input(
     # no_spack (and similar): shared template when env.yaml exists but
     # per-env Dockerfile.j2 does not.
     if env_dir.is_dir():
-        spec = _try_load_env_spec(env_dir)
+        spec = _load_spec_applying_repo_pins(env_dir)
         shared = _shared_method_template(spec, layout=root)
         if shared is not None:
             return ResolvedBuildInput(
@@ -286,7 +300,7 @@ def resolve_build_input(
         confine_to_root(env_dir, root=project_root, label="--app-version/--env")
         per_env = env_dir / "Dockerfile.j2"
         if per_env.exists():
-            spec = _try_load_env_spec(env_dir)
+            spec = _load_spec_applying_repo_pins(env_dir)
             return ResolvedBuildInput(
                 environment_spec=spec,
                 environment_dir=env_dir,
@@ -294,7 +308,7 @@ def resolve_build_input(
                 compatibility_mode=False,
             )
         if env_dir.is_dir():
-            spec = _try_load_env_spec(env_dir)
+            spec = _load_spec_applying_repo_pins(env_dir)
             shared = _shared_method_template(spec, layout=root)
             if shared is not None:
                 return ResolvedBuildInput(
