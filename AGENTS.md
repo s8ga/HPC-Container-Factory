@@ -93,6 +93,14 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
+- Floating custom repos (env.yaml `custom_repos` git entry with **no `commit`**,
+  e.g. the CP2K master track's cp2k_dev): assets fetches the branch tip and
+  records it in `spack-env-file/resolved-repos.yaml` (namespace → sha, plus
+  url/branch); `resolve_build_input` applies the pins in memory
+  (`repo.commit` + the `<namespace>_repo_commit` template var) so the
+  image-side clone matches the sha the concretizer saw. Pinned repos are
+  never overridden; a missing sidecar falls back to env.yaml static values.
+  Same doctrine as the lock: assets produces, build consumes read-only.
 - Source mirror and buildcache are separate artifact classes:
   `assets/spack-mirror/` contains source archives, while the global
   `assets/spack-buildcache/` is an opaque Spack-owned filesystem cache.
@@ -276,7 +284,13 @@ the ABACUS and CP2K 2026.2 environments; other environments keep their pinned
 **v1.2.0 highlights relevant to hpc_cf**:
 - New parallel installer (TUI auto-detects non-TTY → text mode in Docker build)
 - Concretization caching enabled by default — speeds up repeated solves
-- **SBOM auto-generation** (SPDX 2.3 at `$prefix/.spack/sbom/`) — Phase 3 item 6.3 is now free
+- **SBOM status (measured, not assumed)**: spack 1.2.0 writes SPDX SBOMs
+  only for packages IT installs into the bootstrap store
+  (`~/.spack/bootstrap/store/.../.spack/sbom/spdx-2.3.json`); the main
+  install store gets none (verified in the 2026.2F runtime image). The
+  factory's machine-readable reproducibility record is instead
+  `BUILD_MANIFEST.txt` (`spack find -d`) + `DependencyGraph.dot`, shipped
+  as release assets by the nightly sif job.
 - Package API v2.5 — our custom packages use v2.2, fully backward compatible
 - `spack isolate --self` — future candidate to simplify `SPACK_USER_CONFIG_PATH` setup
 

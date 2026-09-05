@@ -1,0 +1,40 @@
+# Floating nightly track: re-concretizes within the env's pinned
+# constraints (the master env tracks upstream cp2k master) and publishes
+# to the rolling nightly pre-release (keep-5). Scheduled daily at
+# 15:10 UTC = 23:10 China Standard Time; manual dispatches still work.
+name: nightly-cp2k
+
+on:
+  schedule:
+    # 23:10 China time (UTC+8) daily. GitHub cron is UTC only and skips
+    # scheduled runs during high-load periods — a missed night is benign
+    # (next night catches up; the -release image tag keeps the last green).
+    - cron: "10 15 * * *"
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: Environment name under spack-envs/
+        required: false
+        default: cp2k_opensource-master-force-avx512
+      ref:
+        description: "Advanced: factory repo ref to check out (empty = the branch dispatched from; never a CP2K commit)"
+        required: false
+        default: ""
+      commit:
+        description: "Pin cp2k to this 40-char commit (empty = float to master head)"
+        required: false
+        default: ""
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/pipeline-cp2k.yml
+    with:
+      # Scheduled runs have no inputs: the expression falls through to the
+      # master env, the whole point of the nightly track.
+      env_name: ${{ inputs.env_name || 'cp2k_opensource-master-force-avx512' }}
+      ref: ${{ inputs.ref }}
+      channel: nightly
+      cp2k_commit: ${{ inputs.commit }}
+    permissions:
+      contents: write
+      packages: write

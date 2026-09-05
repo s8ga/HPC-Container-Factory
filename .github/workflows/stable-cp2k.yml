@@ -1,0 +1,27 @@
+# Stable release track: consumes the committed spack.lock (fail-closed,
+# no re-concretize) and attaches the SIF to a permanent per-build release
+# that is never pruned. Run when a lock is finalized for distribution.
+name: stable-cp2k
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: Environment name under spack-envs/
+        required: false
+        default: cp2k_opensource-2026.2-force-avx512
+      ref:
+        description: "Advanced: factory repo ref to check out (empty = the branch dispatched from; never a CP2K commit)"
+        required: false
+        default: ""
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/pipeline-cp2k.yml
+    with:
+      env_name: ${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+      ref: ${{ inputs.ref }}
+      channel: stable
+    permissions:
+      contents: write
+      packages: write

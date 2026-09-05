@@ -1,0 +1,761 @@
+# Reusable CP2K build pipeline, called by the channel entry points
+# (nightly-cp2k / stable-cp2k) — workflow_call only, no schedule here:
+# the operator decides when a build fits (the nightly wrapper will gain
+# the cron once the master env exists).
+# build fits. Fully remote: cold-starts converge by re-running failed jobs,
+# no local seeding step is required (public repo: standard runners, GHCR
+# packages and artifacts are all free).
+#
+# Four jobs, chosen so the retry unit matches the expensive unit:
+#
+#   prepare — validate + concretize (floating or committed lock) + source
+#             mirror + verify. Publishes the mirror (including its .hpc_cf
+#             verification manifests — the producer gate reads them in-place)
+#             as an OCI data image, and the run's lock as an artifact.
+#   binaries — restores mirror + lock, then runs the producer
+#             (buildcache build --buildcache-mode oci) which installs with
+#             --use-buildcache auto against the GHCR mirror and pushes
+#             binaries straight to the registry — no snapshot transport.
+#             THIS is the job that exceeds the 6h platform cap on a cold
+#             cache; re-running it retries the producer only — no re-solve,
+#             no mirror re-download, same lock SHA, and every already-pushed
+#             binary is reused from the registry. The factory sidecar
+#             (coverage/health, KBs) travels to the image job as an artifact.
+#   runtime — consumer build (--buildcache only) admitted by the count-kind
+#             coverage record; pushes the runtime image to ghcr.io.
+#   sif     — converts the runtime image to a SIF with apptainer and attaches
+#             it (plus its sha256) to a rolling public GitHub Release: the
+#             distribution endpoint this pipeline exists for.
+#
+# The GHCR buildcache package is hash-addressed and must NEVER be pruned by
+# version count: delete-package-versions would drop digests that kept spec
+# tags still reference. Lock-aware cleanup is a separate future task.
+#
+# Cold-start protocol (first run after enabling, or after big drift):
+#   dispatch once → produce goes red at its operation timeout → press
+#   "Re-run failed jobs" (prepare stays green, artifacts/images persist) →
+#   repeat until produce is green; image then runs automatically.
+#   Each retry reuses pushed binaries, so convergence typically takes a
+#   few retries on 4 vCPU.
+#
+# Two build modes (channel input):
+#   nightly (default) — floating: prepare re-concretizes (--allow-concretize)
+#             inside the env's pinned constraints and feeds the buildcache.
+#   stable — consumes the committed spack.lock read-only and fails closed
+#             when it is missing or stale; the release-track guard. Cache
+#             reuse aligns exactly where hashes match the committed pins.
+#
+# The lock produced/consumed by each run travels between jobs as a
+# workflow artifact (name: build-lock) because admission gates key on
+# lock SHA: every job in this run must see the same lock. Floating locks
+# are never committed back — committed locks stay the release-track pins.
+#
+# VASP and MKL/ROCm environments are intentionally outside this workflow
+# (licensing / out of the opensource buildcache track).
+
+name: cp2k-pipeline
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        description: Environment name under spack-envs/
+        required: false
+        type: string
+        default: cp2k_opensource-2026.2-force-avx512
+      ref:
+        description: Git ref to build (default DEFAULT_REF, then the caller's branch)
+        required: false
+        type: string
+        default: ""
+      channel:
+        description: "stable: consume the committed spack.lock, permanent releases; nightly: floating, rolling pre-release"
+        required: false
+        type: string
+        default: nightly
+      cp2k_commit:
+        description: "Pin cp2k to this 40-char commit (nightly master track only; empty = float to branch head)"
+        required: false
+        type: string
+        default: ""
+
+# Persistent default build ref for manual runs (e.g. "v2"), used when the
+# dispatch input is left empty. Empty = build the branch the workflow was
+# dispatched against. Requires this file to exist on the default branch once,
+# so GitHub registers the workflow for dispatch.
+env:
+  DEFAULT_REF: ""
+
+# NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
+# the caller grants. The sif job creates releases, so contents must stay
+# write here (callers stable-cp2k / nightly-cp2k grant the same).
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  # Keyed by caller workflow + environment: channels run independently,
+  # a repeated dispatch of the same channel+env queues instead of being
+  # cancelled (both channels publish the same dated mirror tag when they
+  # share an env, so those still serialize).
+  group: ${{ github.workflow }}-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  cancel-in-progress: false # never kill a publication mid-run
+
+jobs:
+  prepare:
+    name: prepare (lock + source mirror)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      date: ${{ steps.vars.outputs.date }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      # No disk cleanup here: prepare peaks around ~5GB (workspace, mirror
+      # tree, builder container) and the raw runner has ample headroom.
+
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        id: vars
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          # GHCR rejects image references containing uppercase characters.
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="$(date -u +%Y%m%d)"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "SPACK_VER=${SPACK_VER}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
+          } >> "$GITHUB_ENV"
+          echo "date=${NIGHTLY_DATE}" >> "$GITHUB_OUTPUT"
+
+      # Cheap fast-fail: schema/config breakage surfaces in ~1 minute instead
+      # of after the mirror download.
+      - name: Validate environment config
+        run: ./venv/bin/python -m hpc_cf validate --env "${ENV_NAME}" --profile config
+
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      # Single static binary used for all inputs-image traffic (seed pull,
+      # publish push, remote tag): one streamed pass per direction, no
+      # container-storage round trips.
+      - name: Install crane
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp crane
+          /tmp/crane version
+
+      # crane needs its own credential store for the publish push below;
+      # the package is public, so pulls stay anonymous-capable.
+      - name: Log in to GHCR (crane)
+        run: |
+          /tmp/crane auth login ghcr.io \
+            -u "${{ github.actor }}" -p "${{ github.token }}"
+
+      # Delta optimization: seed the mirror tree from the previous run's
+      # floating inputs image. spack mirror create skips files that already
+      # exist with matching checksums, so upstream downloads shrink to what
+      # actually drifted (a master nightly usually moves only cp2k itself).
+      # A missing image (first run, pruned away) falls back to the cold full
+      # download — seeding is strictly an optimization, never a gate.
+      #
+      # crane export streams the layer straight into tar: one download +
+      # extract pass, no container-storage round trip (podman pull + cp + rmi
+      # would move the whole tree two extra times).
+      - name: Seed source mirror from the previous inputs image
+        run: |
+          set -euo pipefail
+          if /tmp/crane manifest "${INPUTS_REPO}:${ENV_NAME}" >/dev/null 2>&1; then
+            /tmp/crane export "${INPUTS_REPO}:${ENV_NAME}" - | tar -x -C assets
+            echo "seeded $(find assets/spack-mirror -type f | wc -l) files from the previous mirror"
+          else
+            echo "no previous inputs image; cold mirror download"
+          fi
+
+      # Stable (pinned) builds consume the committed lock and must fail
+      # fast — before the spack download and mirror work — when it is
+      # missing at this ref.
+      - name: Stable builds require a committed lock
+        if: ${{ inputs.channel == 'stable' }}
+        run: |
+          test -f "spack-envs/${ENV_NAME}/spack-env-file/spack.lock" || {
+            echo "::error::stable build requires a committed spack.lock for ${ENV_NAME} at this ref"
+            exit 1
+          }
+
+      # Nightly master track: pin the floating cp2k@master spec to a
+      # dispatch commit (bisect / upstream-broken recovery) without a
+      # repository edit — only this ephemeral checkout is patched.
+      - name: Pin cp2k commit (optional, nightly only)
+        if: ${{ inputs.cp2k_commit != '' }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.channel }}" = "stable" ]; then
+            echo "::error::cp2k_commit is nightly-only (stable consumes the committed lock)" >&2
+            exit 1
+          fi
+          COMMIT="${{ inputs.cp2k_commit }}"
+          if ! [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::cp2k_commit must be a 40-char lowercase hex sha, got '$COMMIT'" >&2
+            exit 1
+          fi
+          SPEC_FILE="spack-envs/${ENV_NAME}/spack-env-file/spack.yaml"
+          grep -q 'cp2k@master' "$SPEC_FILE" || {
+            echo "::error::no floating cp2k@master spec in ${SPEC_FILE}" >&2
+            exit 1
+          }
+          if grep -qE 'cp2k@master[^"]*commit=' "$SPEC_FILE"; then
+            echo "::error::${SPEC_FILE} already carries a cp2k commit pin" >&2
+            exit 1
+          fi
+          sed -i -E "s/(cp2k@master[^\"]*)\"/\1 commit=${COMMIT}\"/" "$SPEC_FILE"
+          grep -n "commit=${COMMIT}" "$SPEC_FILE"
+
+      - name: Assets — concretize + source mirror + verify
+        id: assets
+        run: |
+          ARGS=(--env "${ENV_NAME}")
+          # nightly: float within the env's pinned constraints; stable:
+          # consume the committed lock — assets fails closed without
+          # --allow-concretize when the lock is missing or stale.
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            ARGS+=(--allow-concretize)
+          fi
+          ./venv/bin/python -m hpc_cf assets "${ARGS[@]}"
+
+      # resolved-repos.yaml (floating custom-repo tips resolved by assets)
+      # rides with the lock; absent for envs whose repos are all pinned.
+      - name: Upload build lock artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-lock
+          path: |
+            spack-envs/${{ env.ENV_NAME }}/spack-env-file/spack.lock
+            spack-envs/${{ env.ENV_NAME }}/spack-env-file/resolved-repos.yaml
+          if-no-files-found: error
+          retention-days: 14
+
+      # The .hpc_cf verification manifests live INSIDE assets/spack-mirror,
+      # so this single tree satisfies the producer's verified-mirror gate
+      # after restore — no re-download on producer retries.
+      #
+      # zstd compresses ~10x faster than gzip at a similar ratio; crane
+      # detects the zstd magic on FILE input and passes the layer through
+      # as OCI tar+zstd without re-compressing (stdin input would re-gzip
+      # — verified locally against a scratch registry). -T1 keeps the
+      # digest deterministic regardless of runner core count. An unchanged
+      # tree re-yields the same digest, so no-drift pushes degrade to a
+      # blob HEAD-skip; `crane tag` floats the pointer without re-pushing.
+      - name: Publish source-mirror data image to GHCR
+        run: |
+          set -euo pipefail
+          DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
+          tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
+            --numeric-owner -cf - spack-mirror | \
+            zstd -q -3 -T1 -o /tmp/mirror-layer.tar.zst
+          /tmp/crane append -f /tmp/mirror-layer.tar.zst \
+            --oci-empty-base -t "$DATED"
+          rm -f /tmp/mirror-layer.tar.zst
+          /tmp/crane tag "$DATED" "${ENV_NAME}"
+
+      # v5 still declares node20; GitHub force-runs it on node24 (the
+      # official deprecation bridge), so the warning is accepted until
+      # upstream ships a node24 major.
+      - name: Prune old mirror images (best-effort)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: hpc-cf-inputs
+          package-type: container
+          min-versions-to-keep: 3
+          delete-only-untagged-versions: false
+
+  binaries:
+    name: binaries (install + publish buildcache)
+    needs: prepare
+    runs-on: ubuntu-latest
+    # Forwarded so dependents read a DIRECT dependency's output;
+    # needs.prepare.outputs.* would be empty in indirect consumers.
+    outputs:
+      date: ${{ needs.prepare.outputs.date }}
+    # Backstop below the 360-min platform cap. The producer step carries
+    # its own --operation-timeout-seconds (330 of these 350 minutes) so a
+    # slow install fails inside hpc_cf and the always()-step below still
+    # gets to run; the remaining ~15 min cover the restore prelude.
+    timeout-minutes: 350
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        run: |
+          df -h /
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "OWNER=${OWNER}"
+            echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
+            echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
+          } >> "$GITHUB_ENV"
+      - name: Read Spack version from env.yaml
+        run: |
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          echo "SPACK_VER=${SPACK_VER}" >> "$GITHUB_ENV"
+
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      # Same-run mirror (dated tag) — keeps lock, DAG and sources identical
+      # across producer retries via "Re-run failed jobs". Streamed straight
+      # out of the registry with crane: one download + extract pass instead
+      # of a container-storage round trip. The inputs package is public, so
+      # no credentials are needed here.
+      - name: Restore source mirror from prepare
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp crane
+          /tmp/crane export \
+            "${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}" - | tar -x -C assets
+
+      - name: Download build lock artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: build-lock
+          path: downloaded-lock
+
+      - name: Place build lock
+        run: |
+          cp "downloaded-lock/spack.lock" \
+            "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+          # Floating-repo tips recorded by assets; absent when all repos
+          # are pinned (stable envs) — warn only, the build falls back to
+          # env.yaml's static values.
+          cp "downloaded-lock/resolved-repos.yaml" \
+            "spack-envs/${ENV_NAME}/spack-env-file/resolved-repos.yaml" 2>/dev/null \
+            || echo "::warning::no resolved-repos.yaml in the build-lock artifact"
+
+      # The install stage is where binaries are actually produced, and
+      # hosted runners may be reassigned to different VM hardware between
+      # jobs and runs. Record the physical CPU as its own step so the
+      # record stays queryable even when the long build below is killed.
+      # Binaries still target the pinned microarch, not this CPU.
+      - name: Record builder CPU
+        run: lscpu
+
+      # The producer timeout is deliberately tighter than the job timeout:
+      # failing inside hpc_cf lets the always()-step below publish the
+      # snapshot of already-pushed binaries, so the next retry resumes
+      # instead of repeating the same work.
+      - name: Producer build — install and publish to the GHCR buildcache
+        id: producer
+        env:
+          OCI_USER: ${{ github.actor }}
+          OCI_PASS: ${{ github.token }}
+          # Sourced inside the build by RUN --mount=type=secret.
+          GHCR_CREDS: |
+            OCI_USER=${{ github.actor }}
+            OCI_PASS=${{ github.token }}
+        run: |
+          ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
+            --engine podman --operation-timeout-seconds 19800 \
+            --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
+            --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
+            --build-secret buildcache-creds=GHCR_CREDS
+
+      # The registry keeps the binaries; only the factory-owned sidecar
+      # (coverage records, health, run logs — KBs) must travel to the image
+      # job for count-kind admission. Upload even on failure for debugging.
+      - name: Upload buildcache sidecar state
+        if: always() && steps.producer.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: buildcache-state
+          path: assets/spack-buildcache-state/
+          if-no-files-found: warn
+          retention-days: 7
+
+  runtime:
+    name: runtime (consumer build, buildcache only)
+    needs: binaries
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ needs.binaries.outputs.date }}
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        run: |
+          df -h /
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
+          export ENV_FILE
+          SPACK_VER="$(./venv/bin/python - <<'PY'
+          import os, yaml
+          spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+          print(spec["spack"]["version"])
+          PY
+          )"
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="${{ needs.binaries.outputs.date }}"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "SPACK_VER=${SPACK_VER}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "IMAGE_NAME=${ENV_NAME%%-*}"
+            echo "ENV_SUFFIX=${ENV_NAME#*-}"
+            echo "OWNER=${OWNER}"
+            echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
+            echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
+            # Remote tag prefix follows the channel: nightly floats tags
+            # named -nightly, stable ones named -stable.
+            echo "TAG_PREFIX=${{ inputs.channel }}"
+          } >> "$GITHUB_ENV"
+      - name: Download Spack source tarball
+        run: |
+          mkdir -p assets
+          curl -fsSL -o "assets/spack-v${SPACK_VER}.tar.gz" \
+            "https://github.com/spack/spack/releases/download/v${SPACK_VER}/spack-${SPACK_VER}.tar.gz"
+
+      # The app Dockerfile COPYs assets/bootstrap-<ver>, so the consumer job
+      # needs the same bootstrap mirror the producer used (actions/cache hit
+      # from the prepare/binaries jobs of this or an earlier run).
+      - name: Cache Spack bootstrap mirror
+        uses: actions/cache@v6
+        with:
+          path: assets/bootstrap-${{ env.SPACK_VER }}
+          key: bootstrap-${{ env.SPACK_VER }}-v1
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Download buildcache sidecar state
+        uses: actions/download-artifact@v8
+        with:
+          name: buildcache-state
+          path: assets/spack-buildcache-state/
+
+      - name: Download build lock artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: build-lock
+          path: downloaded-lock
+
+      - name: Place build lock
+        run: |
+          cp "downloaded-lock/spack.lock" \
+            "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+          # Floating-repo tips recorded by assets; absent when all repos
+          # are pinned (stable envs) — warn only, the build falls back to
+          # env.yaml's static values.
+          cp "downloaded-lock/resolved-repos.yaml" \
+            "spack-envs/${ENV_NAME}/spack-env-file/resolved-repos.yaml" 2>/dev/null \
+            || echo "::warning::no resolved-repos.yaml in the build-lock artifact"
+
+      - name: Consumer build (--buildcache only, no source mirror)
+        env:
+          OCI_USER: ${{ github.actor }}
+          OCI_PASS: ${{ github.token }}
+          GHCR_CREDS: |
+            OCI_USER=${{ github.actor }}
+            OCI_PASS=${{ github.token }}
+        run: |
+          ./venv/bin/python -m hpc_cf build --env "${ENV_NAME}" --engine podman \
+            --image "${IMAGE_NAME}" --tag "nightly-${NIGHTLY_DATE}" \
+            --buildcache only --no-mirror \
+            --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
+            --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
+            --build-secret buildcache-creds=GHCR_CREDS
+
+      - name: Remove builder/installed images (keep runtime image)
+        run: |
+          podman images --format '{{.Repository}}:{{.Tag}}' \
+            | grep -E '^localhost/' \
+            | grep -v ":nightly-${NIGHTLY_DATE}$" \
+            | xargs -r podman rmi -f || true
+
+      # Multi-layer push on purpose: unchanged layers dedup across builds
+      # (only the changed top layers re-upload), which keeps nightly push
+      # bandwidth and package storage far below a single-squashed-layer
+      # policy. Pullers get the full runtime image with its normal layer
+      # history; the release notes point at the dated and floating tags.
+      - name: Push runtime image to GHCR
+        run: |
+          set -euo pipefail
+          SRC="localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
+          DATED="${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}"
+          # Tag the local image with the remote ref first: podman inspect
+          # resolves against the local store, so inspecting a remote-only
+          # name fails even after a successful push.
+          podman tag "$SRC" "$DATED"
+          podman push "$DATED"
+          if [ "${{ inputs.channel }}" = "nightly" ]; then
+            # Latest-attempt pointer, nightly track only: it moves on every
+            # runtime-green build even if a later job fails. Stable has no
+            # such tag by design (only verified builds get pointers).
+            FLOATING="${IMG_REPO}:${ENV_SUFFIX}-nightly"
+            podman tag "$SRC" "$FLOATING"
+            podman push "$FLOATING"
+          fi
+          podman inspect --format '{{.Digest}}' "$DATED"
+
+      # Same node20-v5 note as the prepare job's prune step.
+      - name: Prune old nightly images (best-effort)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ env.IMAGE_NAME }}
+          package-type: container
+          min-versions-to-keep: 7
+          delete-only-untagged-versions: false
+
+  # The distribution endpoint of this pipeline: a downloadable SIF on a
+  # rolling public GitHub Release (the runtime SIF is well under the 2GB
+  # release-asset cap). Built by the factory's own `hpc_cf build-sif` so the
+  # nightly SIF gets the exact local flow — env def template (MOTD shell
+  # wrapper, labels, runscript) and mksquashfs compression — from one
+  # source of truth.
+  sif:
+    name: sif (apptainer convert + release)
+    needs: runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Release-asset upload only; every other job stays contents: read.
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      - name: Install python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt
+
+      - name: Resolve job variables
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          NIGHTLY_DATE="${{ needs.runtime.outputs.date }}"
+          {
+            echo "ENV_NAME=${ENV_NAME}"
+            echo "ENV_SUFFIX=${ENV_NAME#*-}"
+            echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
+            echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
+            echo "TAG_PREFIX=${{ inputs.channel }}"
+            echo "IMAGE_NAME=${ENV_NAME%%-*}"
+            echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-nightly-${NIGHTLY_DATE}.sif"
+            # Channel management: stable builds get a permanent per-build
+            # release marked latest (never pruned); nightly/master share one
+            # rolling PRE-release whose SIF assets are pruned to the newest 5.
+            if [ "${{ inputs.channel }}" = "stable" ]; then
+              echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
+              echo "RELEASE_CREATE_FLAGS=--latest"
+            else
+              echo "RELEASE_TAG=nightly-${ENV_NAME}"
+              echo "RELEASE_CREATE_FLAGS=--prerelease"
+            fi
+          } >> "$GITHUB_ENV"
+
+      - name: Install apptainer
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/apptainer.deb \
+            "https://github.com/apptainer/apptainer/releases/download/v1.5.3/apptainer_1.5.3_amd64.deb"
+          sudo apt-get install -y /tmp/apptainer.deb
+          apptainer --version
+
+      - name: Build SIF via the factory (def template + compression)
+        run: |
+          set -euo pipefail
+          # build-sif exports from a LOCAL image: pull the runtime image
+          # and tag it where the factory's auto-detection looks for it.
+          podman pull "${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}"
+          podman tag "${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
+            "${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
+          ./venv/bin/python -m hpc_cf build-sif \
+            --env "${ENV_NAME}" \
+            --docker-image "${IMAGE_NAME}" \
+            --docker-tag "nightly-${NIGHTLY_DATE}" \
+            --output "${SIF_NAME}" \
+            --yes
+          du -h "${SIF_NAME}"
+          sha256sum "${SIF_NAME}" | tee "${SIF_NAME}.sha256"
+
+      - name: Extract the build manifest from the runtime image
+        run: |
+          set -euo pipefail
+          # BUILD_MANIFEST.txt + DependencyGraph.dot live inside the runtime
+          # image at /opt/spack-view/ (written by spack_manifest.j2); the
+          # release ships them alongside the SIF as the reproducibility
+          # record. No SBOM exists in the main store (see AGENTS.md) — when
+          # spack regains that feature, export and ship it here too.
+          podman create --name manifest-extract \
+            "${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" >/dev/null
+          podman cp manifest-extract:/opt/spack-view/BUILD_MANIFEST.txt \
+            "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt"
+          podman cp manifest-extract:/opt/spack-view/DependencyGraph.dot \
+            "DependencyGraph-${ENV_NAME}-${NIGHTLY_DATE}.dot" || true
+          podman rm manifest-extract >/dev/null
+          ls -la BUILD_MANIFEST-*.txt
+
+      - name: Attach SIF to its release channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Rolling per-env release; the tag moves with each run.
+          gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
+            || gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
+                 --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
+                 --title "${RELEASE_TAG}" \
+                 --notes "Automated build of CP2K (opensource, AVX-512).
+
+          Run it:
+            apptainer exec ${SIF_NAME} cp2k.psmp --version
+
+          Prefer a container engine over the SIF? The same runtime image
+          (full spack environment, /opt/spack-view) is published on GHCR:
+
+            ${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}   archive of this build
+            ${IMG_REPO}:${ENV_SUFFIX}-nightly                          latest build attempt (nightly track; may predate a failed publish)
+            ${IMG_REPO}:${ENV_SUFFIX}-release                          latest end-to-end-verified build
+          Pin exactly with the digest (@sha256:...) shown on the package page.
+
+            docker run --rm -it ${IMG_REPO}:${ENV_SUFFIX}-release cp2k.psmp --version
+
+          Assets: the SIF image, its sha256 checksum, and
+          BUILD_MANIFEST-*.txt (the full package list of this build,
+          recorded by Spack). The source for the tagged commit lives
+          in this repository."
+          gh release upload "${RELEASE_TAG}" "${SIF_NAME}" "${SIF_NAME}.sha256" \
+            "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      # Reaching this step means every job in the pipeline is green, so the
+      # dated runtime image just shipped is end-to-end verified. Float the
+      # <env>-release tag onto it: red runs never overwrite this pointer,
+      # unlike <env>-nightly which tracks the latest attempt.
+      - name: Float the verified-image tag
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          VERIFIED="${IMG_REPO}:${ENV_SUFFIX}-release"
+          podman tag "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}" "$VERIFIED"
+          podman push "$VERIFIED"
+          echo "verified image: ${VERIFIED}"
+
+      # Keep the newest 7 dated SIF assets; older ones are pruned best-effort.
+      - name: Prune old SIF assets (nightly channel only, best-effort)
+        if: ${{ always() && inputs.channel == 'nightly' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # NOTE: no backslash line-continuation inside the single-quoted jq
+          # program — bash treats it as a literal backslash and jq fails to
+          # parse (verified locally; masked until now by continue-on-error).
+          IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[5:][] | .id')
+          IDS_MANIFEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .[10:][] | .id')
+          for id in $IDS_MANIFEST; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
+          done
+          for id in $IDS; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
+          done
+
+      # Stable releases bounded at the newest KEEP per environment: each
+      # build creates a dated release AND a git tag (gh release create), so
+      # unbounded retention pollutes both the release list and the tag
+      # namespace. --cleanup-tag removes the tag with the release. Nightly
+      # needs none of this: it reuses one rolling pre-release tag.
+      - name: Prune old stable releases (stable channel only, best-effort)
+        if: ${{ always() && inputs.channel == 'stable' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          KEEP=5
+          mapfile -t OLD_TAGS < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName \
+            --jq "[.[] | select(.tagName | startswith(\"stable-${ENV_NAME}-\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
+          for tag in "${OLD_TAGS[@]}"; do
+            echo "pruning stable release + tag: ${tag}"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          done
+          echo "stable releases kept: newest ${KEEP} for ${ENV_NAME}"
