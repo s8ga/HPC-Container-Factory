@@ -1,0 +1,62 @@
+--- a/src/input_cp2k_pwdft.F
++++ b/src/input_cp2k_pwdft.F
+@@ -191,7 +191,7 @@
+       CHARACTER(len=128), TARGET                         :: possible_values(1:256)
+       CHARACTER(len=4096)                                :: description, usage
+       INTEGER                                            :: ctype, enum_length, i, j, length, &
+-                                                            num_possible_values
++                                                            n_enum, num_possible_values
+       INTEGER, ALLOCATABLE, DIMENSION(:), TARGET         :: enum_i_val, ivec
+       INTEGER, TARGET                                    :: dummy_i
+       LOGICAL                                            :: jump_dft_parameters, lvecl(1:16)
+@@ -313,24 +313,31 @@
+                CALL section_add_keyword(section, keyword)
+                CALL keyword_release(keyword)
+             CASE (SIRIUS_STRING_TYPE)
++               ! SIRIUS may use "" as an enum sentinel (e.g. nlcg/processing_unit).
++               ! enum_create rejects empty strings -- keep only non-blank values.
++               n_enum = 0
+                IF (enum_length >= 1) THEN
+                   DO j = 1, enum_length
+                      possible_values(j) = ''
+                      CALL sirius_option_get(section_name, name, ctype, C_LOC(possible_values(j)), max_length=128, enum_idx=j)
+-                     enum_i_val(j) = j
+                      possible_values(j) = TRIM(ADJUSTL(possible_values(j)))
++                     IF (LEN_TRIM(possible_values(j)) > 0) THEN
++                        n_enum = n_enum + 1
++                        IF (n_enum /= j) possible_values(n_enum) = possible_values(j)
++                        enum_i_val(n_enum) = n_enum
++                     END IF
+                   END DO
+ 
+-                  IF (enum_length > 1) THEN
++                  IF (n_enum > 1) THEN
+                      CALL keyword_create(keyword, __LOCATION__, &
+                                          name=name, &
+                                          description=TRIM(ADJUSTL(description)), &
+                                          !                                      usage=TRIM(ADJUSTL(usage)), &
+                                          repeats=.FALSE., &
+-                                         enum_i_vals=enum_i_val(1:enum_length), &
+-                                         enum_c_vals=possible_values(1:enum_length), &
++                                         enum_i_vals=enum_i_val(1:n_enum), &
++                                         enum_c_vals=possible_values(1:n_enum), &
+                                          default_i_val=1)
+-                  ELSE
++                  ELSE IF (n_enum == 1) THEN
+                      CALL keyword_create(keyword, __LOCATION__, &
+                                          name=name, &
+                                          description=TRIM(ADJUSTL(description)), &
+@@ -338,6 +345,13 @@
+                                          type_of_var=char_t, &
+                                          default_c_val=possible_values(1), &
+                                          repeats=.FALSE.)
++                  ELSE
++                     CALL keyword_create(keyword, __LOCATION__, &
++                                         name=name, &
++                                         description=TRIM(ADJUSTL(description)), &
++                                         type_of_var=char_t, &
++                                         default_c_val='', &
++                                         repeats=.FALSE.)
+                   END IF
+                ELSE
+                   CALL keyword_create(keyword, __LOCATION__, &
