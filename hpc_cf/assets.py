@@ -15,9 +15,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import yaml
+
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
-from hpc_cf.environment import EnvironmentSpec, SpackConfig, load_environment_spec
+from hpc_cf.environment import (
+    RESOLVED_REPO_PINS_FILENAME,
+    EnvironmentSpec,
+    SpackConfig,
+    load_environment_spec,
+)
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
 from hpc_cf.requests import AssetsRequest
 from hpc_cf.spack_ops import SpackOps, resolve_env_paths
@@ -110,6 +117,41 @@ def run_bootstrap(
 # ── Mirror / verify ─────────────────────────────────────────────────────
 
 
+def _write_resolved_repo_sidecar(ops: SpackOps, host_dir: Path) -> None:
+    """Record floating-repo resolved tips next to spack.yaml (run output).
+
+    Same two-stage doctrine as the lock: assets produces the record,
+    builds consume it read-only (apply_resolved_repo_pins) so the
+    image-side clone matches the sha the concretizer saw. Pinned repos
+    are already their own record in env.yaml and never appear here.
+    """
+    if not ops.resolved_repo_pins:
+        return
+    repos_meta: dict[str, dict[str, str]] = {}
+    for repo in ops.env.spack.custom_repos:
+        sha = ops.resolved_repo_pins.get(repo.namespace)
+        if sha is None:
+            continue
+        entry: dict[str, str] = {"commit": sha}
+        if repo.url:
+            entry["url"] = repo.url
+        if repo.branch:
+            entry["branch"] = repo.branch
+        repos_meta[repo.namespace] = entry
+    sidecar = host_dir / RESOLVED_REPO_PINS_FILENAME
+    sidecar.write_text(
+        yaml.safe_dump(
+            {"schema_version": 1, "repos": repos_meta}, sort_keys=True
+        ),
+        encoding="utf-8",
+    )
+    logger.info(
+        "Resolved repo pins recorded in %s (%s)",
+        sidecar,
+        ", ".join(sorted(repos_meta)),
+    )
+
+
 def run_mirror(
     ctr: Container,
     env_name: str,
@@ -164,6 +206,8 @@ def run_mirror(
                     "run assets with --allow-concretize to produce a lock, "
                     "or place a non-empty spack.lock before --download-mirror"
                 )
+
+            _write_resolved_repo_sidecar(ops, host_dir)
 
             store.write_manifest(
                 run,

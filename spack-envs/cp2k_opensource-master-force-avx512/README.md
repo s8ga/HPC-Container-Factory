@@ -28,12 +28,13 @@
 ## 配置入口
 
 - `spack-env-file/env.yaml`：镜像、Spack 版本、自定义 repo 和模板变量。
-  cp2k_dev **recipe repo**（tblite/gauxc/libint/pace 的来源命名空间）跟随
-  `branch: master`：nightly 流水线每次 run 用 `git ls-remote` 解析 master tip，
-  把同一 sha 注入 `custom_repos.commit` 与 `cp2k_dev_repo_commit` 两侧——repo
-  随上游浮动，但 assets 与镜像克隆共享一个 sha（避免同 run 内两侧各自拉
-  tip 的竞态），run 的记录可重放。env.yaml 里的静态 sha 只是本地手动跑的锚点。
-  这与 CP2K 源码的浮动无关（源码走 spec 浮动、lock 记录）。
+  cp2k_dev **recipe repo**（tblite/gauxc/libint/pace 的来源命名空间）是
+  **工厂级浮动**：env.yaml 不写 `commit`，assets 每次拉取分支 tip 并把解析出
+  的 sha 记录到 `spack-env-file/resolved-repos.yaml`（与 lock 同一"assets
+  产生、build 只读消费"契约）；build/render 自动应用该 pin（repo commit +
+  `cp2k_dev_repo_commit` 模板变量），镜像侧克隆与解算器看到同一个 sha——
+  不会出现同 run 内两侧各自拉 tip 的竞态，记录可重放。没有 sidecar 时回退
+  到 env.yaml 的静态模板变量（本地手动渲染兜底）。
 - `spack-env-file/spack.yaml`：CP2K spec、依赖版本、variants 和 builtin repo
   pin（master 轨道跟踪 spack-packages 最新 tip）。
 - `Dockerfile.j2`：该环境的容器模板。

@@ -928,6 +928,72 @@ def load_environment_spec(env_dir: Path) -> EnvironmentSpec:
     )
 
 
+RESOLVED_REPO_PINS_FILENAME = "resolved-repos.yaml"
+
+
+def apply_resolved_repo_pins(
+    spec: EnvironmentSpec, env_dir: Path
+) -> EnvironmentSpec:
+    """Apply assets-resolved pins for floating (commit-less) git custom repos.
+
+    The assets workflow records the branch tips it actually fetched in a
+    ``resolved-repos.yaml`` sidecar next to spack.yaml (same two-stage
+    doctrine as the lock: assets produces, builds consume read-only).
+    Applying the pins in memory keeps the image-side clone on the same sha
+    the concretizer saw — a bare branch float would let the assets fetch
+    and the image clone race when upstream pushes mid-run.
+
+    Only repos declared WITHOUT a commit in env.yaml may be overridden;
+    pinned repos are the source of truth. The mirror template-var
+    convention ``<namespace>_repo_commit`` is set so per-env Dockerfiles
+    clone the resolved sha. env.yaml itself is never rewritten; a missing
+    sidecar is a no-op (env.yaml's static values remain the fallback).
+    """
+
+    from hpc_cf.env import find_env_yaml
+
+    try:
+        config_dir = find_env_yaml(env_dir).parent
+    except FileNotFoundError:
+        config_dir = env_dir
+    sidecar = config_dir / RESOLVED_REPO_PINS_FILENAME
+    if not sidecar.is_file():
+        return spec
+
+    try:
+        data = yaml.safe_load(sidecar.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"malformed {RESOLVED_REPO_PINS_FILENAME}: {exc}") from exc
+    repos = data.get("repos", {})
+    if not isinstance(repos, dict):
+        raise ValueError(
+            f"{RESOLVED_REPO_PINS_FILENAME}: 'repos' must be a mapping, "
+            f"got {type(repos).__name__}"
+        )
+
+    for repo in spec.spack.custom_repos:
+        if repo.type != "git" or repo.commit is not None:
+            continue
+        entry = repos.get(repo.namespace)
+        if entry is None:
+            continue
+        commit = entry.get("commit") if isinstance(entry, dict) else None
+        if not (isinstance(commit, str) and _GIT_SHA40_RE.fullmatch(commit)):
+            raise ValueError(
+                f"{RESOLVED_REPO_PINS_FILENAME}: repo {repo.namespace!r} needs "
+                "a 40-char hex commit"
+            )
+        repo.commit = commit.lower()
+        spec.template_vars[f"{repo.namespace}_repo_commit"] = commit.lower()
+        logger.info(
+            "Applied resolved repo pin: %s @ %s (from %s)",
+            repo.namespace,
+            repo.commit,
+            sidecar,
+        )
+    return spec
+
+
 def load_environment_spec_from_template(template_path: Path | None) -> EnvironmentSpec | None:
     """Load EnvironmentSpec using a Dockerfile.j2 path's parent as the env dir.
 

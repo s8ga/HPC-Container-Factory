@@ -83,6 +83,39 @@ MIRROR_STATS_UNKNOWN = -1
 MIRROR_CREATE_LOG = "/tmp/mirror-output.log"
 MIRROR_VERIFY_LOG = "/tmp/verify-output.log"
 
+# Marker file (inside the container) where prepare_repos appends one
+# "<namespace>=<sha>" line per FLOATING git repo (no commit pin) it
+# actually fetched. Parsed back into SpackOps.resolved_repo_pins so the
+# assets workflow can record the run's resolved tips beside spack.yaml.
+RESOLVED_REPO_MARKERS = "/tmp/hpc-cf-resolved-repos"
+
+_GIT_SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _parse_resolved_repo_markers(text: str) -> dict[str, str]:
+    """Parse marker-file lines ``<namespace>=<sha>`` into a mapping.
+
+    Pure function so it can be unit-tested directly. Any non-empty line
+    that is not a valid ``namespace=40-hex-sha`` pair raises — a corrupt
+    marker means we cannot record what was fetched, which must not pass
+    silently (mirrors the fail-closed mirror-stats doctrine).
+    """
+    pins: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        namespace, sep, sha = line.partition("=")
+        sha = sha.strip()
+        if (
+            not sep
+            or not namespace.strip()
+            or not _GIT_SHA40_RE.fullmatch(sha)
+        ):
+            raise ValueError(f"malformed resolved-repo marker: {raw_line!r}")
+        pins[namespace.strip()] = sha
+    return pins
+
 # Re-export for callers that still import the package name tuple.
 EXPECTED_BOOTSTRAP_BINARIES = BootstrapContract.BINARY_PACKAGES
 
@@ -152,6 +185,9 @@ class SpackOps:
         self.user_dir = env.spack_user_dir_in_container
         self.user_cache = f"{self.user_dir}/cache"
         self.plan: SpackEnvironmentPlan = build_spack_environment_plan(env)
+        # Filled by prepare_repos: namespace -> resolved sha for floating
+        # git custom repos (commit pin absent in env.yaml).
+        self.resolved_repo_pins: dict[str, str] = {}
 
     @property
     def layout(self) -> ProjectLayout:
@@ -338,10 +374,22 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
             return
 
         self.ctr.exec(self._build_prepare_repos_script(env_dir_in_container))
+        # Read back the resolved tips recorded for floating repos so the
+        # workflow can persist them next to spack.yaml (see
+        # RESOLVED_REPO_MARKERS). check=False: pinned-only envs never
+        # create the file.
+        result = self.ctr.exec(
+            f"cat {shell_quote(RESOLVED_REPO_MARKERS)} 2>/dev/null || true",
+            capture=True,
+            check=False,
+        )
+        self.resolved_repo_pins = _parse_resolved_repo_markers(
+            result.stdout or ""
+        )
 
     def _build_prepare_repos_script(self, env_dir_in_container: str) -> str:
         repos = self._assets_repos()
-        parts = [self._source_spack()]
+        parts = [self._source_spack(), f": > {shell_quote(RESOLVED_REPO_MARKERS)}"]
         for repo in repos:
             if repo.type == "git":
                 parts.append(self._prepare_git_repo(repo))
@@ -402,7 +450,8 @@ rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
         -b {branch} {url} {clone_tmp_q}
     cd {clone_tmp_q}
     mkdir -p {clone_dir_q}
-    {materialize}"""
+    {materialize}
+    echo "{repo.namespace}=$(git rev-parse HEAD)" >> {shell_quote(RESOLVED_REPO_MARKERS)}"""
             pin_note = ""
 
         return f"""

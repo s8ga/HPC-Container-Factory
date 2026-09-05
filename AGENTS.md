@@ -93,6 +93,14 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
+- Floating custom repos (env.yaml `custom_repos` git entry with **no `commit`**,
+  e.g. the CP2K master track's cp2k_dev): assets fetches the branch tip and
+  records it in `spack-env-file/resolved-repos.yaml` (namespace → sha, plus
+  url/branch); `resolve_build_input` applies the pins in memory
+  (`repo.commit` + the `<namespace>_repo_commit` template var) so the
+  image-side clone matches the sha the concretizer saw. Pinned repos are
+  never overridden; a missing sidecar falls back to env.yaml static values.
+  Same doctrine as the lock: assets produces, build consumes read-only.
 - Source mirror and buildcache are separate artifact classes:
   `assets/spack-mirror/` contains source archives, while the global
   `assets/spack-buildcache/` is an opaque Spack-owned filesystem cache.
