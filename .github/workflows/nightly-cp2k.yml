@@ -1,0 +1,33 @@
+# Floating nightly track: re-concretizes within the env's pinned
+# constraints (today the 2026.2 env; the master env will be its own
+# dispatch) and publishes to the rolling nightly pre-release (keep-5).
+# Intended to become the scheduled daily track once the master env lands.
+name: nightly-cp2k
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: Environment name under spack-envs/
+        required: false
+        default: cp2k_opensource-2026.2-force-avx512
+      ref:
+        description: "Git ref to build (default: the dispatched branch)"
+        required: false
+        default: ""
+      commit:
+        description: "Pin cp2k to this 40-char commit (empty = float to master head)"
+        required: false
+        default: ""
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/pipeline-cp2k.yml
+    with:
+      env_name: ${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+      ref: ${{ inputs.ref }}
+      channel: nightly
+      cp2k_commit: ${{ inputs.commit }}
+    permissions:
+      contents: write
+      packages: write

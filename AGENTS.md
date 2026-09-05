@@ -276,7 +276,13 @@ the ABACUS and CP2K 2026.2 environments; other environments keep their pinned
 **v1.2.0 highlights relevant to hpc_cf**:
 - New parallel installer (TUI auto-detects non-TTY → text mode in Docker build)
 - Concretization caching enabled by default — speeds up repeated solves
-- **SBOM auto-generation** (SPDX 2.3 at `$prefix/.spack/sbom/`) — Phase 3 item 6.3 is now free
+- **SBOM status (measured, not assumed)**: spack 1.2.0 writes SPDX SBOMs
+  only for packages IT installs into the bootstrap store
+  (`~/.spack/bootstrap/store/.../.spack/sbom/spdx-2.3.json`); the main
+  install store gets none (verified in the 2026.2F runtime image). The
+  factory's machine-readable reproducibility record is instead
+  `BUILD_MANIFEST.txt` (`spack find -d`) + `DependencyGraph.dot`, shipped
+  as release assets by the nightly sif job.
 - Package API v2.5 — our custom packages use v2.2, fully backward compatible
 - `spack isolate --self` — future candidate to simplify `SPACK_USER_CONFIG_PATH` setup
 
