@@ -185,7 +185,7 @@ spack:
 
   repos:
     builtin:
-      commit: 4b27eea0cc4158da30b27d19eafcd402ee9939bb  # 2026-09-05 (master track tracks latest; 0.6-era pin lacked tblite 0.7)
+      commit: 4b27eea0cc4158da30b27d19eafcd402ee9939bb  # LOCKED 2026-09-05 (bump deliberately: any builtin move rehashes the whole DAG and forces a full rebuild; 0.6-era pin lacked tblite 0.7)
 
   specs:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)

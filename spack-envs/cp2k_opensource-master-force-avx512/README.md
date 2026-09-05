@@ -36,7 +36,7 @@
   不会出现同 run 内两侧各自拉 tip 的竞态，记录可重放。没有 sidecar 时回退
   到 env.yaml 的静态模板变量（本地手动渲染兜底）。
 - `spack-env-file/spack.yaml`：CP2K spec、依赖版本、variants 和 builtin repo
-  pin（master 轨道跟踪 spack-packages 最新 tip）。
+  pin——**锁死**在 4b27eea0（2026-09-05）：builtin 一动全 DAG 重 hash、全量重建，升级必须是有意决策；浮动只属于 cp2k 源码与 cp2k_dev recipe repo。
 - `Dockerfile.j2`：该环境的容器模板。
 - `spack-env-file/spack.lock`：不存在是常态（浮动轨道）；只有钉住构建才会临时产生。
 
