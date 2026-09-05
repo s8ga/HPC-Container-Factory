@@ -538,15 +538,39 @@ jobs:
             | grep -v ":nightly-${NIGHTLY_DATE}$" \
             | xargs -r podman rmi -f || true
 
-      - name: Push runtime image to GHCR
+      # Push the runtime image as a SINGLE squashed layer: users pulling the
+      # package get the whole spack environment in one self-contained layer
+      # instead of the full builder-inherited layer chain. Config (ENV,
+      # CMD/ENTRYPOINT, WORKDIR) is re-stamped on import — podman import
+      # starts from an empty config, and `podman create` in the sif job's
+      # manifest extraction requires a CMD.
+      - name: Squash runtime image to one layer and push to GHCR
         run: |
           set -euo pipefail
           SRC="localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
           DATED="${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
           FLOATING="${IMG_REPO}:${ENV_SUFFIX}-nightly"
-          # Tag the local image with the remote refs first: podman inspect
-          # resolves against the local store, so inspecting a remote-only
-          # name fails even after a successful push.
+          podman create --name squash-export "$SRC" >/dev/null
+          podman export squash-export -o /tmp/runtime-layer.tar
+          podman rm squash-export >/dev/null
+          CHANGES=()
+          while IFS= read -r kv; do
+            CHANGES+=(--change "ENV ${kv}")
+          done < <(podman inspect -f '{{json .Config.Env}}' "$SRC" | jq -r '.[]')
+          CMD_JSON="$(podman inspect -f '{{json .Config.Cmd}}' "$SRC")"
+          if [ -n "$CMD_JSON" ] && [ "$CMD_JSON" != "null" ]; then
+            CHANGES+=(--change "CMD ${CMD_JSON}")
+          else
+            CHANGES+=(--change 'CMD ["/bin/bash"]')
+          fi
+          EP_JSON="$(podman inspect -f '{{json .Config.Entrypoint}}' "$SRC")"
+          [ -n "$EP_JSON" ] && [ "$EP_JSON" != "null" ] \
+            && CHANGES+=(--change "ENTRYPOINT ${EP_JSON}") || true
+          WD="$(podman inspect -f '{{.Config.WorkingDir}}' "$SRC")"
+          [ -n "$WD" ] && CHANGES+=(--change "WORKDIR ${WD}") || true
+          podman rmi "$SRC" >/dev/null
+          podman import "${CHANGES[@]}" /tmp/runtime-layer.tar "$SRC" >/dev/null
+          rm -f /tmp/runtime-layer.tar
           podman tag "$SRC" "$DATED"
           podman tag "$SRC" "$FLOATING"
           podman push "$DATED"
@@ -697,3 +721,24 @@ jobs:
           for id in $IDS; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
           done
+
+      # Stable releases bounded at the newest KEEP per environment: each
+      # build creates a dated release AND a git tag (gh release create), so
+      # unbounded retention pollutes both the release list and the tag
+      # namespace. --cleanup-tag removes the tag with the release. Nightly
+      # needs none of this: it reuses one rolling pre-release tag.
+      - name: Prune old stable releases (stable channel only, best-effort)
+        if: ${{ always() && inputs.channel == 'stable' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          KEEP=5
+          mapfile -t OLD_TAGS < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName \
+            --jq "[.[] | select(.tagName | startswith(\"stable-${ENV_NAME}-\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
+          for tag in "${OLD_TAGS[@]}"; do
+            echo "pruning stable release + tag: ${tag}"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          done
+          echo "stable releases kept: newest ${KEEP} for ${ENV_NAME}"
