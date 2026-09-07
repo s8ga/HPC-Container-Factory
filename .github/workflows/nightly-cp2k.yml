@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       env_name:
-        description: Environment name under spack-envs/
+        description: "Environment under spack-envs/ (ignored for fork builds: identity is derived as <base>-fork-<owner>-<branch>)"
         required: false
         default: cp2k_opensource-master-force-avx512
       commit:
@@ -21,7 +21,7 @@ on:
         required: false
         default: ""
       fork_url:
-        description: "Build cp2k from this fork (requires env_name ending in -fork, e.g. ...-fork-alice; prerelease channel, single version)"
+        description: "Build cp2k from this fork; identity derived as <base>-fork-<owner>-<branch> (prerelease, single version)"
         required: false
         default: ""
       fork_branch:

@@ -103,7 +103,7 @@ concurrency:
   # a repeated dispatch of the same channel+env queues instead of being
   # cancelled (both channels publish the same dated mirror tag when they
   # share an env, so those still serialize).
-  group: ${{ github.workflow }}-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  group: ${{ github.workflow }}-${{ inputs.fork_branch || inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:
@@ -121,12 +121,33 @@ jobs:
 
       - name: Materialize fork env + apply source override
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
             echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
             exit 1
           fi
-          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          if [[ -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ]]; then
+            # Fork identity is derived from the source itself:
+            # <base>-fork-<owner>-<branch> — one slot per person+branch.
+            BASE_ENV="${BASE_ENV%-fork}"
+            U="${{ inputs.fork_url }}"
+            U="${U#*://}"; U="${U%.git}"
+            if [[ "$U" == github.com/* ]]; then
+              FORK_ID="${U#github.com/}"; FORK_ID="${FORK_ID%%/*}"
+            else
+              FORK_ID="${U%%/*}"
+            fi
+            FORK_ID=$(echo "$FORK_ID" | tr '[:upper:]' '[:lower:]')
+            BRANCH_SLUG=$(echo "${{ inputs.fork_branch || 'default' }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
+            ENV_NAME="${BASE_ENV}-fork-${FORK_ID}-${BRANCH_SLUG}"
+            scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          else
+            ENV_NAME="${BASE_ENV}"
+            scripts/apply-source-override.sh "${ENV_NAME}"
+          fi
+          # Downstream steps resolve against the (possibly derived) identity.
+          echo "ENV_NAME=${ENV_NAME}" >> "$GITHUB_ENV"
+          echo "resolved env identity: ${ENV_NAME}"
 
 
       # No disk cleanup here: prepare peaks around ~5GB (workspace, mirror
@@ -141,7 +162,7 @@ jobs:
       - name: Resolve job variables
         id: vars
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_NAME="${ENV_NAME:?must be resolved by the materialize step}"
           ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
           test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
           export ENV_FILE
@@ -336,12 +357,33 @@ jobs:
 
       - name: Materialize fork env + apply source override
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
             echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
             exit 1
           fi
-          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          if [[ -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ]]; then
+            # Fork identity is derived from the source itself:
+            # <base>-fork-<owner>-<branch> — one slot per person+branch.
+            BASE_ENV="${BASE_ENV%-fork}"
+            U="${{ inputs.fork_url }}"
+            U="${U#*://}"; U="${U%.git}"
+            if [[ "$U" == github.com/* ]]; then
+              FORK_ID="${U#github.com/}"; FORK_ID="${FORK_ID%%/*}"
+            else
+              FORK_ID="${U%%/*}"
+            fi
+            FORK_ID=$(echo "$FORK_ID" | tr '[:upper:]' '[:lower:]')
+            BRANCH_SLUG=$(echo "${{ inputs.fork_branch || 'default' }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
+            ENV_NAME="${BASE_ENV}-fork-${FORK_ID}-${BRANCH_SLUG}"
+            scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          else
+            ENV_NAME="${BASE_ENV}"
+            scripts/apply-source-override.sh "${ENV_NAME}"
+          fi
+          # Downstream steps resolve against the (possibly derived) identity.
+          echo "ENV_NAME=${ENV_NAME}" >> "$GITHUB_ENV"
+          echo "resolved env identity: ${ENV_NAME}"
 
 
       - name: Install python dependencies
@@ -352,7 +394,7 @@ jobs:
       - name: Resolve job variables
         run: |
           df -h /
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_NAME="${ENV_NAME:?must be resolved by the materialize step}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
           NIGHTLY_DATE="${{ needs.prepare.outputs.date }}"
           {
@@ -473,12 +515,33 @@ jobs:
 
       - name: Materialize fork env + apply source override
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
             echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
             exit 1
           fi
-          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          if [[ -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ]]; then
+            # Fork identity is derived from the source itself:
+            # <base>-fork-<owner>-<branch> — one slot per person+branch.
+            BASE_ENV="${BASE_ENV%-fork}"
+            U="${{ inputs.fork_url }}"
+            U="${U#*://}"; U="${U%.git}"
+            if [[ "$U" == github.com/* ]]; then
+              FORK_ID="${U#github.com/}"; FORK_ID="${FORK_ID%%/*}"
+            else
+              FORK_ID="${U%%/*}"
+            fi
+            FORK_ID=$(echo "$FORK_ID" | tr '[:upper:]' '[:lower:]')
+            BRANCH_SLUG=$(echo "${{ inputs.fork_branch || 'default' }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
+            ENV_NAME="${BASE_ENV}-fork-${FORK_ID}-${BRANCH_SLUG}"
+            scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          else
+            ENV_NAME="${BASE_ENV}"
+            scripts/apply-source-override.sh "${ENV_NAME}"
+          fi
+          # Downstream steps resolve against the (possibly derived) identity.
+          echo "ENV_NAME=${ENV_NAME}" >> "$GITHUB_ENV"
+          echo "resolved env identity: ${ENV_NAME}"
 
 
       - name: Install python dependencies
@@ -489,7 +552,7 @@ jobs:
       - name: Resolve job variables
         run: |
           df -h /
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_NAME="${ENV_NAME:?must be resolved by the materialize step}"
           ENV_FILE="spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
           test -f "$ENV_FILE" || { echo "::error::unknown env: ${ENV_NAME}"; exit 1; }
           export ENV_FILE
@@ -659,12 +722,33 @@ jobs:
 
       - name: Materialize fork env + apply source override
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
           if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
             echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
             exit 1
           fi
-          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          if [[ -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ]]; then
+            # Fork identity is derived from the source itself:
+            # <base>-fork-<owner>-<branch> — one slot per person+branch.
+            BASE_ENV="${BASE_ENV%-fork}"
+            U="${{ inputs.fork_url }}"
+            U="${U#*://}"; U="${U%.git}"
+            if [[ "$U" == github.com/* ]]; then
+              FORK_ID="${U#github.com/}"; FORK_ID="${FORK_ID%%/*}"
+            else
+              FORK_ID="${U%%/*}"
+            fi
+            FORK_ID=$(echo "$FORK_ID" | tr '[:upper:]' '[:lower:]')
+            BRANCH_SLUG=$(echo "${{ inputs.fork_branch || 'default' }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')
+            ENV_NAME="${BASE_ENV}-fork-${FORK_ID}-${BRANCH_SLUG}"
+            scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+          else
+            ENV_NAME="${BASE_ENV}"
+            scripts/apply-source-override.sh "${ENV_NAME}"
+          fi
+          # Downstream steps resolve against the (possibly derived) identity.
+          echo "ENV_NAME=${ENV_NAME}" >> "$GITHUB_ENV"
+          echo "resolved env identity: ${ENV_NAME}"
 
 
       - name: Install python dependencies
@@ -674,7 +758,7 @@ jobs:
 
       - name: Resolve job variables
         run: |
-          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          ENV_NAME="${ENV_NAME:?must be resolved by the materialize step}"
           OWNER="${GITHUB_REPOSITORY_OWNER,,}"
           NIGHTLY_DATE="${{ needs.runtime.outputs.date }}"
           {
