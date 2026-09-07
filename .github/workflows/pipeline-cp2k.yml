@@ -848,7 +848,7 @@ jobs:
           # the full commit (recovered from the manifest's spack spec view).
           SOURCE_BLOCK=""
           if [ -n "${FORK_URL}" ]; then
-            FULL_SHA="$(grep -m1 'cp2k@master' BUILD_MANIFEST-*.txt \
+            FULL_SHA="$(grep -m1 -E 'cp2k@master.*commit=[0-9a-f]{40}' BUILD_MANIFEST-*.txt \
               | grep -oE 'commit=[0-9a-f]{40}' | cut -d= -f2 || true)"
             SOURCE_BLOCK="Source: fork ${FORK_URL} (branch ${FORK_BRANCH:-<pinned>}, commit ${FULL_SHA:-unknown})"
             if [ -n "${FULL_SHA}" ] && [[ "${FORK_URL}" == *github.com* ]]; then
