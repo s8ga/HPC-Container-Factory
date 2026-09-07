@@ -63,11 +63,6 @@ on:
         required: false
         type: string
         default: cp2k_opensource-2026.2-force-avx512
-      ref:
-        description: Git ref to build (default DEFAULT_REF, then the caller's branch)
-        required: false
-        type: string
-        default: ""
       channel:
         description: "stable: consume the committed spack.lock, permanent releases; nightly: floating, rolling pre-release"
         required: false
@@ -89,12 +84,10 @@ on:
         type: string
         default: ""
 
-# Persistent default build ref for manual runs (e.g. "v2"), used when the
-# dispatch input is left empty. Scheduled runs always fire from the
-# default branch (GitHub constraint), so DEFAULT_REF pins the checkout to
-# v2 — the active development branch — no matter which branch the run was
-# triggered from. Requires this file to exist on the default branch once,
-# so GitHub registers the workflow for dispatch/schedule.
+# Every checkout is pinned to the active development branch (DEFAULT_REF):
+# scheduled runs always fire from the default branch and callers have no
+# ref override, so this is the single knob. Requires this file to exist on
+# the default branch once, so GitHub registers the workflow.
 env:
   DEFAULT_REF: "v2"
 
@@ -124,7 +117,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+          ref: ${{ env.DEFAULT_REF || github.ref }}
 
       - name: Materialize fork env + apply source override
         run: |
@@ -339,7 +332,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+          ref: ${{ env.DEFAULT_REF || github.ref }}
 
       - name: Materialize fork env + apply source override
         run: |
@@ -476,7 +469,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+          ref: ${{ env.DEFAULT_REF || github.ref }}
 
       - name: Materialize fork env + apply source override
         run: |
@@ -662,7 +655,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+          ref: ${{ env.DEFAULT_REF || github.ref }}
 
       - name: Materialize fork env + apply source override
         run: |

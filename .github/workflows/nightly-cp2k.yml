@@ -16,10 +16,6 @@ on:
         description: Environment name under spack-envs/
         required: false
         default: cp2k_opensource-master-force-avx512
-      ref:
-        description: "Advanced: factory repo ref to check out (empty = the branch dispatched from; never a CP2K commit)"
-        required: false
-        default: ""
       commit:
         description: "Pin cp2k to this 40-char commit (empty = float to master head)"
         required: false
@@ -40,7 +36,6 @@ jobs:
       # Scheduled runs have no inputs: the expression falls through to the
       # master env, the whole point of the nightly track.
       env_name: ${{ inputs.env_name || 'cp2k_opensource-master-force-avx512' }}
-      ref: ${{ inputs.ref }}
       channel: nightly
       cp2k_commit: ${{ inputs.commit }}
       fork_url: ${{ inputs.fork_url }}
