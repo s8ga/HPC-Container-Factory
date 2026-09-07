@@ -80,11 +80,13 @@ on:
         default: ""
 
 # Persistent default build ref for manual runs (e.g. "v2"), used when the
-# dispatch input is left empty. Empty = build the branch the workflow was
-# dispatched against. Requires this file to exist on the default branch once,
-# so GitHub registers the workflow for dispatch.
+# dispatch input is left empty. Scheduled runs always fire from the
+# default branch (GitHub constraint), so DEFAULT_REF pins the checkout to
+# v2 — the active development branch — no matter which branch the run was
+# triggered from. Requires this file to exist on the default branch once,
+# so GitHub registers the workflow for dispatch/schedule.
 env:
-  DEFAULT_REF: ""
+  DEFAULT_REF: "v2"
 
 # NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
 # the caller grants. The sif job creates releases, so contents must stay
