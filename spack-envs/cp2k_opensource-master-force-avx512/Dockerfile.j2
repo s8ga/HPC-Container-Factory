@@ -107,7 +107,7 @@ LABEL stage="builder" \
 RUN set -euo pipefail; \
     BRANCH=$(grep -m1 -o 'version("master", branch="[^"]*"' \
       /opt/spack-env-file/repos/packages/cp2k/package.py | sed 's/.*branch="\([^"]*\)".*/\1/') && \
-    spack python -c "import json, sys; lock = json.load(open('/opt/spack-env-file/spack.lock')); node = next(s for s in lock['concrete_specs'].values() if s['name'] == 'cp2k'); params = node.get('parameters', {}); ident = (sys.argv[1] + '@' + params['commit'][:12]) if params.get('commit') else str(node['version']); open('/opt/hpc-container-ident', 'w').write(ident)" "$BRANCH" && \
+    IDENT_BRANCH="$BRANCH" spack python -c "import json, os; lock = json.load(open('/opt/spack-env-file/spack.lock')); node = next(s for s in lock['concrete_specs'].values() if s['name'] == 'cp2k'); params = node.get('parameters', {}); ident = (os.environ['IDENT_BRANCH'] + '@' + params['commit'][:12]) if params.get('commit') else str(node['version']); open('/opt/hpc-container-ident', 'w').write(ident)" && \
     echo "baked ident: $(cat /opt/hpc-container-ident)"
 
 {% if not build_only %}
