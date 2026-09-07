@@ -1,28 +1,51 @@
-# One-off probe: isolate the release-create 403 for the derived fork tag.
+# One-off probe #2: replicate the sif job context exactly, bisect the 403.
 name: oneoff-probe-release
 on:
   workflow_dispatch:
 permissions:
   contents: write
+  packages: write
 jobs:
   probe:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
-      - name: Try three tag names
+      - name: Materialize-style GITHUB_ENV write
+        run: |
+          echo "ENV_NAME=cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt" >> "$GITHUB_ENV"
+          echo "FORK_URL=https://github.com/s8ga/cp2k.git" >> "$GITHUB_ENV"
+      - name: A — create with sif-style env vars present
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_URL: https://github.com/s8ga/cp2k.git
+          FORK_BRANCH: fix-bfgs-rat-fun-opt
+        run: |
+          set -uo pipefail
+          SHA="$GITHUB_SHA"
+          TAG="nightly-cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+            --prerelease --title "$TAG" --notes "probe A" \
+            && echo "A: OK" || echo "A: FAILED rc=$?"
+      - name: B — view then edit path (the actual sif branch taken if A existed)
+        if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          SHA="$(git ls-remote origin v2 | cut -f1)" || true
-          git init -q . 2>/dev/null || true
-          for TAG in \
-            "nightly-cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt" \
-            "nightly-cp2k_opensource-master-force-avx512-fork-tester-fix-bfgs-rat-fun-opt" \
-            "nightly-cp2k_opensource-master-force-avx512-fork"; do
-            echo "=== creating: $TAG"
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --target "$SHA" --prerelease --title "$TAG" --notes "probe" \
-              && echo "    OK" || echo "    FAILED rc=$?"
-            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null \
-              && echo "    cleaned up" || true
-          done
+          TAG="nightly-cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "view: found"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "probe B" \
+              && echo "edit: OK" || echo "edit: FAILED rc=$?"
+          else
+            echo "view: not found (rc=$?)"
+          fi
+      - name: C — delete probe artifacts
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "nightly-cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt" \
+            --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null && echo "cleaned" || echo "nothing to clean"
