@@ -1,0 +1,28 @@
+# One-off probe: isolate the release-create 403 for the derived fork tag.
+name: oneoff-probe-release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try three tag names
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          SHA="$(git ls-remote origin v2 | cut -f1)" || true
+          git init -q . 2>/dev/null || true
+          for TAG in \
+            "nightly-cp2k_opensource-master-force-avx512-fork-s8ga-fix-bfgs-rat-fun-opt" \
+            "nightly-cp2k_opensource-master-force-avx512-fork-tester-fix-bfgs-rat-fun-opt" \
+            "nightly-cp2k_opensource-master-force-avx512-fork"; do
+            echo "=== creating: $TAG"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$SHA" --prerelease --title "$TAG" --notes "probe" \
+              && echo "    OK" || echo "    FAILED rc=$?"
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null \
+              && echo "    cleaned up" || true
+          done
