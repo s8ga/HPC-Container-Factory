@@ -749,6 +749,8 @@ jobs:
       - name: Attach SIF to its release channel
         env:
           GH_TOKEN: ${{ github.token }}
+          FORK_URL: ${{ inputs.fork_url }}
+          FORK_BRANCH: ${{ inputs.fork_branch }}
         run: |
           set -euo pipefail
           # Notes are regenerated every run so the rolling nightly release
@@ -757,6 +759,18 @@ jobs:
             BUILD_LINE="Build: ${RELEASE_IDENT} (full sha in BUILD_MANIFEST)"
           else
             BUILD_LINE="Build: ${ENV_NAME} — source pinned by the repository git tag"
+          fi
+          # Fork builds declare their source explicitly: repo, branch, and
+          # the full commit (recovered from the manifest's spack spec view).
+          SOURCE_BLOCK=""
+          if [ -n "${FORK_URL}" ]; then
+            FULL_SHA="$(grep -m1 'cp2k@master' BUILD_MANIFEST-*.txt \
+              | grep -oE 'commit=[0-9a-f]{40}' | cut -d= -f2 || true)"
+            SOURCE_BLOCK="Source: fork ${FORK_URL} (branch ${FORK_BRANCH:-<pinned>}, commit ${FULL_SHA:-unknown})"
+            if [ -n "${FULL_SHA}" ] && [[ "${FORK_URL}" == *github.com* ]]; then
+              SOURCE_BLOCK="${SOURCE_BLOCK}
+          https://github.com/${FORK_URL#*github.com/}/commit/${FULL_SHA}"
+            fi
           fi
           cat > release-notes.md <<NOTES
           Automated build of CP2K (opensource, force-avx512 track).
@@ -768,6 +782,7 @@ jobs:
           from the same image.
 
           ${BUILD_LINE}
+          ${SOURCE_BLOCK}
 
           Run it:
             apptainer exec ${SIF_NAME} cp2k.psmp --version
