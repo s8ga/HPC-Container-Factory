@@ -78,6 +78,16 @@ on:
         required: false
         type: string
         default: ""
+      fork_url:
+        description: "Build cp2k from this fork's repository instead of upstream (requires an env_name ending in -fork; nightly only)"
+        required: false
+        type: string
+        default: ""
+      fork_branch:
+        description: "Fork branch to build (floats to its head; pair with fork_url)"
+        required: false
+        type: string
+        default: ""
 
 # Persistent default build ref for manual runs (e.g. "v2"), used when the
 # dispatch input is left empty. Scheduled runs always fire from the
@@ -115,6 +125,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      - name: Materialize fork env + apply source override
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
+            echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
+            exit 1
+          fi
+          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+
 
       # No disk cleanup here: prepare peaks around ~5GB (workspace, mirror
       # tree, builder container) and the raw runner has ample headroom.
@@ -321,6 +341,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
+      - name: Materialize fork env + apply source override
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
+            echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
+            exit 1
+          fi
+          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+
+
       - name: Install python dependencies
         run: |
           python3 -m venv venv
@@ -448,6 +478,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
 
+      - name: Materialize fork env + apply source override
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
+            echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
+            exit 1
+          fi
+          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+
+
       - name: Install python dependencies
         run: |
           python3 -m venv venv
@@ -571,6 +611,27 @@ jobs:
           fi
           podman inspect --format '{{.Digest}}' "$DATED"
 
+      # Fork envs keep EXACTLY one image version: after a green push,
+      # delete every other package version tagged with this env's prefix.
+      - name: Enforce single fork image version (fork envs only)
+        if: ${{ contains(env.ENV_NAME, '-fork') }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
+          KEEP_TAG="${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
+          mapfile -t OLD < <(gh api --paginate "$REPO_PATH"             -q --arg p "${ENV_SUFFIX}-" --arg keep "${KEEP_TAG}"             '.[] | select(any(.metadata.container.tags[]; startswith($p))) |
+                 select((.metadata.container.tags | index($keep)) == null) | .id')
+          if [ "${#OLD[@]}" -eq 0 ]; then
+            echo "single fork version already enforced"
+            exit 0
+          fi
+          for id in "${OLD[@]}"; do
+            gh api -X DELETE "$REPO_PATH/$id" && echo "pruned fork version $id"
+          done
+
       # Same node20-v5 note as the prepare job's prune step.
       - name: Prune old nightly images (best-effort)
         continue-on-error: true
@@ -602,6 +663,16 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || env.DEFAULT_REF || github.ref }}
+
+      - name: Materialize fork env + apply source override
+        run: |
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          if [[ "${{ inputs.channel }}" == "stable" && ( -n "${{ inputs.fork_url }}" || -n "${{ inputs.fork_branch }}" ) ]]; then
+            echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
+            exit 1
+          fi
+          scripts/apply-source-override.sh "${ENV_NAME}" "${{ inputs.fork_url }}" "${{ inputs.fork_branch }}"
+
 
       - name: Install python dependencies
         run: |
@@ -761,10 +832,16 @@ jobs:
           # NOTE: no backslash line-continuation inside the single-quoted jq
           # program — bash treats it as a literal backslash and jq fails to
           # parse (verified locally; masked until now by continue-on-error).
+          # Fork envs keep a single version: SIF+sha pair = 2 entries,
+          # one manifest; stable/nightly keep 5 SIFs / 10 manifests.
+          case "${ENV_NAME}" in
+            *-fork*) KEEP_SIF=2; KEEP_MAN=2 ;;
+            *)       KEEP_SIF=5; KEEP_MAN=10 ;;
+          esac
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[5:][] | .id')
+            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[${KEEP_SIF}:][] | .id')
           IDS_MANIFEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .[10:][] | .id')
+            --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .[${KEEP_MAN}:][] | .id')
           for id in $IDS_MANIFEST; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
           done

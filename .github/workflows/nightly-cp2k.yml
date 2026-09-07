@@ -24,6 +24,14 @@ on:
         description: "Pin cp2k to this 40-char commit (empty = float to master head)"
         required: false
         default: ""
+      fork_url:
+        description: "Build cp2k from this fork (requires env_name ending in -fork, e.g. ...-fork-alice; prerelease channel, single version)"
+        required: false
+        default: ""
+      fork_branch:
+        description: "Fork branch to build (floats to its head; pair with fork_url)"
+        required: false
+        default: ""
 
 jobs:
   pipeline:
@@ -35,6 +43,8 @@ jobs:
       ref: ${{ inputs.ref }}
       channel: nightly
       cp2k_commit: ${{ inputs.commit }}
+      fork_url: ${{ inputs.fork_url }}
+      fork_branch: ${{ inputs.fork_branch }}
     permissions:
       contents: write
       packages: write

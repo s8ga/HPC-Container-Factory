@@ -33,7 +33,7 @@ LABEL stage="builder-installed" \
 # Branch {{ cp2k_branch }} is pinned at {{ cp2k_dev_repo_commit }} (env.yaml).
 
 RUN git clone --filter=blob:none --no-checkout \
-        https://github.com/cp2k/cp2k.git /opt/cp2k && \
+        {{ cp2k_source_repo_url | default("https://github.com/cp2k/cp2k.git") }} /opt/cp2k && \
     cd /opt/cp2k && \
     git fetch --depth 1 origin "{{ cp2k_dev_repo_commit }}" && \
     git fetch --depth 1 origin "{{ cp2k_branch }}:refs/remotes/origin/{{ cp2k_branch }}" && \
