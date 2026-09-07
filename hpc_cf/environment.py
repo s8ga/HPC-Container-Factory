@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -991,6 +992,29 @@ def apply_resolved_repo_pins(
             repo.commit,
             sidecar,
         )
+
+    # Expose the exact cp2k source commit the lock resolved, so image-side
+    # consumers (the tests clone) check out precisely what was built — even
+    # when the recipe repo and the source repo resolve at different moments.
+    lock_path = config_dir / "spack.lock"
+    if lock_path.is_file():
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            cp2k = next(
+                s
+                for s in lock.get("concrete_specs", {}).values()
+                if s.get("name") == "cp2k"
+            )
+            source_commit = cp2k.get("parameters", {}).get("commit")
+            if isinstance(source_commit, str) and _GIT_SHA40_RE.fullmatch(
+                source_commit
+            ):
+                spec.template_vars["cp2k_source_commit"] = source_commit
+                logger.info("cp2k source commit from lock: %s", source_commit)
+        except (json.JSONDecodeError, StopIteration, KeyError) as exc:
+            raise ValueError(
+                f"malformed spack.lock next to {RESOLVED_REPO_PINS_FILENAME}: {exc}"
+            ) from exc
     return spec
 
 

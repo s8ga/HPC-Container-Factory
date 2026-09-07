@@ -73,6 +73,13 @@ if [[ -n "$FORK_URL" ]]; then
   cp2k_source_repo_url: \"${FORK_URL}\"" "$ENV_YAML"
     fi
     grep -q "cp2k_source_repo_url: \"${FORK_URL}\"" "$ENV_YAML"
+    # The cp2k_dev recipe subtree lives inside the cp2k monorepo: point the
+    # custom_repos float at the fork too, so recipes, the resolved-repos
+    # sidecar, and the image's test clone all follow the fork branch.
+    BR_FOR_REPOS="${FORK_BRANCH:-master}"
+    sed -i "/url: https:\/\/github.com\/cp2k\/cp2k.git/,/namespace: cp2k_dev/ { s|url: .*|url: ${FORK_URL}|; s|branch: .*|branch: ${BR_FOR_REPOS}| }" "$ENV_YAML"
+    grep -q "url: ${FORK_URL}" "$ENV_YAML"
+    echo "cp2k_dev recipe repo -> ${FORK_URL} (${BR_FOR_REPOS})"
     echo "cp2k source URL -> ${FORK_URL}"
 fi
 
@@ -92,5 +99,8 @@ if [[ -n "$FORK_BRANCH" ]]; then
   cp2k_branch: \"${FORK_BRANCH}\"" "$ENV_YAML"
     fi
     grep -q "cp2k_branch: \"${FORK_BRANCH}\"" "$ENV_YAML"
+    if [[ -z "$FORK_URL" ]]; then
+      sed -i "/url: https:\/\/github.com\/cp2k\/cp2k.git/,/namespace: cp2k_dev/ { s|branch: .*|branch: ${FORK_BRANCH}| }" "$ENV_YAML"
+    fi
     echo "cp2k source branch -> ${FORK_BRANCH}"
 fi

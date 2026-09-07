@@ -29,6 +29,11 @@ def _make_base(root: Path) -> None:
         encoding="utf-8",
     )
     (root / "spack-envs" / BASE / "spack-env-file" / "env.yaml").write_text(
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: master\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
         "template_vars:\n"
         "  cp2k_branch: master\n"
         "  cp2k_dev_repo_commit: dd0921c61c802d1a0b9669263c27f207a68123dc\n",
@@ -73,6 +78,9 @@ def test_fork_env_materializes_and_patches(tmp_path: Path) -> None:
     env_yaml = (link / "spack-env-file" / "env.yaml").read_text(encoding="utf-8")
     assert f'cp2k_source_repo_url: "{FORK}"' in env_yaml
     assert 'cp2k_branch: "experimental"' in env_yaml
+    # the cp2k_dev recipe-repo float follows the fork too
+    assert f"url: {FORK}" in env_yaml
+    assert "branch: experimental" in env_yaml
     # writes go THROUGH the symlink: the base env is the single source of truth
     assert f'git = "{FORK}"' in (
         _fork_dir(tmp_path, BASE) / "spack-env-file" / "repos" / "packages" / "cp2k" / "package.py"
@@ -101,6 +109,18 @@ def test_materialize_only_without_inputs(tmp_path: Path) -> None:
         _fork_dir(tmp_path, env) / "spack-env-file" / "repos" / "packages" / "cp2k" / "package.py"
     ).read_text(encoding="utf-8")
     assert f'git = "{UPSTREAM}"' in recipe  # untouched
+
+
+def test_branch_without_url_redirects_recipe_repo_float(tmp_path: Path) -> None:
+    _make_base(tmp_path)
+    env = f"{BASE}-fork"
+    result = _run(tmp_path, env, "", "feature-x")
+    assert result.returncode == 0, result.stderr
+    env_yaml = (_fork_dir(tmp_path, env) / "spack-env-file" / "env.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "url: https://github.com/cp2k/cp2k.git" in env_yaml  # url untouched
+    assert "branch: feature-x" in env_yaml  # float branch redirected
 
 
 def test_missing_base_fails_closed(tmp_path: Path) -> None:

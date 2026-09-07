@@ -145,6 +145,32 @@ def test_write_sidecar_and_apply_roundtrip(tmp_path: Path) -> None:
     assert pinned_repo.commit == OTHER_SHA  # pin is authoritative
 
 
+def test_apply_sets_cp2k_source_commit_from_lock(tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / RESOLVED_REPO_PINS_FILENAME).write_text(
+        yaml.safe_dump({"repos": {"cp2k_dev": {"commit": SHA, "branch": "master"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "spack.lock").write_text(
+        json.dumps(
+            {
+                "concrete_specs": {
+                    "x": {
+                        "name": "cp2k",
+                        "version": "master",
+                        "parameters": {"commit": OTHER_SHA},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _float_spec()
+    apply_resolved_repo_pins(spec, tmp_path)
+    assert spec.template_vars["cp2k_source_commit"] == OTHER_SHA
+
+
 def test_apply_missing_sidecar_is_noop(tmp_path: Path) -> None:
     spec = _float_spec()
     spec.template_vars["cp2k_dev_repo_commit"] = "fallback"
