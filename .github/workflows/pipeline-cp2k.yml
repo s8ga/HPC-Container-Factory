@@ -924,11 +924,12 @@ jobs:
           # NOTE: no backslash line-continuation inside the single-quoted jq
           # program — bash treats it as a literal backslash and jq fails to
           # parse (verified locally; masked until now by continue-on-error).
-          # Fork envs keep a single version: SIF+sha pair = 2 entries,
-          # one manifest; stable/nightly keep 5 SIFs / 10 manifests.
+          # Budgets count RELEASE ASSETS: a version is a SIF+sha256 pair
+          # (two entries). Fork envs keep a single version; nightly keeps
+          # five versions; manifests are one per version.
           case "${ENV_NAME}" in
             *-fork*) KEEP_SIF=2; KEEP_MAN=2 ;;
-            *)       KEEP_SIF=5; KEEP_MAN=10 ;;
+            *)       KEEP_SIF=10; KEEP_MAN=10 ;;
           esac
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
             --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .['"$KEEP_SIF"':][] | .id')
