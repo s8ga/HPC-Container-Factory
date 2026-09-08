@@ -931,9 +931,9 @@ jobs:
             *)       KEEP_SIF=5; KEEP_MAN=10 ;;
           esac
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .[${KEEP_SIF}:][] | .id')
+            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .['"$KEEP_SIF"':][] | .id')
           IDS_MANIFEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .[${KEEP_MAN}:][] | .id')
+            --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .['"$KEEP_MAN"':][] | .id')
           for id in $IDS_MANIFEST; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
           done
