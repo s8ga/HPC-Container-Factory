@@ -400,6 +400,7 @@ def build_context(
     buildcache_url: str | None = None,
     buildcache_username_var: str | None = None,
     buildcache_password_var: str | None = None,
+    apt_mirror_override: str | None = None,
 ) -> dict:
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags.
 
@@ -513,7 +514,12 @@ def build_context(
             list(spec.runtime.extra_pkgs) if spec is not None else []
         )
 
-    # APT mirror for Debian templates; unset → USTC. Empty/"official" skip sed.
+    # APT mirror for Debian templates; unset → USTC. Empty/"official" skip
+    # the sed. The CLI override wins over env.yaml (US-hosted CI passes
+    # "official": a cross-pacific mirror is a liability there, not an
+    # accelerator).
+    if apt_mirror_override:
+        context["apt_mirror"] = apt_mirror_override
     if "apt_mirror" not in context or context["apt_mirror"] is None:
         context["apt_mirror"] = DEFAULT_APT_MIRROR
 
@@ -605,6 +611,7 @@ def generate_dockerfile(
     buildcache_url: str | None = None,
     buildcache_username_var: str | None = None,
     buildcache_password_var: str | None = None,
+    apt_mirror_override: str | None = None,
 ) -> Path:
     root = _layout(layout)
     resolved = resolve_build_input(app_version, template, layout=root)
@@ -622,6 +629,7 @@ def generate_dockerfile(
         buildcache_url=buildcache_url,
         buildcache_username_var=buildcache_username_var,
         buildcache_password_var=buildcache_password_var,
+        apt_mirror_override=apt_mirror_override,
     )
     content = render_template(
         resolved.render_template, context, layout=root

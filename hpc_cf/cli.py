@@ -105,6 +105,15 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--apt-mirror",
+        default=None,
+        help=(
+            "Debian apt mirror override for the rendered Dockerfile; pass "
+            "'official' to use deb.debian.org directly (default: env "
+            "template_vars.apt_mirror)"
+        ),
+    )
+    parser.add_argument(
         "--buildcache-mode",
         type=BuildcacheMode.parse,
         choices=list(BuildcacheMode),
@@ -324,6 +333,14 @@ def build_parser() -> argparse.ArgumentParser:
             help="Publisher/checker container timeout (default: 86400 seconds)",
         )
     build_action_parser = buildcache_actions.choices["build"]
+    build_action_parser.add_argument(
+        "--apt-mirror",
+        default=None,
+        help=(
+            "Debian apt mirror override for the producer Dockerfile; pass "
+            "'official' for deb.debian.org (default: env template_vars)"
+        ),
+    )
     build_action_parser.add_argument(
         "--buildcache-mode",
         type=BuildcacheMode.parse,

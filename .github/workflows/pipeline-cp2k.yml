@@ -483,6 +483,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
+            --apt-mirror official \
             --engine podman --operation-timeout-seconds 19800 \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
             --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
@@ -629,6 +630,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf build --env "${ENV_NAME}" --engine podman \
+            --apt-mirror official \
             --image "${IMAGE_NAME}" --tag "nightly-${NIGHTLY_DATE}" \
             --buildcache only --no-mirror \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \

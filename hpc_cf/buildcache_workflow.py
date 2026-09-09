@@ -538,6 +538,7 @@ class BuildcacheService:
             buildcache_url=backend.url,
             buildcache_username_var=backend.username_var,
             buildcache_password_var=backend.password_var,
+            apt_mirror_override=request.apt_mirror,
         )
         temporary_image_ref = temporary_producer_image_ref(
             image, tag, run.run_id

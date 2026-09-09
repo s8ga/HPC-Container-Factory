@@ -269,6 +269,7 @@ class BuildService:
                     buildcache_url=backend.url,
                     buildcache_username_var=backend.username_var,
                     buildcache_password_var=backend.password_var,
+                    apt_mirror_override=request.apt_mirror,
                 )
             logger.info("Done")
             return 0
@@ -312,6 +313,7 @@ class BuildService:
                     buildcache_url=backend.url,
                     buildcache_username_var=backend.username_var,
                     buildcache_password_var=backend.password_var,
+                    apt_mirror_override=request.apt_mirror,
                 )
                 if effective_policy is BuildcachePolicy.ONLY:
                     env_dir = resolved.environment_dir
