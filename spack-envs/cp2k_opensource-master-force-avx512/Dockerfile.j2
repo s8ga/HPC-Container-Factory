@@ -40,18 +40,11 @@ RUN git clone --filter=blob:none --no-checkout \
     git sparse-checkout init --cone && \
     git sparse-checkout set tests src/grid/sample_tasks tools/regtesting tools && \
     git checkout "{{ cp2k_source_commit | default(cp2k_dev_repo_commit) }}" && \
-{%- if cp2k_source_commit is defined %}
-    # Lock-derived commit: concretize resolved it FROM this branch, so the
-    # lock is the authority. No ancestor gate here — both fetches are
-    # depth-1, so once the branch advances mid-run the cut parent chain
-    # makes merge-base report a false "not on branch" (observed when
-    # upstream moved between prepare and this step).
-    echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
-{%- else %}
-    git merge-base --is-ancestor HEAD "origin/{{ cp2k_branch }}" || \
+{% if cp2k_source_commit is defined %}echo "✅ Sparse checkout done: lock-derived commit; no ancestor gate (depth-1 fetch cannot re-prove ancestry once the branch advances mid-run — the lock is the authority)"
+{% else %}git merge-base --is-ancestor HEAD "origin/{{ cp2k_branch }}" || \
       { echo "ERROR: pinned commit $(git rev-parse HEAD) is not on {{ cp2k_branch }}"; exit 1; } && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
-{%- endif %}
+{% endif %}
 
 # Fetch the force-AVX512 package overrides at the pinned s8ga monorepo commit.
 RUN git clone --filter=blob:none --sparse --no-checkout \
