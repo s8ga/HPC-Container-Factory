@@ -1,0 +1,47 @@
+# Auto-retry the sif job when IT is the only failure in a nightly/stable
+# run. SIF-stage failures are dominated by GitHub-side transients (asset
+# upload 500s, API blips) with the expensive work already done — one
+# rerun recovers them. Any other failed job (prepare/binaries/runtime)
+# aborts: those are real build problems a rerun cannot fix.
+#
+# Loop safety: run_attempt < 2 allows exactly one automatic retry; the
+# rerun's own completion re-enters this workflow and no-ops.
+name: sif-auto-retry
+
+on:
+  workflow_run:
+    workflows: [nightly-cp2k, stable-cp2k]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry-sif-only:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt < 2
+    steps:
+      - name: Retry when the sif job is the only failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mapfile -t FAILED < <(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/${RUN_ID}/jobs" \
+            -q '.jobs[] | select(.conclusion == "failure") | .name')
+          if [ "${#FAILED[@]}" -eq 0 ]; then
+            echo "no failed jobs; nothing to do"
+            exit 0
+          fi
+          for name in "${FAILED[@]}"; do
+            case "$name" in
+              *"sif (apptainer convert + release)"*) : ;;
+              *) echo "::error::non-sif failure ($name) — no auto retry" >&2
+                 exit 1 ;;
+            esac
+          done
+          echo "sif-only failure; retrying (attempt $(( $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${RUN_ID}" -q .run_attempt) + 1 )) of 2)"
+          gh run rerun "$RUN_ID" --failed
