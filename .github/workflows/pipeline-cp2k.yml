@@ -885,10 +885,10 @@ jobs:
 
             docker run --rm -it ${IMG_REPO}:${ENV_SUFFIX}-release cp2k.psmp --version
 
-          Assets: the SIF image, its sha256 checksum, and
-          BUILD_MANIFEST-*.txt (the full package list of this build,
-          recorded by Spack). The source for the tagged commit lives
-          in this repository.
+          Assets: the SIF image and BUILD_MANIFEST-*.txt (the installed
+          package list plus fully resolved specs). GitHub natively
+          computes each asset's sha256 digest (assets API). The source
+          for the tagged commit lives in this repository.
           NOTES
           # Rolling per-env release; the tag moves with each run.
           if gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -898,7 +898,7 @@ jobs:
                  --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
                  --title "${RELEASE_TAG}" --notes-file release-notes.md
           fi
-          gh release upload "${RELEASE_TAG}" "${SIF_NAME}" "${SIF_NAME}.sha256" \
+          gh release upload "${RELEASE_TAG}" "${SIF_NAME}" \
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
             --repo "$GITHUB_REPOSITORY" --clobber
 
@@ -926,15 +926,16 @@ jobs:
           # NOTE: no backslash line-continuation inside the single-quoted jq
           # program — bash treats it as a literal backslash and jq fails to
           # parse (verified locally; masked until now by continue-on-error).
-          # Budgets count RELEASE ASSETS: a version is a SIF+sha256 pair
-          # (two entries). Fork envs keep a single version; nightly keeps
-          # five versions; manifests are one per version.
+          # Budgets count versions: one SIF + one manifest per version
+          # (GitHub natively computes each asset's sha256 digest, so no
+          # sidecar checksum files are shipped). Nightly keeps five
+          # versions; fork envs keep a single one.
           case "${ENV_NAME}" in
-            *-fork*) KEEP_SIF=2; KEEP_MAN=2 ;;
-            *)       KEEP_SIF=10; KEEP_MAN=10 ;;
+            *-fork*) KEEP_SIF=1; KEEP_MAN=1 ;;
+            *)       KEEP_SIF=5; KEEP_MAN=5 ;;
           esac
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("\\.sif(\\.sha256)?$"))] | sort_by(.created_at) | reverse | .['"$KEEP_SIF"':][] | .id')
+            --jq '[.assets[] | select(.name | test("\\.sif$"))] | sort_by(.created_at) | reverse | .['"$KEEP_SIF"':][] | .id')
           IDS_MANIFEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
             --jq '[.assets[] | select(.name | test("BUILD_MANIFEST-"))] | sort_by(.created_at) | reverse | .['"$KEEP_MAN"':][] | .id')
           for id in $IDS_MANIFEST; do
