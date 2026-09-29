@@ -27,4 +27,4 @@ jobs:
         run: |
           set -euo pipefail
           echo "nightly failed; retrying (full rerun, attempt 2 of 2)"
-          gh run rerun "${RUN_ID}"
+          gh run rerun "${RUN_ID}" --repo "$GITHUB_REPOSITORY"
