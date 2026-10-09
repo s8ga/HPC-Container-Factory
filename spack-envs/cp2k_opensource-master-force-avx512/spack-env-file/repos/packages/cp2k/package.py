@@ -448,6 +448,12 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
         depends_on("libxc@6.2:", when="@2023.2:")
         depends_on("libxc@:6", when="@:2024.3")
         depends_on("libxc@7 build_system=cmake", when="@2025.2:")
+        # Exact angular-momentum algebra (wignernj 0.8 CONFIG REQUIRED,
+        # unconditional in master's CMakeLists). Neither builtin nor
+        # cp2k_dev wire this dep yet — libwignernj comes from
+        # spack-packages builtin (4623dda7); the Fortran interface in
+        # wignernj_interface.F consumes its +fortran bindings.
+        depends_on("libwignernj@0.8:", when="@master")
 
     with when("+spla"):
         depends_on("spla+cuda+fortran", when="+cuda")

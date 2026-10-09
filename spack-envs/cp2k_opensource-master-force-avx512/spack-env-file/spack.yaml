@@ -196,7 +196,7 @@ spack:
 
   repos:
     builtin:
-      commit: 4b27eea0cc4158da30b27d19eafcd402ee9939bb  # LOCKED 2026-09-05 (bump deliberately: any builtin move rehashes the whole DAG and forces a full rebuild; 0.6-era pin lacked tblite 0.7)
+      commit: 7079243feddd7ae6dd9e8f7f68ee77588b6f250d  # BUMP 2026-09-14: brings the libwignernj recipe required by cp2k master (e025e39); a builtin move rehashes the whole DAG = one deliberate full rebuild
 
   specs:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)
@@ -221,6 +221,7 @@ spack:
     - "libsmeagol@1.2"
     - "libvdwxc@0.5.0"
     - "libvori@220621"
+    - "libwignernj@0.8.0"
     - "libxc@7.1.2"
     - "libxs@1.0.0"
     - "libxsmm@2.0.0"
