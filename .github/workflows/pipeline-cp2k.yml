@@ -119,6 +119,19 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
 
+      - name: Point the mirror-builder apt at deb.debian.org
+        run: |
+          # The USTC mirror is tuned for local builds; from GitHub's US
+          # runners it is a cross-pacific flake source (two nightly deaths).
+          # Patch the env-agnostic mirror-builder image and the env's
+          # runtime re-sed back to the official sources. Local builds are
+          # unaffected (this only touches the ephemeral checkout).
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
+          sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
+            "spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          ! grep -q "ustc" containers/Dockerfile.mirror-builder
+
       - name: Materialize fork env + apply source override
         run: |
           BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
@@ -355,6 +368,19 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
 
+      - name: Point the mirror-builder apt at deb.debian.org
+        run: |
+          # The USTC mirror is tuned for local builds; from GitHub's US
+          # runners it is a cross-pacific flake source (two nightly deaths).
+          # Patch the env-agnostic mirror-builder image and the env's
+          # runtime re-sed back to the official sources. Local builds are
+          # unaffected (this only touches the ephemeral checkout).
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
+          sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
+            "spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          ! grep -q "ustc" containers/Dockerfile.mirror-builder
+
       - name: Materialize fork env + apply source override
         run: |
           BASE_ENV="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
@@ -513,6 +539,19 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
+
+      - name: Point the mirror-builder apt at deb.debian.org
+        run: |
+          # The USTC mirror is tuned for local builds; from GitHub's US
+          # runners it is a cross-pacific flake source (two nightly deaths).
+          # Patch the env-agnostic mirror-builder image and the env's
+          # runtime re-sed back to the official sources. Local builds are
+          # unaffected (this only touches the ephemeral checkout).
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
+          sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
+            "spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          ! grep -q "ustc" containers/Dockerfile.mirror-builder
 
       - name: Materialize fork env + apply source override
         run: |
@@ -721,6 +760,19 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
+
+      - name: Point the mirror-builder apt at deb.debian.org
+        run: |
+          # The USTC mirror is tuned for local builds; from GitHub's US
+          # runners it is a cross-pacific flake source (two nightly deaths).
+          # Patch the env-agnostic mirror-builder image and the env's
+          # runtime re-sed back to the official sources. Local builds are
+          # unaffected (this only touches the ephemeral checkout).
+          ENV_NAME="${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}"
+          sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
+          sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
+            "spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+          ! grep -q "ustc" containers/Dockerfile.mirror-builder
 
       - name: Materialize fork env + apply source override
         run: |
