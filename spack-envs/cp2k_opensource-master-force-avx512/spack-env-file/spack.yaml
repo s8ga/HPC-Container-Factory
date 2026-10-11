@@ -210,8 +210,9 @@ spack:
     - "cosma@2.8.4"
     - "deepmdkit@3.1.3"
     - "dftd4@4.2.0"
-    # s8_overrides currently provides force kernels through 2026.02.001.
-    - "elpa@2026.02.001"
+    # s8_overrides provides force kernels through 2026.02.002, including the
+    # width-1 tail block (nx1) fix backport from bugfix_elpa2_65_65_64.
+    - "elpa@2026.02.002"
     - "fftw@3.3.11"
     - "gauxc@dev20260717"
     - "greenx@2.2"
