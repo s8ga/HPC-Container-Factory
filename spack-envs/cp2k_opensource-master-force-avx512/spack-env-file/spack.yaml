@@ -196,7 +196,7 @@ spack:
 
   repos:
     builtin:
-      commit: 7079243feddd7ae6dd9e8f7f68ee77588b6f250d  # BUMP 2026-09-14: brings the libwignernj recipe required by cp2k master (e025e39); a builtin move rehashes the whole DAG = one deliberate full rebuild
+      commit: 2cf5d80931fcc00e4febf5581f1c1c4bf6800c8e  # BUMP 2026-10-17: brings sirius 7.12.0 required by cp2k master (2cf5d809, find_package(sirius 7.12)); a builtin move rehashes the whole DAG = one deliberate full rebuild
 
   specs:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)
@@ -234,7 +234,7 @@ spack:
     - "pexsi@2.0.0"
     - "plumed@2.10.1"
     - "py-torch@2.12.1"
-    - "sirius@7.11.1"
+    - "sirius@7.12.0"
     - "spfft@1.1.1"
     - "spglib@2.7.0"
     - "spla@1.6.1"

@@ -365,6 +365,8 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
     depends_on("blas")
     depends_on("lapack")
 
+    depends_on("libwignernj", when="@2027:")
+
     depends_on("libxs@1:+fortran", when="smm=libxs")
     # CP2K 2026.2 uses LIBXSMM as optional JIT kernels on top of LIBXS (smm=libxs).
     depends_on("libxsmm@2:", when="@2026.2: smm=libxs")
