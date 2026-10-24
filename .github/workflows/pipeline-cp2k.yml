@@ -328,13 +328,27 @@ jobs:
       - name: Publish source-mirror data image to GHCR
         run: |
           set -euo pipefail
+          df -h / /mnt || true
+          du -sh assets/spack-mirror
+          # The compressed layer lands on /mnt, NOT /tmp: the root disk
+          # already holds the extracted mirror tree, and sources are
+          # already-compressed tarballs (zstd gains ~nothing), so /tmp
+          # would demand a second ~15GiB copy on the same filesystem —
+          # that is what tripped the runner's root-disk quota
+          # (EDQUOT on the zstd block write). /mnt is the large scratch
+          # volume on hosted runners.
+          LAYER=/mnt/mirror-layer.tar.zst
+          if [ ! -w /mnt ]; then
+            echo "::warning::/mnt not writable; falling back to /tmp" >&2
+            LAYER=/tmp/mirror-layer.tar.zst
+          fi
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
           tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
             --numeric-owner -cf - spack-mirror | \
-            zstd -q -3 -T1 -o /tmp/mirror-layer.tar.zst
-          /tmp/crane append -f /tmp/mirror-layer.tar.zst \
+            zstd -q -3 -T1 -o "$LAYER"
+          /tmp/crane append -f "$LAYER" \
             --oci-empty-base -t "$DATED"
-          rm -f /tmp/mirror-layer.tar.zst
+          rm -f "$LAYER"
           /tmp/crane tag "$DATED" "${ENV_NAME}"
 
       # v5 still declares node20; GitHub force-runs it on node24 (the
