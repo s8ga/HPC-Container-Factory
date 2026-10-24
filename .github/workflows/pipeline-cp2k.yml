@@ -330,18 +330,15 @@ jobs:
           set -euo pipefail
           df -h / /mnt || true
           du -sh assets/spack-mirror
-          # The compressed layer lands on /mnt, NOT /tmp: the root disk
-          # already holds the extracted mirror tree, and sources are
-          # already-compressed tarballs (zstd gains ~nothing), so /tmp
-          # would demand a second ~15GiB copy on the same filesystem —
-          # that is what tripped the runner's root-disk quota
-          # (EDQUOT on the zstd block write). /mnt is the large scratch
-          # volume on hosted runners.
-          LAYER=/mnt/mirror-layer.tar.zst
-          if [ ! -w /mnt ]; then
-            echo "::warning::/mnt not writable; falling back to /tmp" >&2
-            LAYER=/tmp/mirror-layer.tar.zst
-          fi
+          # The compressed layer lands in the WORKSPACE, next to the mirror
+          # tree: /tmp carries its own quota on the runner image (the zstd
+          # write died with EDQUOT even with 69G free on /) and /mnt is not
+          # a writable separate volume there — but the workspace has already
+          # proven it can hold the 16GiB extracted tree plus repo overhead.
+          # The workspace and / share the same device, so this stays a
+          # single-fs 2x footprint; the bounded mirror (lock-aware prune)
+          # is the structural fix for that.
+          LAYER="$PWD/mirror-layer.tar.zst"
           DATED="${INPUTS_REPO}:${ENV_NAME}-${NIGHTLY_DATE}"
           tar -C assets --sort=name --mtime='@0' --owner=0 --group=0 \
             --numeric-owner -cf - spack-mirror | \
