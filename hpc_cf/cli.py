@@ -233,6 +233,21 @@ def add_assets_options(parser: argparse.ArgumentParser) -> None:
             "Required for first-time lock generation after deleting a copied lock."
         ),
     )
+    parser.add_argument(
+        "--prune-mirror",
+        action="store_true",
+        help=(
+            "After mirror+verify, prune the git snapshot cache down to this "
+            "run's lock membership (stale bundles like retired py-torch pins). "
+            "Dry run: reports the plan without deleting. Shared local trees "
+            "host multiple envs — review the dry run first."
+        ),
+    )
+    parser.add_argument(
+        "--prune-mirror-apply",
+        action="store_true",
+        help="With --prune-mirror: actually delete the planned blobs/links.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -89,6 +89,69 @@ MIRROR_VERIFY_LOG = "/tmp/verify-output.log"
 # assets workflow can record the run's resolved tips beside spack.yaml.
 RESOLVED_REPO_MARKERS = "/tmp/hpc-cf-resolved-repos"
 
+# Python payload for export_fetch_specs (run via `spack python` inside the
+# container). Kept as a module-level template — NOT an f-string — because
+# the payload is brace-dense; __ENV_NAME__ is substituted at build time.
+# Spack-version tolerance notes (probed on 1.2.2, the container pins
+# 1.1.x/1.2.x): GitFetchStrategy.git is the git EXECUTABLE string there,
+# not the repo URL (the URL lives in .url) — so URL candidates are
+# sanitized with :// and the .git attribute is only a legacy fallback.
+# Tolerant by design: specs whose fetcher cannot be resolved (externals,
+# virtuals, missing custom repos) are skipped — the prune planner treats
+# repos without a matching spec as guarded (keep whole), so an incomplete
+# sidecar can only under-prune, never over-prune.
+_FETCH_SPECS_PY = """
+import json
+import spack.environment as ev
+import spack.fetch_strategy as fs_mod
+
+GIT_CLS = getattr(fs_mod, "GitFetchStrategy", ())
+
+
+def _url_like(value):
+    return value if isinstance(value, str) and "://" in value else None
+
+
+env = None
+try:
+    env = ev.active_environment()
+except Exception:
+    pass
+if env is None:
+    try:
+        env = ev.read("__ENV_NAME__")
+    except Exception:
+        pass
+
+out = []
+for spec in (env.all_specs() if env else []):
+    try:
+        fetcher = spec.package.fetcher
+    except Exception:
+        continue
+    url = _url_like(getattr(fetcher, "url", None)) or _url_like(
+        getattr(fetcher, "git", None)
+    )
+    if not url:
+        continue
+    rec = {"name": spec.name, "version": str(spec.version)}
+    if GIT_CLS and isinstance(fetcher, GIT_CLS):
+        rec["kind"] = "git"
+        rec["url"] = url
+        commit = getattr(fetcher, "commit", None)
+        rec["commit"] = commit if isinstance(commit, str) and commit else None
+    else:
+        rec["kind"] = "url"
+        rec["url"] = url
+        digest = getattr(fetcher, "digest", None) or getattr(
+            fetcher, "checksum", None
+        )
+        if isinstance(digest, str) and digest:
+            rec["sha256"] = digest
+    out.append(rec)
+print(json.dumps(out))
+"""
+
 _GIT_SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -693,6 +756,31 @@ mkdir -p "$(dirname {log_q})"
 : > {log_q}
 echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
 spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {log_q}
+"""
+
+    # ── Fetch-spec export (mirror prune input) ────────────────────────────
+
+    def export_fetch_specs(self, out_path: str) -> None:
+        """Dump every concrete spec's resolved fetch strategy as JSON.
+
+        The sidecar feeds the lock-membership mirror prune; it must run in
+        the same container session as mirror create so the recipes and the
+        concretized environment are exactly what produced the tree. The
+        output lands in the bind-mounted mirror (``.hpc_cf/``) and is read
+        back host-side.
+        """
+        self.ctr.exec(self._build_fetch_specs_script(out_path))
+
+    def _build_fetch_specs_script(self, out_path: str) -> str:
+        env_q = shell_quote(self.env.spack.env_name)
+        out_q = shell_quote(out_path)
+        payload = _FETCH_SPECS_PY.replace("__ENV_NAME__", self.env.spack.env_name)
+        return f"""{self._source_spack()}
+mkdir -p "$(dirname {out_q})"
+cat > /tmp/hpc_cf_fetch_specs.py <<'HPC_CF_PY'
+{payload}
+HPC_CF_PY
+spack -e {env_q} python /tmp/hpc_cf_fetch_specs.py > {out_q}
 """
 
     # ── Mirror verify ─────────────────────────────────────────────────────

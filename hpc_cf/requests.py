@@ -33,6 +33,12 @@ class AssetsRequest:
     skip_create_container: bool = False
     skip_verify: bool = False
     allow_concretize: bool = False
+    # Mirror prune (git side): dry-run report by default, deletions only
+    # with the explicit apply flag. Prunes to the CURRENT run's lock
+    # membership — on a shared local tree this removes other envs'
+    # sources, so local use starts with the dry run.
+    prune_mirror: bool = False
+    prune_apply: bool = False
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,8 @@ def assets_request_from_args(args: Any) -> AssetsRequest:
         skip_create_container=bool(getattr(args, "skip_create_container", False)),
         skip_verify=bool(getattr(args, "skip_verify", False)),
         allow_concretize=bool(getattr(args, "allow_concretize", False)),
+        prune_mirror=bool(getattr(args, "prune_mirror", False)),
+        prune_apply=bool(getattr(args, "prune_apply", False)),
     )
 
 

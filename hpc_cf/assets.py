@@ -12,7 +12,9 @@ The CLI builds an :class:`~hpc_cf.requests.AssetsRequest` and calls
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from pathlib import Path
 
 import yaml
@@ -26,6 +28,12 @@ from hpc_cf.environment import (
     load_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
+from hpc_cf.mirror_prune import (
+    FETCH_SPECS_FILENAME,
+    PRUNE_REPORT_FILENAME,
+    apply_git_prune_plan,
+    plan_git_side_prune,
+)
 from hpc_cf.requests import AssetsRequest
 from hpc_cf.spack_ops import SpackOps, resolve_env_paths
 from hpc_cf.template import detect_non_host_network
@@ -363,6 +371,88 @@ def _verify_host_side(
 # ── Status ──────────────────────────────────────────────────────────────
 
 
+def run_mirror_prune(
+    ctr: Container,
+    env_name: str,
+    *,
+    apply_plan: bool,
+    fresh_after: float,
+    layout: ProjectLayout | None = None,
+) -> None:
+    """Prune the mirror's git cache down to this run's lock membership.
+
+    ``fresh_after`` must be a timestamp captured right before this run's
+    ``spack mirror create`` — blobs newer than it were fetched by this
+    run (the branch-floating class relies on that signal; see
+    :mod:`hpc_cf.mirror_prune`). Runs under the shared-mirror write lock:
+    export fetch specs (container, same session as mirror create) → plan
+    (pure) → apply (unless dry run). An empty or unparseable sidecar is a
+    hard refusal: identity unknown means keep, but a silently-broken
+    export must not disable pruning unnoticed.
+    """
+    layout = layout or ProjectLayout.default()
+    mirror_host = layout.spack_mirror_dir
+    sidecar_host = mirror_host / ".hpc_cf" / FETCH_SPECS_FILENAME
+    sidecar_container = (
+        f"{layout.container_mirror_dir()}/.hpc_cf/{FETCH_SPECS_FILENAME}"
+    )
+
+    _, ops = _make_spack_ops(env_name, ctr, layout=layout)
+    store = SharedMirrorStore(layout)
+    with store.exclusive_write():
+        ops.export_fetch_specs(sidecar_container)
+        if not sidecar_host.is_file() or sidecar_host.stat().st_size == 0:
+            raise RuntimeError(
+                f"fetch-spec sidecar missing after export: {sidecar_host}"
+            )
+        try:
+            specs = json.loads(sidecar_host.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"fetch-spec sidecar is not valid JSON: {sidecar_host}"
+            ) from exc
+        if not isinstance(specs, list) or not specs:
+            raise RuntimeError(
+                f"fetch-spec sidecar is empty — recipe introspection "
+                f"produced nothing; refusing to prune: {sidecar_host}"
+            )
+
+        plan = plan_git_side_prune(mirror_host, specs, fresh_after=fresh_after)
+        for line in plan.summary:
+            logger.info("mirror-prune: %s", line)
+
+        report = {
+            "applied": bool(apply_plan),
+            "fresh_after": fresh_after,
+            "freed_bytes": plan.freed_bytes,
+            "delete_blobs": [str(p) for p in plan.delete_blobs],
+            "delete_links": [str(p) for p in plan.delete_links],
+            "remove_dirs": [str(p) for p in plan.remove_dirs],
+            "guarded_dirs": list(plan.guarded_dirs),
+        }
+        report_host = mirror_host / ".hpc_cf" / PRUNE_REPORT_FILENAME
+        report_host.parent.mkdir(parents=True, exist_ok=True)
+        report_host.write_text(
+            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+        if plan.is_noop:
+            logger.info("mirror-prune: nothing to delete (steady state)")
+        elif apply_plan:
+            apply_git_prune_plan(mirror_host, plan)
+            logger.info(
+                "mirror-prune: applied — freed %.2f GiB from the git cache",
+                plan.freed_bytes / 2**30,
+            )
+        else:
+            logger.warning(
+                "mirror-prune: DRY RUN — re-run with --prune-mirror-apply "
+                "to delete %d blob(s) (%.2f GiB)",
+                len(plan.delete_blobs),
+                plan.freed_bytes / 2**30,
+            )
+
+
 def run_status(
     ctr: Container,
     env_name: str,
@@ -480,6 +570,9 @@ def run_assets(
             layout=layout,
         )
 
+        # fresh_after anchors the branch-floating prune class to blobs
+        # fetched by THIS run (restored seed content carries epoch-0 mtimes).
+        mirror_started = time.time()
         run_mirror(
             ctr,
             request.env,
@@ -489,6 +582,15 @@ def run_assets(
 
         if not request.skip_verify:
             run_verify(ctr, request.env, layout=layout)
+
+        if request.prune_mirror:
+            run_mirror_prune(
+                ctr,
+                request.env,
+                apply_plan=request.prune_apply,
+                fresh_after=mirror_started,
+                layout=layout,
+            )
         return
 
     # ── Explicit actions mode ──
@@ -510,12 +612,21 @@ def run_assets(
         if not request.env:
             raise ValueError("--env is required with --download-mirror")
         ensure_image_once()
+        mirror_started = time.time()
         run_mirror(
             ctr,
             request.env,
             layout=layout,
             allow_concretize=request.allow_concretize,
         )
+        if request.prune_mirror:
+            run_mirror_prune(
+                ctr,
+                request.env,
+                apply_plan=request.prune_apply,
+                fresh_after=mirror_started,
+                layout=layout,
+            )
 
     if request.verify_mirror:
         if not request.env:

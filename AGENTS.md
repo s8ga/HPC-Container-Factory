@@ -106,6 +106,24 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   `assets/spack-buildcache/` is an opaque Spack-owned filesystem cache.
   Factory metadata and its shared/exclusive flock live beside it in
   `assets/spack-buildcache-state/`; never inspect or mutate cache internals.
+- Mirror git-cache prune (`hpc_cf.mirror_prune`): `spack mirror create` is
+  fill-only, so `_source-cache/git/` grows unbounded (each py-torch pin
+  alone is one ~4 GiB full-repo bundle). After mirror+verify, the assets
+  workflow can prune the git side down to the current run's lock
+  membership (`--prune-mirror`, deletions only with `--prune-mirror-apply`;
+  the nightly pipeline passes both). Identity: a container-side
+  `spack python` export (`fetch-specs.json` under `.hpc_cf/`) maps every
+  concrete spec to its fetcher (git URL + commit; on spack 1.2
+  `fetcher.git` is the git EXECUTABLE, the URL is `.url`). Planner rules:
+  pinned-commit repos keep exactly their commits; branch-floating repos
+  keep blobs fetched this run (`fresh_after` timestamp — seed restores
+  carry epoch-0 mtimes, so freshness is only valid inside one run) with a
+  single-survivor rule when stagnant; repos matching no spec (py-torch
+  submodule caches) are kept whole. Symlinks in the per-package layer are
+  repaired to match; the archive side is untouched (v1 — patch checksums
+  ARE in the lock, so an archive-side v2 is possible). Empty/broken
+  sidecar = hard refusal. A shared LOCAL tree hosts multiple envs — local
+  pruning deletes other envs' sources; always review the dry-run first.
 - Buildcache target state is the full CP2K **opensource CPU** track (not a
   single-env pilot). Enable per env via `spack.buildcache.enabled: true`
   (`policy: auto`, `padded_length: 128`). MKL and ROCm environments remain

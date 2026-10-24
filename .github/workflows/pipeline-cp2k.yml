@@ -290,7 +290,7 @@ jobs:
           sed -i -E "s/(cp2k@master[^\"]*)\"/\1 commit=${COMMIT}\"/" "$SPEC_FILE"
           grep -n "commit=${COMMIT}" "$SPEC_FILE"
 
-      - name: Assets — concretize + source mirror + verify
+      - name: Assets — concretize + source mirror + verify + prune
         id: assets
         run: |
           ARGS=(--env "${ENV_NAME}")
@@ -300,6 +300,12 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             ARGS+=(--allow-concretize)
           fi
+          # Lock-membership prune of the git cache: the mirror image is
+          # per-env and only this run's lock consumes it, so stale bundles
+          # (retired pins, yesterday's floating-master snapshots) are pure
+          # dead weight — and the unbounded growth blew the runner's disk
+          # quota. Guarded dirs (submodule caches) are kept by the planner.
+          ARGS+=(--prune-mirror --prune-mirror-apply)
           ./venv/bin/python -m hpc_cf assets "${ARGS[@]}"
 
       # resolved-repos.yaml (floating custom-repo tips resolved by assets)
