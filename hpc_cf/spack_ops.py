@@ -147,7 +147,45 @@ for spec in (env.all_specs() if env else []):
             fetcher, "checksum", None
         )
         if isinstance(digest, str) and digest:
-            rec["sha256"] = digest
+            rec["sha256"] = digest.lower()
+    # Recipe version-dict checksum: the lock node carries no source
+    # checksum and the fetcher attrs are not populated at build time on
+    # spack 1.2 (probed) — the version dict is the reliable source.
+    try:
+        vdict = spec.package.versions.get(spec.version)
+        if isinstance(vdict, dict):
+            for key in ("sha256", "md5"):
+                val = vdict.get(key)
+                if isinstance(val, str) and val:
+                    rec.setdefault(key, val.lower())
+    except Exception:
+        pass
+    # Patch checksums (recipe-level superset of the lock's node patches —
+    # over-including only ever under-prunes) and fetched resources, which
+    # the mirror caches but the lock does not represent as nodes.
+    try:
+        shas = []
+        for plist in (getattr(spec.package, "patches", {}) or {}).values():
+            for patch in plist:
+                sha = getattr(patch, "sha256", None)
+                if isinstance(sha, str) and sha:
+                    shas.append(sha.lower())
+        if shas:
+            rec["patches"] = shas
+    except Exception:
+        pass
+    try:
+        shas = []
+        for res in (getattr(spec.package, "resources", {}) or {}).values():
+            for key in ("sha256", "md5", "checksum"):
+                val = getattr(res, key, None)
+                if isinstance(val, str) and val:
+                    shas.append(val.lower())
+                    break
+        if shas:
+            rec["resource_checksums"] = shas
+    except Exception:
+        pass
     out.append(rec)
 print(json.dumps(out))
 """

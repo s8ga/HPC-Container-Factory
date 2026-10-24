@@ -32,7 +32,7 @@ from hpc_cf.mirror_prune import (
     FETCH_SPECS_FILENAME,
     PRUNE_REPORT_FILENAME,
     apply_git_prune_plan,
-    plan_git_side_prune,
+    plan_mirror_prune,
 )
 from hpc_cf.requests import AssetsRequest
 from hpc_cf.spack_ops import SpackOps, resolve_env_paths
@@ -417,7 +417,7 @@ def run_mirror_prune(
                 f"produced nothing; refusing to prune: {sidecar_host}"
             )
 
-        plan = plan_git_side_prune(mirror_host, specs, fresh_after=fresh_after)
+        plan = plan_mirror_prune(mirror_host, specs, fresh_after=fresh_after)
         for line in plan.summary:
             logger.info("mirror-prune: %s", line)
 
@@ -429,6 +429,7 @@ def run_mirror_prune(
             "delete_links": [str(p) for p in plan.delete_links],
             "remove_dirs": [str(p) for p in plan.remove_dirs],
             "guarded_dirs": list(plan.guarded_dirs),
+            "archive_delete_blobs": [str(p) for p in plan.archive_delete_blobs],
         }
         report_host = mirror_host / ".hpc_cf" / PRUNE_REPORT_FILENAME
         report_host.parent.mkdir(parents=True, exist_ok=True)

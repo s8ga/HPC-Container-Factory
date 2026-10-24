@@ -120,10 +120,13 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   carry epoch-0 mtimes, so freshness is only valid inside one run) with a
   single-survivor rule when stagnant; repos matching no spec (py-torch
   submodule caches) are kept whole. Symlinks in the per-package layer are
-  repaired to match; the archive side is untouched (v1 — patch checksums
-  ARE in the lock, so an archive-side v2 is possible). Empty/broken
-  sidecar = hard refusal. A shared LOCAL tree hosts multiple envs — local
-  pruning deletes other envs' sources; always review the dry-run first.
+  repaired to match. The archive side prunes by checksum membership:
+  blob filenames ARE source checksums; the allowed set comes from the
+  sidecar's recipe version-dict sha256/md5 (lock nodes carry no source
+  checksum), patch checksums, and resource checksums — an empty allowlist
+  keeps the whole archive side. Empty/broken sidecar = hard refusal.
+  A shared LOCAL tree hosts multiple envs — local pruning deletes other
+  envs' sources; always review the dry-run first.
 - Buildcache target state is the full CP2K **opensource CPU** track (not a
   single-env pilot). Enable per env via `spack.buildcache.enabled: true`
   (`policy: auto`, `padded_length: 128`). MKL and ROCm environments remain

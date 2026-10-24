@@ -331,3 +331,120 @@ def test_url_tail_normalization() -> None:
     # Two-component URL (host/repo, no owner): the host IS the tail's
     # first component — matching whatever dir layout the mirror used.
     assert _url_tail("https://example.com/repo") == "example.com/repo"
+
+
+# ── Archive side (v2): checksum membership ─────────────────────────────
+#
+# Archive blobs are content-addressed: the filename IS the source's
+# sha256/md5. The allowed set comes from the sidecar: recipe version-dict
+# checksums ("sha256"/"md5" keys), patch checksums ("patches") and fetched
+# resources ("resource_checksums") — the lock node itself carries no
+# source checksum (only patches), so the sidecar is the sole identity feed.
+
+ARCH_KEEP = "ab" * 32   # 64-hex sha256
+ARCH_STALE = "cd" * 32
+ARCH_PATCH = "ef" * 32
+
+
+def make_archive_blob(tree: Path, checksum: str, *, size: int = 100, suffix: str = ".tar.gz") -> Path:
+    blob = tree / "_source-cache" / "archive" / checksum[:2] / f"{checksum}{suffix}"
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(b"a" * size)
+    os.utime(blob, (STALE, STALE))
+    return blob
+
+
+def test_archive_membership_deletes_stale_keeps_current(tmp_path: Path) -> None:
+    from hpc_cf.mirror_prune import plan_mirror_prune
+
+    tree = tmp_path / "mirror"
+    make_archive_blob(tree, ARCH_KEEP, size=150)
+    make_archive_blob(tree, ARCH_STALE, size=250)
+    specs = [torch_spec(KEEP_SHA) | {"sha256": ARCH_KEEP}]
+
+    plan = plan_mirror_prune(tree, specs, fresh_after=FRESH)
+
+    assert sorted(rel(tree, p) for p in plan.archive_delete_blobs) == [
+        Path(f"_source-cache/archive/{ARCH_STALE[:2]}/{ARCH_STALE}.tar.gz")
+    ]
+    assert plan.freed_bytes == 250
+
+
+def test_archive_patch_and_resource_checksums_kept(tmp_path: Path) -> None:
+    from hpc_cf.mirror_prune import plan_mirror_prune
+
+    tree = tmp_path / "mirror"
+    patch_blob = make_archive_blob(tree, ARCH_PATCH, suffix="")  # bare checksum name
+    res_sha = "12" * 32
+    res_blob = make_archive_blob(tree, res_sha, suffix=".zip")
+    stale = make_archive_blob(tree, ARCH_STALE)
+    specs = [
+        torch_spec(KEEP_SHA)
+        | {"patches": [ARCH_PATCH], "resource_checksums": [res_sha]}
+    ]
+
+    plan = plan_mirror_prune(tree, specs, fresh_after=FRESH)
+
+    kept = {rel(tree, p) for p in plan.archive_delete_blobs}
+    assert rel(tree, patch_blob) not in kept
+    assert rel(tree, res_blob) not in kept
+    assert rel(tree, stale) in kept
+
+
+def test_archive_no_identity_keeps_everything(tmp_path: Path) -> None:
+    """A spec with no checksum fields (floating git package) must not
+    authorize any archive deletion — identity unknown means keep."""
+    from hpc_cf.mirror_prune import plan_mirror_prune
+
+    tree = tmp_path / "mirror"
+    make_archive_blob(tree, ARCH_STALE)
+    make_archive_blob(tree, ARCH_KEEP)
+
+    plan = plan_mirror_prune(tree, [torch_spec(None)], fresh_after=FRESH)
+
+    assert plan.archive_delete_blobs == ()
+
+
+def test_git_wrapper_leaves_archive_untouched(tmp_path: Path) -> None:
+    tree = tmp_path / "mirror"
+    make_archive_blob(tree, ARCH_STALE)
+    specs = [torch_spec(KEEP_SHA) | {"sha256": ARCH_KEEP}]
+
+    plan = plan_git_side_prune(tree, specs, fresh_after=FRESH)
+
+    assert plan.archive_delete_blobs == ()
+    assert plan.freed_bytes == 0
+
+
+def test_archive_link_repaired_and_empty_dir_removed(tmp_path: Path) -> None:
+    from hpc_cf.mirror_prune import apply_git_prune_plan, plan_mirror_prune
+
+    tree = tmp_path / "mirror"
+    keep = make_archive_blob(tree, ARCH_KEEP)
+    stale = make_archive_blob(tree, ARCH_STALE)
+    make_link(tree, "cp2k", "cp2k-2026.2.tar.bz2", keep)
+    make_link(tree, "sirius", "sirius-7.11.1.tar.gz", stale)
+    specs = [torch_spec(KEEP_SHA) | {"sha256": ARCH_KEEP}]
+
+    plan = plan_mirror_prune(tree, specs, fresh_after=FRESH)
+    assert Path("sirius/sirius-7.11.1.tar.gz") in [rel(tree, p) for p in plan.delete_links]
+    assert any("sirius-7.11.1" in line for line in plan.summary)
+
+    apply_git_prune_plan(tree, plan)
+    assert keep.exists()
+    assert (tree / "cp2k/cp2k-2026.2.tar.bz2").is_symlink()
+    assert not stale.exists()
+    assert not (tree / "sirius").exists()
+
+
+def test_md5_membership_matches_bare_blob(tmp_path: Path) -> None:
+    from hpc_cf.mirror_prune import plan_mirror_prune
+
+    tree = tmp_path / "mirror"
+    md5 = "0123456789abcdef0123456789abcdef"
+    blob = make_archive_blob(tree, md5, suffix="")
+    make_archive_blob(tree, ARCH_STALE)
+    specs = [torch_spec(KEEP_SHA) | {"md5": md5}]
+
+    plan = plan_mirror_prune(tree, specs, fresh_after=FRESH)
+    assert rel(tree, blob) not in [rel(tree, p) for p in plan.archive_delete_blobs]
