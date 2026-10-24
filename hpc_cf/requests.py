@@ -111,7 +111,8 @@ def assets_request_from_args(args: Any) -> AssetsRequest:
         skip_verify=bool(getattr(args, "skip_verify", False)),
         allow_concretize=bool(getattr(args, "allow_concretize", False)),
         prune_mirror=bool(getattr(args, "prune_mirror", False)),
-        prune_apply=bool(getattr(args, "prune_apply", False)),
+        # argparse dest of --prune-mirror-apply is prune_mirror_apply.
+        prune_apply=bool(getattr(args, "prune_mirror_apply", False)),
     )
 
 

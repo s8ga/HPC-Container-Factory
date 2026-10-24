@@ -199,8 +199,30 @@ def test_fetch_specs_script_content() -> None:
 def test_request_flag_mapping() -> None:
     from hpc_cf.requests import assets_request_from_args
 
-    args = SimpleNamespace(prune_mirror=True, prune_apply=True)
+    args = SimpleNamespace(prune_mirror=True, prune_mirror_apply=True)
     req = assets_request_from_args(args)
     assert req.prune_mirror and req.prune_apply
     req_off = assets_request_from_args(SimpleNamespace())
     assert not req_off.prune_mirror and not req_off.prune_apply
+
+
+def test_cli_parse_prune_flags_end_to_end() -> None:
+    """Regression: --prune-mirror-apply's argparse dest is
+    prune_mirror_apply — the request mapping once read ``prune_apply`` and
+    silently forced every CI prune into a dry run."""
+    from hpc_cf.cli import build_parser
+    from hpc_cf.requests import assets_request_from_args
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["assets", "--env", "some-env", "--prune-mirror", "--prune-mirror-apply"]
+    )
+    req = assets_request_from_args(args)
+    assert req.prune_mirror is True
+    assert req.prune_apply is True
+
+    dry = assets_request_from_args(
+        parser.parse_args(["assets", "--env", "some-env", "--prune-mirror"])
+    )
+    assert dry.prune_mirror is True
+    assert dry.prune_apply is False
