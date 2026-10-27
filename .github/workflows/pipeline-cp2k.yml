@@ -867,6 +867,15 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y apptainer
           apptainer --version
+          # Ubuntu 24.10+ (the 26.04 runner image) restricts unprivileged
+          # user namespaces via AppArmor; apptainer's unprivileged build
+          # then dies with "Failed to create mount namespace". Relax the
+          # restriction — this VM is ephemeral and single-tenant — and
+          # fail fast if userns is still unavailable.
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null | grep -qx 1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare -Ur true
 
       - name: Build SIF via the factory (def template + compression)
         run: |
