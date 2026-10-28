@@ -28,11 +28,6 @@ on:
         description: "Fork branch to build (floats to its head; pair with fork_url)"
         required: false
         default: ""
-      prepare_only:
-        description: "Only prepare: concretize + mirror + verify + prune (validates new pins cheaply; no binaries/runtime/sif)"
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   pipeline:
@@ -45,7 +40,6 @@ jobs:
       cp2k_commit: ${{ inputs.commit }}
       fork_url: ${{ inputs.fork_url }}
       fork_branch: ${{ inputs.fork_branch }}
-      prepare_only: ${{ inputs.prepare_only }}
     permissions:
       contents: write
       packages: write

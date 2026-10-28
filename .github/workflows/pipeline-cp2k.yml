@@ -48,6 +48,8 @@
 # prepare_only gates binaries (runtime/sif cascade-skip via needs): a
 # validation-only run that still warms the mirror image with this run's
 # sources, patches, and prune state, so the following full run starts hot.
+# Entry point: the regen-lock workflow (deliberately outside
+# nightly-auto-retry — regen failures are config problems, not transients).
 #
 # The lock produced/consumed by each run travels between jobs as a
 # workflow artifact (name: build-lock) because admission gates key on

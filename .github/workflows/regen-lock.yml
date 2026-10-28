@@ -1,0 +1,46 @@
+# Lock regeneration entry point: runs ONLY the pipeline's prepare job
+# (concretize + source mirror + verify + prune + mirror publish) via its
+# prepare_only gate, and uploads the build-lock artifact (spack.lock +
+# resolved-repos.yaml) to commit back as the env's committed lock.
+#
+# This is the remote equivalent of the local
+#   python -m hpc_cf assets --env <env> --allow-concretize
+# doctrine: assets skips concretize whenever a lock is present, so the
+# env's stale spack.lock must be DELETED on the branch first — then this
+# run re-solves against the env's pinned repos (custom_repos commits,
+# patch shas) and the downloaded artifact becomes the new committed lock.
+#
+# Deliberately NOT covered by nightly-auto-retry (it watches
+# nightly-cp2k only): a failed regen is a config problem — bad pin,
+# unsolvable spec, mirror rejection — and an automatic full rerun would
+# just burn another ~10-minute solve. Diagnose, fix, re-dispatch.
+name: regen-lock
+
+on:
+  workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Environment under spack-envs/ whose lock to regenerate (delete its committed spack.lock first — prepare re-concretizes only when the lock is absent)"
+        required: true
+        default: cp2k_opensource-master-force-avx512
+
+concurrency:
+  # Same serialization family as a nightly dispatch for the same env:
+  # both publish the dated mirror layer, so they must not interleave
+  # crane appends. The pipeline's own group ("regen-lock-<env>") nests
+  # inside this one and never conflicts with itself.
+  group: nightly-cp2k-${{ inputs.env_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    uses: ./.github/workflows/pipeline-cp2k.yml
+    with:
+      env_name: ${{ inputs.env_name }}
+      # nightly channel = --allow-concretize semantics in prepare; the
+      # committed lock is intentionally absent when this run starts.
+      channel: nightly
+      prepare_only: true
+    permissions:
+      contents: write
+      packages: write
