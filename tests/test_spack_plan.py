@@ -388,7 +388,14 @@ def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
 )
 def test_opensource_cp2k_pins_repo_commits(env_name: str, cp2k_sha: str) -> None:
     """Opensource CP2K pins cp2k git tip; force envs also pin shared s8ga SHA."""
-    s8ga_pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    # The cp2k force-avx512 track moved ahead of the ABACUS track (which
+    # stays on d0ee3f4): cba35dc carries the HAVE_AVX512_XEON forced-kernel
+    # fix, the openblas recipe rebase, and the cp2k @master fork.
+    s8ga_pins = {
+        "cp2k_opensource-2025.2-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
+        "cp2k_opensource-2026.1-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
+        "cp2k_opensource-2026.2-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
+    }
     env_dir = SPACK_ENVS_DIR / env_name
     spec = load_environment_spec(env_dir)
     rendered = _render_env_dockerfile(env_dir)
@@ -410,6 +417,7 @@ def test_opensource_cp2k_pins_repo_commits(env_name: str, cp2k_sha: str) -> None
     if not s8ga_repos:
         assert "s8ga_repo_commit" not in spec.template_vars
         return
+    s8ga_pin = s8ga_pins[env_name]
     assert all(repo.commit == s8ga_pin for repo in s8ga_repos)
     assert spec.template_vars["s8ga_repo_commit"] == s8ga_pin
     assert f'git checkout "{s8ga_pin}"' in rendered
