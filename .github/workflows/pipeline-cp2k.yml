@@ -45,6 +45,10 @@
 #             when it is missing or stale; the release-track guard. Cache
 #             reuse aligns exactly where hashes match the committed pins.
 #
+# prepare_only gates binaries (runtime/sif cascade-skip via needs): a
+# validation-only run that still warms the mirror image with this run's
+# sources, patches, and prune state, so the following full run starts hot.
+#
 # The lock produced/consumed by each run travels between jobs as a
 # workflow artifact (name: build-lock) because admission gates key on
 # lock SHA: every job in this run must see the same lock. Floating locks
@@ -83,6 +87,11 @@ on:
         required: false
         type: string
         default: ""
+      prepare_only:
+        description: "Run only prepare (concretize + source mirror + verify + prune + mirror publish); skip binaries/runtime/sif — cheap validation of new pins (patch shas, repo commits) before committing to a full build"
+        required: false
+        type: boolean
+        default: false
 
 # Every checkout is pinned to the active development branch (DEFAULT_REF):
 # scheduled runs always fire from the default branch and callers have no
@@ -369,6 +378,9 @@ jobs:
   binaries:
     name: binaries (install + publish buildcache)
     needs: prepare
+    # prepare_only: validation stops after prepare; runtime/sif cascade-skip
+    # (needs on a skipped job skips them too — no always() anywhere).
+    if: ${{ !inputs.prepare_only }}
     runs-on: ubuntu-latest
     # Forwarded so dependents read a DIRECT dependency's output;
     # needs.prepare.outputs.* would be empty in indirect consumers.
