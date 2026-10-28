@@ -10,6 +10,7 @@ may still hand-write ``spack repo add`` until migrated.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -369,39 +370,29 @@ def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
 
 
 @pytest.mark.parametrize(
-    ("env_name", "cp2k_sha"),
+    "env_name",
     [
-        ("cp2k_opensource-2025.2", "c3a8adfec55aed817436b8b681645390fd0dd801"),
-        (
-            "cp2k_opensource-2025.2-force-avx512",
-            "c3a8adfec55aed817436b8b681645390fd0dd801",
-        ),
-        (
-            "cp2k_opensource-2026.1-force-avx512",
-            "757bb76a80be37bef49d7383b4f7fce122940895",
-        ),
-        (
-            "cp2k_opensource-2026.2-force-avx512",
-            "67b5da876dd6a76b8b021d5a04d1c81ba79a4c50",
-        ),
+        "cp2k_opensource-2025.2",
+        "cp2k_opensource-2025.2-force-avx512",
+        "cp2k_opensource-2026.1-force-avx512",
+        "cp2k_opensource-2026.2-force-avx512",
     ],
 )
-def test_opensource_cp2k_pins_repo_commits(env_name: str, cp2k_sha: str) -> None:
-    """Opensource CP2K pins cp2k git tip; force envs also pin shared s8ga SHA."""
-    # The cp2k force-avx512 track moved ahead of the ABACUS track (which
-    # stays on d0ee3f4): cba35dc carries the HAVE_AVX512_XEON forced-kernel
-    # fix, the openblas recipe rebase, and the cp2k @master fork.
-    s8ga_pins = {
-        "cp2k_opensource-2025.2-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
-        "cp2k_opensource-2026.1-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
-        "cp2k_opensource-2026.2-force-avx512": "cba35dcd2d6d12f0e94a7a7c0a0dfea5852ee0cc",
-    }
+def test_opensource_cp2k_pins_repo_commits(env_name: str) -> None:
+    """Repo pins stay consistent across custom_repos/template_vars/Dockerfile.
+
+    Pins are deliberately NOT hardcoded here: bumping a pin in env.yaml
+    must not require editing the test. What must hold is the dual-write
+    invariant — every pinned 40-hex sha appears in custom_repos, the
+    matching template var, and a real (non-comment) git checkout line.
+    """
     env_dir = SPACK_ENVS_DIR / env_name
     spec = load_environment_spec(env_dir)
     rendered = _render_env_dockerfile(env_dir)
     cp2k_repo = _cp2k_git_repo(spec)
     assert cp2k_repo is not None
-    assert cp2k_repo.commit == cp2k_sha
+    cp2k_sha = cp2k_repo.commit
+    assert re.fullmatch(r"[0-9a-f]{40}", cp2k_sha)
     assert spec.template_vars["cp2k_dev_repo_commit"] == cp2k_sha
     assert f'git checkout "{cp2k_sha}"' in rendered
     # Commit pin must still exercise {{ cp2k_branch }} (not comment-only).
@@ -417,9 +408,9 @@ def test_opensource_cp2k_pins_repo_commits(env_name: str, cp2k_sha: str) -> None
     if not s8ga_repos:
         assert "s8ga_repo_commit" not in spec.template_vars
         return
-    s8ga_pin = s8ga_pins[env_name]
+    s8ga_pin = spec.template_vars["s8ga_repo_commit"]
+    assert re.fullmatch(r"[0-9a-f]{40}", s8ga_pin)
     assert all(repo.commit == s8ga_pin for repo in s8ga_repos)
-    assert spec.template_vars["s8ga_repo_commit"] == s8ga_pin
     assert f'git checkout "{s8ga_pin}"' in rendered
 
 
@@ -455,7 +446,11 @@ def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
     rendered = _render_env_dockerfile(env_dir)
-    pin = "d0ee3f460a2543c05c693317c767652abf964db7"
+    # Pin is read from the spec, not hardcoded: the dual-write invariant
+    # (monorepo commit shared by both custom_repos entries, template var,
+    # and rendered checkouts) is the contract under test.
+    pin = spec.template_vars["s8ga_repo_commit"]
+    assert re.fullmatch(r"[0-9a-f]{40}", pin)
 
     assert spec.spack.version == "1.2.0"
     assert plan.env_name == "abacus-env"
