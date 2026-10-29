@@ -373,14 +373,34 @@ jobs:
       # v5 still declares node20; GitHub force-runs it on node24 (the
       # official deprecation bridge), so the warning is accepted until
       # upstream ships a node24 major.
-      - name: Prune old mirror images (best-effort)
+      #
+      # Scoped per env: hpc-cf-inputs carries one tagged version per env
+      # per day; a package-wide keep-N would count sibling envs' mirrors
+      # against this env's budget and prune a mirror another run's
+      # binaries job is about to restore (suspected contributor to the
+      # 2026-10-29 crane PROTOCOL_ERROR stream deaths). Prefix-filtered:
+      # keep the newest 3 versions tagged ${ENV_NAME}-*, never this run's.
+      - name: Prune old mirror images (per-env prefix, best-effort)
         continue-on-error: true
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: hpc-cf-inputs
-          package-type: container
-          min-versions-to-keep: 3
-          delete-only-untagged-versions: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO_PATH="/user/packages/container/hpc-cf-inputs/versions"
+          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
+            --jq --arg p "${ENV_NAME}-" --arg keep "${ENV_NAME}-${NIGHTLY_DATE}" \
+            '[.[] | select(any(.metadata.container.tags[]; startswith($p)))]
+             | sort_by(.created_at) | reverse
+             | .[3:]
+             | map(select((.metadata.container.tags | index($keep)) == null))
+             | .[].id')
+          if [ "${#OLD[@]}" -eq 0 ]; then
+            echo "mirror versions within budget (per-env keep 3)"
+          else
+            for id in "${OLD[@]}"; do
+              gh api -X DELETE "$REPO_PATH/$id" && echo "pruned mirror version $id"
+            done
+          fi
 
   binaries:
     name: binaries (install + publish buildcache)
@@ -765,15 +785,35 @@ jobs:
             gh api -X DELETE "$REPO_PATH/$id" && echo "pruned fork version $id"
           done
 
-      # Same node20-v5 note as the prepare job's prune step.
-      - name: Prune old nightly images (best-effort)
+      # Scoped per env: the IMAGE_NAME package is shared by every env of
+      # this image family (all cp2k_opensource-* variants, all
+      # abacus_opensource-*). A package-wide keep-7 counts sibling envs'
+      # freshly pushed images against this env's budget — three parallel
+      # stable publishes raced it on 2026-10-29 and pruned each other's
+      # dated images (and the -release float) seconds after upload.
+      # Prefix-filtered: keep the newest 7 versions tagged
+      # ${ENV_SUFFIX}-*, never this run's dated tags.
+      - name: Prune old runtime images (per-env prefix, best-effort)
         continue-on-error: true
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: ${{ env.IMAGE_NAME }}
-          package-type: container
-          min-versions-to-keep: 7
-          delete-only-untagged-versions: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
+          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
+            --jq --arg p "${ENV_SUFFIX}-" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
+            '[.[] | select(any(.metadata.container.tags[]; startswith($p)))]
+             | sort_by(.created_at) | reverse
+             | .[7:]
+             | map(select((.metadata.container.tags | index($keep)) == null))
+             | .[].id')
+          if [ "${#OLD[@]}" -eq 0 ]; then
+            echo "runtime image versions within budget (per-env keep 7)"
+          else
+            for id in "${OLD[@]}"; do
+              gh api -X DELETE "$REPO_PATH/$id" && echo "pruned runtime image version $id"
+            done
+          fi
 
   # The distribution endpoint of this pipeline: a downloadable SIF on a
   # rolling public GitHub Release (the runtime SIF is well under the 2GB
