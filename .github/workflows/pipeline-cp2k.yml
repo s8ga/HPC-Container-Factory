@@ -1060,7 +1060,11 @@ jobs:
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
             --repo "$GITHUB_REPOSITORY" --clobber
           if [ "${{ inputs.channel }}" = "stable" ] && [ -z "${RELEASE_CREATE_FLAGS}" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            # PATCH needs the numeric release ID — the API has no
+            # PATCH-by-tag endpoint (a by-tag PATCH 404s and failed the
+            # job after a successful upload; 2026-10-29).
+            RID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq .id)
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RID}" \
               -f make_latest=false >/dev/null \
               && echo "Latest badge left with the flagship env (${FLAGSHIP_ENV})"
           fi
