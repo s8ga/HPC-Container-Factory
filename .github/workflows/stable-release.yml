@@ -1,24 +1,25 @@
-# Stable release track. Primary mode: run on frozen release/<env-name>
-# branches — the branch name IS the environment, and every job checks
-# out that exact branch (pipeline factory_ref), so the whole run builds
-# the tree that the release tag will point at. A workflow_dispatch
-# env_name input is also accepted for ad-hoc runs from any ref; the
-# frozen-branch publication guarantee then only holds if nothing is
-# pushed to that ref mid-build (warned, not blocked).
+# Stable release track. Dispatch with an env_name (the folder under
+# spack-envs/); the run itself cuts/re-points the frozen release/<env>
+# branch at the dispatch commit before building, so no manual branch
+# management is needed:
 #
-# Why a frozen branch: stable builds take hours, and the Actions token may
-# only create a release whose --target commit is the CURRENT branch head.
-# On the moving development branch the head drifts past the dispatch SHA
-# mid-build and publication 403s ("Resource not accessible by
-# integration" — diagnosed 2026-10-29). A release branch never moves, so
-# the run's GITHUB_SHA stays the head for the entire build.
+#   gh workflow run stable-release.yml --ref v2 -f env_name=<env>
 #
-# Operating procedure (nothing ever commits to release/* directly):
-#   1. finish the env's lock on v2 (regen-lock workflow, commit the lock)
-#   2. cut the release branch:   git push origin v2:refs/heads/release/<env>
-#   3. dispatch:                 gh workflow run stable-release.yml \
-#                                 --ref release/<env>
-#   4. re-release later: re-cut the branch from the new v2 head, dispatch
+# Why a frozen branch at all: stable builds take hours, and the Actions
+# token may only create a release whose --target commit is the CURRENT
+# branch head ("Resource not accessible by integration" otherwise —
+# diagnosed 2026-10-29). Every job checks out the dispatch commit
+# (factory_ref = github.sha), and the release/<env> pointer is moved to
+# that same commit up front, so the head cannot drift mid-build.
+# Same-env dispatches serialize via the hpc-cf-pipeline-<env>
+# concurrency family; the re-cut of the next queued run happens only
+# after the previous run finishes.
+#
+# Master moved after a release? Default: fix on v2, re-dispatch — the
+# re-cut rebuild is mostly buildcache hits (~40 min warm). True hotfix
+# without a full re-cut: cherry-pick onto release/<env> and dispatch
+# from that branch (input left empty); supported but diverges the
+# branch from v2 — use sparingly.
 #
 # Consumes the committed spack.lock fail-closed (no re-concretize) and
 # attaches the SIF to a permanent per-build release that is never pruned.
@@ -28,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       env_name:
-        description: "Environment folder under spack-envs/ — empty = derive from the release/<env> branch name. Non-empty lets you dispatch from any ref, but the frozen-branch publication guarantee only holds on release/* branches."
+        description: "Environment folder under spack-envs/. Empty = derive from a release/<env> branch dispatch (backport mode). The run cuts/re-points release/<env> at the dispatch commit automatically."
         required: false
         default: ""
 
@@ -38,15 +39,16 @@ permissions:
 
 jobs:
   resolve:
-    name: resolve env from the release branch name
+    name: resolve env and cut the release branch
     runs-on: ubuntu-latest
     outputs:
       env_name: ${{ steps.env.outputs.env_name }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
-      - name: Derive and validate ENV_NAME
+          # The exact tree this run builds and the release will tag.
+          ref: ${{ github.sha }}
+      - name: Derive ENV_NAME (input or branch name)
         # id is load-bearing: the job output reads steps.env.outputs.*.
         # A missing id yields an empty env_name, and the pipeline then
         # silently falls back to its cp2k default env — the 2026-10-29
@@ -58,28 +60,38 @@ jobs:
           set -euo pipefail
           if [ -n "${INPUT_ENV}" ]; then
             ENV_NAME="${INPUT_ENV}"
-            case "${GITHUB_REF_NAME}" in
-              release/*) ;;
-              *)
-                echo "::warning::dispatched with an explicit env from '${GITHUB_REF_NAME}' (not a release branch): the Actions token may only create the release tag while this commit stays the branch head — a mid-build push to this ref will fail publication."
-                ;;
-            esac
           else
             case "${GITHUB_REF_NAME}" in
-              release/*) ;;
+              release/*) ENV_NAME="${GITHUB_REF_NAME#release/}" ;;
               *)
-                echo "::error::stable-release needs env_name input OR a release/<env-name> branch (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
+                echo "::error::stable-release needs the env_name input (dispatched from any ref) or an empty input on a release/<env> branch (backport mode). Got neither on '${GITHUB_REF_NAME}'."
                 exit 1
                 ;;
             esac
-            ENV_NAME="${GITHUB_REF_NAME#release/}"
           fi
           if [[ ! -d "spack-envs/${ENV_NAME}" ]]; then
-            echo "::error::unknown env '${ENV_NAME}' (no spack-envs/${ENV_NAME} on ${GITHUB_REF_NAME})"
+            echo "::error::unknown env '${ENV_NAME}' (no spack-envs/${ENV_NAME} at ${GITHUB_SHA})"
             exit 1
           fi
           echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
-          echo "resolved env: ${ENV_NAME} from ${GITHUB_REF_NAME}"
+          echo "resolved env: ${ENV_NAME}"
+      - name: Cut/re-point release/<env> at the dispatch commit
+        run: |
+          set -euo pipefail
+          ENV_NAME="${{ steps.env.outputs.env_name }}"
+          # Input mode re-points the frozen pointer to this commit (force:
+          # it normally sits at the previous release; same-env dispatches
+          # are serialized by the concurrency family, so no racing writer).
+          # The tree's workflow files are identical to the pushed ref we
+          # dispatched from, so the App-token workflow-file guard does not
+          # trigger. Backport mode (dispatched ON the branch) is a no-op:
+          # the pointer already sits at the dispatch commit.
+          if [ -n "${{ inputs.env_name }}" ]; then
+            git push --force "origin" "${GITHUB_SHA}:refs/heads/release/${ENV_NAME}"
+            echo "release/${ENV_NAME} -> ${GITHUB_SHA}"
+          else
+            echo "backport mode: release/${ENV_NAME} stays at ${GITHUB_SHA}"
+          fi
 
   pipeline:
     needs: resolve
@@ -87,5 +99,5 @@ jobs:
     with:
       env_name: ${{ needs.resolve.outputs.env_name }}
       channel: stable
-      # Build the frozen tree this branch holds, not the moving v2.
-      factory_ref: ${{ github.ref_name }}
+      # Build the exact dispatch commit — never a moving ref.
+      factory_ref: ${{ github.sha }}
