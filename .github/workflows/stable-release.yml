@@ -13,13 +13,13 @@
 # Operating procedure (nothing ever commits to release/* directly):
 #   1. finish the env's lock on v2 (regen-lock workflow, commit the lock)
 #   2. cut the release branch:   git push origin v2:refs/heads/release/<env>
-#   3. dispatch:                 gh workflow run stable-cp2k.yml \
+#   3. dispatch:                 gh workflow run stable-release.yml \
 #                                 --ref release/<env>
 #   4. re-release later: re-cut the branch from the new v2 head, dispatch
 #
 # Consumes the committed spack.lock fail-closed (no re-concretize) and
 # attaches the SIF to a permanent per-build release that is never pruned.
-name: stable-cp2k
+name: stable-release
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
           case "${GITHUB_REF_NAME}" in
             release/*) ;;
             *)
-              echo "::error::stable-cp2k runs on release/<env-name> branches only (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
+              echo "::error::stable-release runs on release/<env-name> branches only (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
               exit 1
               ;;
           esac
