@@ -1,7 +1,10 @@
-# Stable release track. Runs ONLY on frozen release/<env-name> branches:
-# the branch name IS the environment (no dispatch inputs), and every job
-# checks out that exact branch (pipeline factory_ref), so the whole run
-# builds the tree that the release tag will point at.
+# Stable release track. Primary mode: run on frozen release/<env-name>
+# branches — the branch name IS the environment, and every job checks
+# out that exact branch (pipeline factory_ref), so the whole run builds
+# the tree that the release tag will point at. A workflow_dispatch
+# env_name input is also accepted for ad-hoc runs from any ref; the
+# frozen-branch publication guarantee then only holds if nothing is
+# pushed to that ref mid-build (warned, not blocked).
 #
 # Why a frozen branch: stable builds take hours, and the Actions token may
 # only create a release whose --target commit is the CURRENT branch head.
@@ -23,6 +26,11 @@ name: stable-release
 
 on:
   workflow_dispatch:
+    inputs:
+      env_name:
+        description: "Environment folder under spack-envs/ — empty = derive from the release/<env> branch name. Non-empty lets you dispatch from any ref, but the frozen-branch publication guarantee only holds on release/* branches."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -44,16 +52,28 @@ jobs:
         # silently falls back to its cp2k default env — the 2026-10-29
         # misroute where an abacus dispatch built cp2k 2026.2 end to end.
         id: env
+        env:
+          INPUT_ENV: ${{ inputs.env_name }}
         run: |
           set -euo pipefail
-          case "${GITHUB_REF_NAME}" in
-            release/*) ;;
-            *)
-              echo "::error::stable-release runs on release/<env-name> branches only (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
-              exit 1
-              ;;
-          esac
-          ENV_NAME="${GITHUB_REF_NAME#release/}"
+          if [ -n "${INPUT_ENV}" ]; then
+            ENV_NAME="${INPUT_ENV}"
+            case "${GITHUB_REF_NAME}" in
+              release/*) ;;
+              *)
+                echo "::warning::dispatched with an explicit env from '${GITHUB_REF_NAME}' (not a release branch): the Actions token may only create the release tag while this commit stays the branch head — a mid-build push to this ref will fail publication."
+                ;;
+            esac
+          else
+            case "${GITHUB_REF_NAME}" in
+              release/*) ;;
+              *)
+                echo "::error::stable-release needs env_name input OR a release/<env-name> branch (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
+                exit 1
+                ;;
+            esac
+            ENV_NAME="${GITHUB_REF_NAME#release/}"
+          fi
           if [[ ! -d "spack-envs/${ENV_NAME}" ]]; then
             echo "::error::unknown env '${ENV_NAME}' (no spack-envs/${ENV_NAME} on ${GITHUB_REF_NAME})"
             exit 1
