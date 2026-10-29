@@ -120,11 +120,12 @@ permissions:
   packages: write
 
 concurrency:
-  # Keyed by caller workflow + environment: channels run independently,
-  # a repeated dispatch of the same channel+env queues instead of being
-  # cancelled (both channels publish the same dated mirror tag when they
-  # share an env, so those still serialize).
-  group: ${{ github.workflow }}-${{ inputs.fork_branch || inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  # Constant prefix (NOT github.workflow): nightly, stable-release and
+  # regen-lock dispatches of the SAME env must serialize against each
+  # other — they all write the same dated mirror tag and float, and a
+  # stable publish racing a nightly publish of one env interleaves
+  # crane pushes on identical tags. Different envs stay fully parallel.
+  group: hpc-cf-pipeline-${{ inputs.fork_branch || inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:

@@ -25,11 +25,11 @@ on:
         default: cp2k_opensource-master-force-avx512
 
 concurrency:
-  # Same serialization family as a nightly dispatch for the same env:
-  # both publish the dated mirror layer, so they must not interleave
-  # crane appends. The pipeline's own group ("regen-lock-<env>") nests
-  # inside this one and never conflicts with itself.
-  group: nightly-cp2k-${{ inputs.env_name }}
+  # Same serialization family as the pipeline itself (hpc-cf-pipeline-<env>):
+  # a regen run and a nightly/stable run of one env must not interleave
+  # dated-mirror publishes. The pipeline's own group nests inside this
+  # one and never conflicts with itself.
+  group: hpc-cf-pipeline-${{ inputs.env_name }}
   cancel-in-progress: false
 
 jobs:
