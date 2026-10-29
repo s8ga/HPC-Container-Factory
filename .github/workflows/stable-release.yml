@@ -39,6 +39,11 @@ jobs:
         with:
           ref: ${{ github.ref }}
       - name: Derive and validate ENV_NAME
+        # id is load-bearing: the job output reads steps.env.outputs.*.
+        # A missing id yields an empty env_name, and the pipeline then
+        # silently falls back to its cp2k default env — the 2026-10-29
+        # misroute where an abacus dispatch built cp2k 2026.2 end to end.
+        id: env
         run: |
           set -euo pipefail
           case "${GITHUB_REF_NAME}" in

@@ -106,6 +106,11 @@ on:
 # to exist on the default branch once, so GitHub registers the workflow.
 env:
   DEFAULT_REF: ${{ inputs.factory_ref || 'v2' }}
+  # The one env whose stable releases hold the repo-wide GitHub "Latest"
+  # badge. Every other env's stable release is created with make_latest
+  # explicitly false (the API defaults it to true, which made sibling
+  # envs steal the badge from each other on every publish).
+  FLAGSHIP_ENV: "cp2k_opensource-2026.2-force-avx512"
 
 # NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
 # the caller grants. The sif job creates releases, so contents must stay
@@ -904,7 +909,14 @@ jobs:
             # rolling PRE-release whose SIF assets are pruned to the newest 5.
             if [ "${{ inputs.channel }}" = "stable" ]; then
               echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
-              echo "RELEASE_CREATE_FLAGS=--latest"
+              if [ "${ENV_NAME}" = "${FLAGSHIP_ENV}" ]; then
+                echo "RELEASE_CREATE_FLAGS=--latest"
+              else
+                # Created with the API default make_latest=true, then
+                # explicitly cleared right after upload: non-flagship
+                # envs never hold the repo-wide Latest badge.
+                echo "RELEASE_CREATE_FLAGS="
+              fi
             else
               echo "RELEASE_TAG=nightly-${ENV_NAME}"
               echo "RELEASE_CREATE_FLAGS=--prerelease"
@@ -1046,6 +1058,11 @@ jobs:
           gh release upload "${RELEASE_TAG}" "${SIF_NAME}" \
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt" \
             --repo "$GITHUB_REPOSITORY" --clobber
+          if [ "${{ inputs.channel }}" = "stable" ] && [ -z "${RELEASE_CREATE_FLAGS}" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+              -f make_latest=false >/dev/null \
+              && echo "Latest badge left with the flagship env (${FLAGSHIP_ENV})"
+          fi
 
       # Reaching this step means every job in the pipeline is green, so the
       # dated runtime image just shipped is end-to-end verified. Float the
@@ -1057,7 +1074,12 @@ jobs:
           echo "${{ github.token }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
           VERIFIED="${IMG_REPO}:${ENV_SUFFIX}-release"
-          podman tag "${IMG_REPO}:${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}" "$VERIFIED"
+          # The Build-SIF step pulled the DATED tag for this channel
+          # (TAG_PREFIX); stable runs never have a local -nightly-<date>
+          # image. This hardcoded -nightly- source is why every stable
+          # run died here with "image not known" after a successful
+          # asset upload (2026-10-28/29).
+          podman tag "${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" "$VERIFIED"
           podman push "$VERIFIED"
           echo "verified image: ${VERIFIED}"
 
