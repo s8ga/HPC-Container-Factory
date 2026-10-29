@@ -94,13 +94,18 @@ on:
         required: false
         type: boolean
         default: false
+      factory_ref:
+        description: "Factory repo ref every job checks out. Default: v2 (the moving development branch). The stable track passes its frozen release/<env> branch so the whole run builds the exact tree that will be tagged — and the run's GITHUB_SHA stays the branch head for the entire build, which is what keeps gh release create legal for the Actions token."
+        required: false
+        type: string
+        default: ""
 
-# Every checkout is pinned to the active development branch (DEFAULT_REF):
-# scheduled runs always fire from the default branch and callers have no
-# ref override, so this is the single knob. Requires this file to exist on
-# the default branch once, so GitHub registers the workflow.
+# Every checkout is pinned to this ref (DEFAULT_REF): floating callers
+# (nightly, regen-lock) leave it at the development branch; the stable
+# caller overrides it with its frozen release branch. Requires this file
+# to exist on the default branch once, so GitHub registers the workflow.
 env:
-  DEFAULT_REF: "v2"
+  DEFAULT_REF: ${{ inputs.factory_ref || 'v2' }}
 
 # NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
 # the caller grants. The sif job creates releases, so contents must stay

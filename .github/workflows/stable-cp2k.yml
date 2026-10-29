@@ -1,21 +1,66 @@
-# Stable release track: consumes the committed spack.lock (fail-closed,
-# no re-concretize) and attaches the SIF to a permanent per-build release
-# that is never pruned. Run when a lock is finalized for distribution.
+# Stable release track. Runs ONLY on frozen release/<env-name> branches:
+# the branch name IS the environment (no dispatch inputs), and every job
+# checks out that exact branch (pipeline factory_ref), so the whole run
+# builds the tree that the release tag will point at.
+#
+# Why a frozen branch: stable builds take hours, and the Actions token may
+# only create a release whose --target commit is the CURRENT branch head.
+# On the moving development branch the head drifts past the dispatch SHA
+# mid-build and publication 403s ("Resource not accessible by
+# integration" — diagnosed 2026-10-29). A release branch never moves, so
+# the run's GITHUB_SHA stays the head for the entire build.
+#
+# Operating procedure (nothing ever commits to release/* directly):
+#   1. finish the env's lock on v2 (regen-lock workflow, commit the lock)
+#   2. cut the release branch:   git push origin v2:refs/heads/release/<env>
+#   3. dispatch:                 gh workflow run stable-cp2k.yml \
+#                                 --ref release/<env>
+#   4. re-release later: re-cut the branch from the new v2 head, dispatch
+#
+# Consumes the committed spack.lock fail-closed (no re-concretize) and
+# attaches the SIF to a permanent per-build release that is never pruned.
 name: stable-cp2k
 
 on:
   workflow_dispatch:
-    inputs:
-      env_name:
-        description: Environment name under spack-envs/
-        required: false
-        default: cp2k_opensource-2026.2-force-avx512
+
+permissions:
+  contents: write
+  packages: write
+
 jobs:
+  resolve:
+    name: resolve env from the release branch name
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.env.outputs.env_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+      - name: Derive and validate ENV_NAME
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            release/*) ;;
+            *)
+              echo "::error::stable-cp2k runs on release/<env-name> branches only (got '${GITHUB_REF_NAME}'). Cut one with: git push origin v2:refs/heads/release/<env>"
+              exit 1
+              ;;
+          esac
+          ENV_NAME="${GITHUB_REF_NAME#release/}"
+          if [[ ! -d "spack-envs/${ENV_NAME}" ]]; then
+            echo "::error::unknown env '${ENV_NAME}' (no spack-envs/${ENV_NAME} on ${GITHUB_REF_NAME})"
+            exit 1
+          fi
+          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "resolved env: ${ENV_NAME} from ${GITHUB_REF_NAME}"
+
   pipeline:
+    needs: resolve
     uses: ./.github/workflows/pipeline-cp2k.yml
     with:
-      env_name: ${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+      env_name: ${{ needs.resolve.outputs.env_name }}
       channel: stable
-    permissions:
-      contents: write
-      packages: write
+      # Build the frozen tree this branch holds, not the moving v2.
+      factory_ref: ${{ github.ref_name }}
