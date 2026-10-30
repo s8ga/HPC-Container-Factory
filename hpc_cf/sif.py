@@ -360,6 +360,21 @@ def _secret_flags(build_secrets: list[str] | None) -> list[str]:
     return flags
 
 
+def _force_rm_flags(build_opts: list[str] | None) -> list[str]:
+    """Default ``--force-rm`` unless overridden in *build_opts*.
+
+    Ensures failed RUN steps destroy their Buildah working container instead of
+    pinning OverlayFS parent layers indefinitely.
+    """
+    import shlex
+
+    for opt in build_opts or []:
+        for token in shlex.split(opt):
+            if token == "--force-rm" or token.startswith("--force-rm="):
+                return []
+    return ["--force-rm"]
+
+
 def build_docker_like(
     *,
     dockerfile: Path,
@@ -391,10 +406,11 @@ def build_docker_like(
         )
 
     secret_flags = _secret_flags(build_secrets)
+    force_rm = _force_rm_flags(build_opts)
 
     def _stage_command(target: str, output_tag: str) -> list[str]:
         command = [
-            engine, "build", "--target", target,
+            engine, "build", *force_rm, "--target", target,
             "-f", str(dockerfile), "-t", output_tag,
         ]
         if network_host:
@@ -425,7 +441,7 @@ def build_docker_like(
     # Continue to final image; builder layers come from cache.
     final_tag = f"{image}:{tag}"
     logger.info("Building final image: %s", final_tag)
-    cmd = [engine, "build", "-f", str(dockerfile), "-t", final_tag]
+    cmd = [engine, "build", *force_rm, "-f", str(dockerfile), "-t", final_tag]
     if network_host:
         cmd += ["--network", "host"]
     cmd += secret_flags
@@ -456,6 +472,7 @@ def build_docker_stage(
     command = [
         engine,
         "build",
+        *_force_rm_flags(build_opts),
         "--target",
         target,
         "-f",

@@ -530,6 +530,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format for the validation report (default: text).",
     )
 
+    gc_parser = subparsers.add_parser(
+        "gc",
+        help="Clean orphaned Buildah working containers, checkpoint tags, and dangling layers",
+    )
+    gc_parser.add_argument(
+        "--engine",
+        choices=["podman", "docker"],
+        default="podman",
+        help="Container engine (default: podman).",
+    )
+    gc_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Inspect and report reclaimable working containers/tags without deleting.",
+    )
+    gc_parser.add_argument(
+        "--prune-builder-tags",
+        action="store_true",
+        help="Also remove *-installed and *-builder checkpoint tags (preserves *-buildcache-producer).",
+    )
+    gc_parser.add_argument(
+        "--no-prune-images",
+        action="store_true",
+        help="Skip `<engine> image prune -f` after removing working containers/tags.",
+    )
+    gc_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Run even when active podman/docker/buildah build processes are detected.",
+    )
+
     return parser
 
 
@@ -718,6 +749,21 @@ def run_new_cli(argv: list[str]) -> int:
 
     if args.command == "buildcache":
         return BuildcacheService().run(buildcache_request_from_args(args))
+
+    if args.command == "gc":
+        from hpc_cf.storage_gc import run_storage_gc
+
+        print(
+            run_storage_gc(
+                engine=args.engine,
+                dry_run=args.dry_run,
+                prune_builder_tags=args.prune_builder_tags,
+                prune_images=not args.no_prune_images,
+                force=args.force,
+            ),
+            end="",
+        )
+        return 0
 
     # ── Handle --app-version/--env without value → list available versions ──
     if getattr(args, "app_version", None) == "__LIST__":
