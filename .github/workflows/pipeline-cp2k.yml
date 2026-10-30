@@ -904,7 +904,7 @@ jobs:
             echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
             echo "TAG_PREFIX=${{ inputs.channel }}"
             echo "IMAGE_NAME=${ENV_NAME%%-*}"
-            echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-nightly-${NIGHTLY_DATE}.sif"
+            echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-${{ inputs.channel }}-${NIGHTLY_DATE}.sif"
             # Channel management: stable builds get a permanent per-build
             # release marked latest (never pruned); nightly/master share one
             # rolling PRE-release whose SIF assets are pruned to the newest 5.
