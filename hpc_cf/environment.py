@@ -337,6 +337,27 @@ class ManualPackage:
     file: str
     dest: str | None = None
     sha256: str | None = None
+    spec: str | None = None
+
+    def mirror_exclude_spec(self) -> str:
+        """Return the Spack spec excluded from ``spack mirror create``.
+
+        Manual/proprietary tarballs (e.g. ``vasp.6.6.1.tgz``) live under
+        ``assets/manual-packages/`` and must never be copied into the shared
+        ``assets/spack-mirror/`` source cache. Uses explicit ``spec`` when
+        configured in ``env.yaml``; otherwise infers the package name from the
+        tarball basename before the first version separator.
+        """
+        if self.spec:
+            return self.spec
+        basename = Path(self.file).name
+        prefix = re.split(r"[._-](?=\d)", basename, maxsplit=1)[0]
+        if prefix and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", prefix):
+            return prefix
+        raise ValueError(
+            f"Cannot infer Spack package name from manual_packages file "
+            f"{self.file!r}; set 'spec' explicitly in env.yaml"
+        )
 
 
 @dataclass
@@ -505,7 +526,7 @@ _GIT_SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _MIRROR_BUILDER_KEYS = frozenset({
     "system_pkgs", "pkg_mirror_setup", "pkg_install_cmd",
 })
-_MANUAL_PACKAGE_KEYS = frozenset({"file", "dest", "sha256"})
+_MANUAL_PACKAGE_KEYS = frozenset({"file", "dest", "sha256", "spec"})
 _RUNTIME_KEYS = frozenset({"copy_dirs", "extra_pkgs"})
 
 
@@ -723,6 +744,7 @@ def _parse_manual_packages(raw: Any) -> list[ManualPackage]:
                 file=_require_str(entry["file"], path=f"{path}.file"),
                 dest=_optional_str(entry.get("dest"), path=f"{path}.dest"),
                 sha256=_optional_str(entry.get("sha256"), path=f"{path}.sha256"),
+                spec=_optional_str(entry.get("spec"), path=f"{path}.spec"),
             )
         )
     return out

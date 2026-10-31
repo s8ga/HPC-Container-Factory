@@ -316,7 +316,26 @@ export SPACK_USER_CACHE_PATH="{self.user_cache}"
 export HOME=/tmp/home && mkdir -p "$HOME"
 """
 
-    def _source_spack(self, *, extract: bool = True) -> str:
+    def _bootstrap_spack_script(self) -> str:
+        """Return a script fragment that registers and runs the bootstrap mirror."""
+        bootstrap_dir = self.env.bootstrap_dir_in_container
+        return f"""# Configure local bootstrap mirror as highest-priority trusted source.
+# Idempotent ``bootstrap add`` may fail when already registered — tolerate that.
+# ``bootstrap now`` failures must propagate (set -e); never swallow with || true.
+if [[ -d "{bootstrap_dir}/metadata/sources" ]]; then
+    spack bootstrap add --trust local-sources "{bootstrap_dir}/metadata/sources" 2>/dev/null || true
+    spack bootstrap add --trust local-binaries "{bootstrap_dir}/metadata/binaries" 2>/dev/null || true
+    spack bootstrap now
+else
+    echo "No local bootstrap mirror found — falling back to Spack defaults (github-actions, spack-install)"
+fi"""
+
+    def _source_spack(
+        self,
+        *,
+        extract: bool = True,
+        bootstrap: bool = True,
+    ) -> str:
         """Return a script fragment that extracts + sources Spack.
 
         Uses ``sudo`` for extraction because the persistent worker container
@@ -335,23 +354,12 @@ if [[ ! -f "{self.spack_root}/share/spack/setup-env.sh" ]]; then
     sudo chown -R "$(id -u):$(id -g)" "{self.spack_root}"
 fi
 """
-        bootstrap_dir = self.env.bootstrap_dir_in_container
-        bootstrap_block = f"""
-# Configure local bootstrap mirror as highest-priority trusted source.
-# Idempotent ``bootstrap add`` may fail when already registered — tolerate that.
-# ``bootstrap now`` failures must propagate (set -e); never swallow with || true.
-if [[ -d "{bootstrap_dir}/metadata/sources" ]]; then
-    spack bootstrap add --trust local-sources "{bootstrap_dir}/metadata/sources" 2>/dev/null || true
-    spack bootstrap add --trust local-binaries "{bootstrap_dir}/metadata/binaries" 2>/dev/null || true
-    spack bootstrap now
-else
-    echo "No local bootstrap mirror found — falling back to Spack defaults (github-actions, spack-install)"
-fi
-"""
+        bootstrap_block = (
+            f"\n{self._bootstrap_spack_script()}\n" if bootstrap else ""
+        )
         return f"""{self._setup_env_vars()}
 {extract_block}
-. "{self.spack_root}/share/spack/setup-env.sh"
-{bootstrap_block}
+. "{self.spack_root}/share/spack/setup-env.sh"{bootstrap_block}
 """
 
     # ── Bootstrap mirror ──────────────────────────────────────────────────
@@ -392,9 +400,10 @@ fi
 
     def _build_bootstrap_mirror_script(self, container_dir: str, *, binary_packages: bool) -> str:
         flag = " --binary-packages" if binary_packages else ""
-        return f"""{self._source_spack()}
-rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
+        return f"""{self._source_spack(bootstrap=False)}
+rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml" "{self.spack_root}/etc/spack/repos.yaml"
 rm -rf /tmp/spack-repos /tmp/spack-env-*
+{self._bootstrap_spack_script()}
 mkdir -p "{container_dir}"
 spack bootstrap mirror{flag} "{container_dir}"
 """
@@ -451,10 +460,12 @@ spack bootstrap mirror{flag} "{container_dir}"
         self.ctr.exec(self._build_clean_stale_state_script())
 
     def _build_clean_stale_state_script(self) -> str:
-        return f"""{self._source_spack()}
-# 1. Nuke stale user-scope repo/external-package registrations
-rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml"
-rm -f "${{SPACK_USER_CONFIG_PATH}}/packages.yaml"
+        return f"""{self._source_spack(bootstrap=False)}
+# 1. Nuke stale user/site-scope repo and external-package registrations BEFORE
+#    ``spack bootstrap now`` so dangling paths (e.g. /tmp/spack-packages-seed)
+#    never break namespace resolution during bootstrap.
+rm -f "${{SPACK_USER_CONFIG_PATH}}/repos.yaml" "{self.spack_root}/etc/spack/repos.yaml"
+rm -f "${{SPACK_USER_CONFIG_PATH}}/packages.yaml" "{self.spack_root}/etc/spack/packages.yaml"
 
 # 2. Remove ALL Spack environments to avoid ``env create`` name collisions.
 #    Each pipeline recreates its env from spack.yaml anyway.
@@ -464,7 +475,9 @@ if [[ -d "${{env_dir}}" ]]; then
 fi
 
 # 3. Clean /tmp work dirs from previous runs
-rm -rf /tmp/spack-repos /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
+rm -rf /tmp/spack-repos /tmp/spack-packages-seed* /tmp/spack-env-* /tmp/spack-mirror-* /tmp/spack-verify-*
+
+{self._bootstrap_spack_script()}
 """
 
     def prepare_repos(self, env_dir_in_container: str) -> None:
@@ -763,6 +776,22 @@ fi
         self._require_complete_mirror_stats(stats, action="fetch")
         return stats
 
+    def _mirror_exclude_flag(self) -> str:
+        """Return ``--exclude-specs ...`` for declared ``manual_packages``.
+
+        Keeps ``--private`` enabled so non-redistributable public downloads
+        (such as ``intel-oneapi-mkl``) remain cached in ``spack-mirror``, while
+        strictly excluding manual/proprietary tarballs (such as ``vasp``).
+        """
+        seen: list[str] = []
+        for mp in self.env.manual_packages:
+            spec_name = mp.mirror_exclude_spec()
+            if spec_name not in seen:
+                seen.append(spec_name)
+        if not seen:
+            return ""
+        return f" --exclude-specs {shell_quote(' '.join(seen))}"
+
     def _build_mirror_create_script(
         self,
         mirror_dir_container: str,
@@ -772,12 +801,13 @@ fi
         env_q = shell_quote(self.env.spack.env_name)
         mirror_dir = shell_quote(mirror_dir_container)
         log_q = shell_quote(create_log or MIRROR_CREATE_LOG)
+        exclude_flag = self._mirror_exclude_flag()
         return f"""{self._source_spack()}
 mkdir -p {mirror_dir}
 mkdir -p "$(dirname {log_q})"
 : > {log_q}
-echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private"
-spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {log_q}
+echo "Running: spack mirror create -d {mirror_dir_container} --all -D --private{exclude_flag}"
+spack -e {env_q} mirror create -d {mirror_dir} --all -D --private{exclude_flag} 2>&1 | tee {log_q}
 """
 
     def _build_mirror_verify_script(
@@ -789,11 +819,12 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {lo
         env_q = shell_quote(self.env.spack.env_name)
         mirror_dir = shell_quote(mirror_dir_container)
         log_q = shell_quote(verify_log or MIRROR_VERIFY_LOG)
+        exclude_flag = self._mirror_exclude_flag()
         return f"""{self._source_spack()}
 mkdir -p "$(dirname {log_q})"
 : > {log_q}
-echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private"
-spack -e {env_q} mirror create -d {mirror_dir} --all -D --private 2>&1 | tee {log_q}
+echo "Re-running: spack mirror create -d {mirror_dir_container} --all -D --private{exclude_flag}"
+spack -e {env_q} mirror create -d {mirror_dir} --all -D --private{exclude_flag} 2>&1 | tee {log_q}
 """
 
     # ── Fetch-spec export (mirror prune input) ────────────────────────────
