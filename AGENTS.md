@@ -72,12 +72,15 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 ## Key Design Decisions
 
 - `method: spack|no_spack` in env.yaml — discriminator for build mode (default: spack)
-- **SpackEnvironmentPlan**: reliable contract for **assets** (prepare/register/mirror scripts).
-  Image-side custom repos: ABACUS opensource and CP2K opensource force-avx512
-  (2026.1 / 2026.2) Dockerfiles include `templates/partials/spack_image_repos.j2`
-  (plan-driven `custom_repos[].image_path`); other apps still use
-  **per-env Dockerfile.j2 + `template_vars`** handwritten `spack repo add` lines
-  (do not assume plan alone registers image repos for every env).
+- **SpackEnvironmentPlan**: reliable contract for **assets** (prepare/register/mirror
+  scripts) and the image side. Every method=spack Dockerfile registers image-phase
+  repos through `templates/partials/spack_image_repos.j2` (plan-driven
+  `custom_repos[].image_path`, order/scope from env.yaml — no handwritten
+  `spack repo add` lines remain). Monorepo staging clones come from the plan-driven
+  `templates/partials/spack_staging_clones.j2` (repos sharing url+commit = one
+  sparse clone; no `s8ga_*` / `force_avx512_*` template_vars mirrors anymore).
+  Upstream cp2k regtest clones use `templates/partials/cp2k_upstream_clone.j2`
+  (variant by context: lock-derived / pinned / floating).
 - `mirror_scope` is intentionally fixed to **site** in the plan (not configurable from
   env.yaml). Custom `repo_scope` must not leak into `spack mirror add --scope`.
 - `{{ cp2k_branch }}` parametrized in CP2K Dockerfile.j2 (declared once in env.yaml template_vars); opensource commit-pin clones still run a non-comment `git merge-base --is-ancestor` check against `origin/{{ cp2k_branch }}`
@@ -87,12 +90,21 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   and `repo_scope: site`). Do not document “every pipeline / every env” as identical.
 - Custom repos for assets are fetched before environment creation, then registered per
   `spack.assets.repo_scope` (often `env:<name>` so overrides beat `repos.builtin.commit`).
-  ABACUS opensource and CP2K force-avx512 (2026.1 / 2026.2) image Dockerfiles
-  wire `spack_image_repos`; other apps still emit their own `spack repo add`
-  lines until migrated.
+  Image-side registration is uniformly plan-driven (`spack_image_repos` partial).
 - `repos.builtin.commit: <sha>` in spack.yaml — pins builtin repo for reproducible concretization. Without it, validate warns.
 - Two-stage lock: **assets produces** `spack.lock`; **build consumes** it read-only
   (fail-closed without `--allow-reconcretize` / assets `--allow-concretize`).
+  Assets also writes `spack-env-file/lock-manifest.json` (spack.yaml sha256 +
+  custom_repos pins) beside a fresh concretize; the build-input profile errors on
+  drift (`lock.stale_input`) and warns on missing provenance — editing inputs
+  after a lock no longer slips through.
+- Repo-pin bumps are atomic via `hpc_cf pin set --env <name>|--all --repo <ns|url-substr>
+  --commit <sha>`: it replaces the old sha across env.yaml's dual-write copies,
+  re-runs the repo-pin guard, reverts on failure, and tells you the lock is stale.
+- `spack.lock_source_commits` (spec name → template var) declares which concrete
+  specs' git commits from spack.lock are exposed to image templates (e.g.
+  `cp2k: cp2k_source_commit` on the master track). No app-name guessing in the
+  loader; undeclared envs never parse the lock.
 - Floating custom repos (env.yaml `custom_repos` git entry with **no `commit`**,
   e.g. the CP2K master track's cp2k_dev): assets fetches the branch tip and
   records it in `spack-env-file/resolved-repos.yaml` (namespace → sha, plus
@@ -107,26 +119,12 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
   Factory metadata and its shared/exclusive flock live beside it in
   `assets/spack-buildcache-state/`; never inspect or mutate cache internals.
 - Mirror git-cache prune (`hpc_cf.mirror_prune`): `spack mirror create` is
-  fill-only, so `_source-cache/git/` grows unbounded (each py-torch pin
-  alone is one ~4 GiB full-repo bundle). After mirror+verify, the assets
-  workflow can prune the git side down to the current run's lock
-  membership (`--prune-mirror`, deletions only with `--prune-mirror-apply`;
-  the nightly pipeline passes both). Identity: a container-side
-  `spack python` export (`fetch-specs.json` under `.hpc_cf/`) maps every
-  concrete spec to its fetcher (git URL + commit; on spack 1.2
-  `fetcher.git` is the git EXECUTABLE, the URL is `.url`). Planner rules:
-  pinned-commit repos keep exactly their commits; branch-floating repos
-  keep blobs fetched this run (`fresh_after` timestamp — seed restores
-  carry epoch-0 mtimes, so freshness is only valid inside one run) with a
-  single-survivor rule when stagnant; repos matching no spec (py-torch
-  submodule caches) are kept whole. Symlinks in the per-package layer are
-  repaired to match. The archive side prunes by checksum membership:
-  blob filenames ARE source checksums; the allowed set comes from the
-  sidecar's recipe version-dict sha256/md5 (lock nodes carry no source
-  checksum), patch checksums, and resource checksums — an empty allowlist
-  keeps the whole archive side. Empty/broken sidecar = hard refusal.
-  A shared LOCAL tree hosts multiple envs — local pruning deletes other
-  envs' sources; always review the dry-run first.
+  fill-only, so `_source-cache/git/` grows unbounded (~4 GiB per py-torch-class
+  pin). After mirror+verify, assets can prune the git side down to the current
+  run's lock membership (`--prune-mirror`; deletions only with
+  `--prune-mirror-apply`). Full doctrine (fetch-specs identity, planner rules,
+  archive-side checksum pruning, shared-tree warnings):
+  `docs/mirror-prune.md`.
 - Buildcache target state is the full CP2K **opensource CPU** track (not a
   single-env pilot). Enable per env via `spack.buildcache.enabled: true`
   (`policy: auto`, `padded_length: 128`). MKL and ROCm environments remain
@@ -210,13 +208,13 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
   pins across both envs, then **publish** (`buildcache build`) from the
   authority env and **consume** (`build --buildcache auto|only`) on the other.
   Do not assume ABACUS shares DAG hashes with the CP2K track. The dual-write
-  guard (`scripts/check-dual-write.py`) fails when either
-  `template_vars.s8ga_repo_commit` or s8ga `custom_repos[].commit` is set and
-  the two sides disagree or one side is missing (neither side pinned → skip).
-  For CP2K force-avx512 it also requires `template_vars.force_avx512_repo_path`
-  to match the s8ga `custom_repos[].sparse_path` / `image_path`
-  (`/opt/s8ga-spack-packages/<force_avx512_repo_path>`) and Dockerfile sparse-clone
-  usage (2026.1 / 2026.2 register via `spack_image_repos`; 2025.2 still handwritten).
+  guard (now key-name-agnostic in `hpc_cf/repo_pins.py`, wired into
+  `validate --profile config|build-input` and `ci-tests.yml`, still runnable as
+  `scripts/check-dual-write.py`) fails on same-URL pin drift, orphan/mismatched
+  `*_repo_commit` template vars, staging-path contract violations, and declared
+  staging vars the Dockerfile no longer uses. The old s8ga/force_avx512 var
+  mirrors are retired — staging is plan-driven, so the guard mostly guards the
+  remaining var-driven surface (cp2k upstream clone vars).
 - **Buildcache signing**: producer push is `--unsigned` by design for a
   single-tenant trusted host (local flock-owned cache, same-host read-only
   consumers). Not a multi-tenant/remote trust boundary; GPG signing is deferred.
@@ -226,7 +224,7 @@ coverage/provenance, and healthy state. See `docs/buildcache.md`.
   for tests. Operators use the default project tree.
 - `spack mirror create` has NO `--json` — regex parsing of human-readable output is the only option
 - `config: deprecated: true` in spack.yaml — allows deprecated package versions (e.g. py-torch@2.4.1). Spack v1.2.0 enforces the check at concretize time; this setting bypasses it.
-- `view: false` in spack.yaml + `spack env view enable /opt/spack-view` in Dockerfile — works around spack v1.2.0 PR #52551 which changed view updates from symlink swap to `os.rename` (fails with EXDEV on Docker overlayfs). The view is created after `spack gc` so build dependencies are removed first.
+- `view: false` in spack.yaml + `spack env view enable /opt/spack-view` in Dockerfile — works around spack v1.2.0 PR #52551's `os.rename` view updates (EXDEV on overlayfs). Details: `docs/KNOWN_ISSUES.md` (Spack toolchain section).
 - `_parse_mirror_stats_from_text` returns `failed=-1` (MIRROR_STATS_UNKNOWN) when output is unparseable — callers raise on `< 0`
 - `_build_*_script` methods are pure (return str) — unit-testable without a container
 - `Container._run` streams output line-by-line via `Popen` when `capture=False` (real-time `[podman]` logging). `capture=True` uses `subprocess.run` for quick programmatic queries. stderr merged into stdout in streaming mode to avoid pipe deadlock.
@@ -277,7 +275,9 @@ Run L4 ABACUS smoke with
 `./venv/bin/pytest --run-integration -v -s tests/test_integration_abacus_l4.py`
 (or `./venv/bin/python scripts/integration-test.py`, which runs L3+L4).
 Run the inventory guard independently with
-`./venv/bin/python scripts/check-dual-write.py`.
+`./venv/bin/python scripts/check-dual-write.py` (the same invariants run inside
+`validate --profile config|build-input` and in CI via `ci-tests.yml`, which also
+runs ruff + the full unit suite on every push/PR to v2/main).
 
 L3 creates a persistent container per Spack version and uses a minimal pkgconf
 environment; it does not build CP2K. Missing matrix assets are skipped rather

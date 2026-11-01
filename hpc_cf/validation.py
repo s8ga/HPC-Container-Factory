@@ -372,8 +372,12 @@ def collect_spack_assets(
                 path=str(tarball),
                 fix_hint=(
                     f"env.yaml declares spack.version={spack_version!r}. "
-                    "Place the tarball under assets/ (or run assets bootstrap) "
-                    "before build/assets — Dockerfile COPY would fail otherwise."
+                    "Download it manually (QUICKSTART.md §2): "
+                    "curl -fSL -o assets/spack-v"
+                    f"{spack_version}.tar.gz "
+                    "https://github.com/spack/spack/releases/download/v"
+                    f"{spack_version}/spack-{spack_version}.tar.gz — "
+                    "the assets bootstrap itself needs this tarball as input."
                 ),
             )
         )

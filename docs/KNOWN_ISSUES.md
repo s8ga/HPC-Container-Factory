@@ -1,5 +1,13 @@
 # 当前已知问题
 
+## Spack 1.2.0：env view 更新在 Docker overlayfs 上 EXDEV 失败
+
+spack v1.2.0 PR #52551 把 env view 更新从 symlink swap 改为 `os.rename`，
+在 Docker overlayfs 上因 `EXDEV`（跨设备重命名）失败。工厂的规避方式：
+`spack.yaml` 声明 `view: false`，镜像内改用
+`spack env view enable /opt/spack-view` 重建 view——并且放在 `spack gc`
+**之后**执行，让 build dependencies 先被清掉再生成 view。
+
 ## CP2K 2026.2：SPGLIB 混合并行敏感性
 
 测试 `QS/regtest-kp-1-spg/c_geo_opt_kpsym_spglib.inp` 对特定 MPI/OpenMP 分解敏感。补充测试中：
