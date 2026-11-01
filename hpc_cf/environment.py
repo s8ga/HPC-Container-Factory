@@ -849,6 +849,58 @@ def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
 _SPEC_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 _TEMPLATE_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Render-context keys hpc_cf.template.build_context computes itself or the
+# factory injects at render time (plan context, buildcache knobs, no_spack
+# payload). ``build_context`` spreads ``**template_vars`` AFTER the computed
+# defaults, so a same-named env.yaml var would silently shadow a
+# CLI/plan-derived value — StrictUndefined cannot catch a present-but-wrong
+# key — and sidecar injection (resolved repos, lock_source_commits) reuses
+# the same namespace. ``apt_mirror`` is the documented exception: env.yaml
+# may set it and the CLI override wins.
+RESERVED_CONTEXT_KEYS: frozenset[str] = frozenset({
+    # build_context computed scalars (template.py build_context).
+    "timestamp",
+    "generated_with",
+    "method",
+    "builder_base_image",
+    "runtime_base_image",
+    "use_mirror",
+    "build_only",
+    "default_image_name",
+    "default_image_tag",
+    "spack_version",
+    "env_dir_name",
+    "manual_packages",
+    "compatibility_mode",
+    "allow_reconcretize",
+    # Factory-injected no_spack payload.
+    "script",
+    "runtime_copy_dirs",
+    "runtime_extra_pkgs",
+    # plan_context keys (spack_plan.plan_context overrides these after the
+    # spread; a template_vars copy would be dead or, in legacy no-spec
+    # renders, leak through).
+    "spack_env_name",
+    "spack_update_builtin",
+    "spack_repo_scope",
+    "spack_repo_scope_kind",
+    "spack_mirror_scope",
+    "spack_mirror_scope_kind",
+    "spack_buildcache_enabled",
+    "spack_buildcache_padded_length",
+    "spack_buildcache_policy",
+    "spack_buildcache_coverage",
+    "spack_buildcache_mode",
+    "spack_buildcache_url",
+    "spack_buildcache_username_var",
+    "spack_buildcache_password_var",
+    "spack_buildcache_exclude_specs",
+    "spack_buildcache_check_excludes_external",
+    "spack_buildcache_producer",
+    "spack_image_repos",
+    "spack_staging_clones",
+})
+
 
 def _parse_lock_source_commits(raw: Any) -> dict[str, str]:
     """Parse ``spack.lock_source_commits`` (spec name → template var).
@@ -873,6 +925,12 @@ def _parse_lock_source_commits(raw: Any) -> dict[str, str]:
             raise ValueError(
                 f"spack.lock_source_commits[{key!r}] must be a template-var "
                 f"identifier, got {value!r}"
+            )
+        if value in RESERVED_CONTEXT_KEYS:
+            raise ValueError(
+                f"spack.lock_source_commits[{key!r}] targets reserved "
+                f"build-context key {value!r}; injection would shadow a "
+                "factory-computed value"
             )
         mapping[key] = value
     return mapping
@@ -971,6 +1029,15 @@ def parse_environment_spec(
     else:
         # Open mapping: any keys allowed; only the container type is checked.
         template_vars = dict(_require_mapping(tv, path="template_vars"))
+    reserved = sorted(RESERVED_CONTEXT_KEYS & template_vars.keys())
+    if reserved:
+        raise ValueError(
+            "template_vars must not shadow build-context keys the factory "
+            f"computes or injects: {', '.join(reserved)}. Context value "
+            "priority is CLI > env.yaml > defaults, and these keys are set "
+            "by the CLI/plan, so an env.yaml copy would silently lose (or, "
+            "worse, silently win for pre-spread keys). Rename the variable."
+        )
 
     script_raw = data.get("script", "")
     if script_raw is None:
