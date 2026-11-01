@@ -12,8 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from hpc_cf.config import PROJECT_ROOT
-from hpc_cf.environment import parse_environment_spec
-from hpc_cf.repo_pins import check_env_repo_pins, check_project
+from hpc_cf.environment import load_environment_spec, parse_environment_spec
+from hpc_cf.repo_pins import (
+    check_env_repo_pins,
+    check_project,
+    expand_partial_includes,
+)
 from hpc_cf.validation import (
     ValidationProfile,
     validate_environment,
@@ -293,6 +297,30 @@ def test_url_var_wiring_rejects_declared_but_unused() -> None:
         "mirrors custom_repos['app'].url" in e and "does not use it" in e
         for e in errors
     )
+
+
+# --- fork override shape (apply-source-override.sh) -------------------------
+
+
+def test_fork_source_url_override_shape_passes_guard() -> None:
+    """A fork env (apply-source-override.sh) declares cp2k_source_repo_url and
+    points the cp2k_dev repo at the fork; the upstream-clone partial consumes
+    the var, so neither the dead-copy nor orphan checks may fire."""
+    env_dir = PROJECT_ROOT / "spack-envs" / "cp2k_opensource-master-force-avx512"
+    spec = load_environment_spec(env_dir)
+    fork = "https://github.com/someone/cp2k.git"
+    for repo in spec.spack.custom_repos:
+        if repo.namespace == "cp2k_dev":
+            repo.url = fork
+    spec.template_vars["cp2k_source_repo_url"] = fork
+    dockerfile = expand_partial_includes(
+        (env_dir / "Dockerfile.j2").read_text(encoding="utf-8"),
+        PROJECT_ROOT,
+    )
+    errors = check_env_repo_pins(
+        "cp2k_opensource-master-force-avx512-fork", spec, dockerfile
+    )
+    assert errors == []
 
 
 # --- validate wiring + whole-repo parity ------------------------------------

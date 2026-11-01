@@ -10,11 +10,12 @@
     * otherwise                    → floating clone of {{ cp2k_branch }}
 
     Consumes template_vars: cp2k_branch, cp2k_dev_repo_commit (pinned
-    dual-write copy), cp2k_source_commit (lock_source_commits injection).
+    dual-write copy), cp2k_source_commit (lock_source_commits injection),
+    cp2k_source_repo_url (fork override; default upstream).
 -#}
 {% if cp2k_source_commit is defined %}
 RUN git clone --filter=blob:none --no-checkout \
-        https://github.com/cp2k/cp2k.git /opt/cp2k && \
+        {{ cp2k_source_repo_url | default("https://github.com/cp2k/cp2k.git") }} /opt/cp2k && \
     cd /opt/cp2k && \
     git fetch --depth 1 origin "{{ cp2k_source_commit }}" && \
     git fetch --depth 1 origin "{{ cp2k_branch }}:refs/remotes/origin/{{ cp2k_branch }}" && \
@@ -25,7 +26,7 @@ RUN git clone --filter=blob:none --no-checkout \
 {% elif cp2k_dev_repo_commit is defined %}
 # Branch {{ cp2k_branch }} is pinned at {{ cp2k_dev_repo_commit }} (env.yaml).
 RUN git clone --filter=blob:none --no-checkout \
-        https://github.com/cp2k/cp2k.git /opt/cp2k && \
+        {{ cp2k_source_repo_url | default("https://github.com/cp2k/cp2k.git") }} /opt/cp2k && \
     cd /opt/cp2k && \
     git fetch --depth 1 origin "{{ cp2k_dev_repo_commit }}" && \
     git fetch --depth 1 origin "{{ cp2k_branch }}:refs/remotes/origin/{{ cp2k_branch }}" && \
@@ -37,7 +38,7 @@ RUN git clone --filter=blob:none --no-checkout \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 {% else %}
 RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
-        https://github.com/cp2k/cp2k.git /opt/cp2k && \
+        {{ cp2k_source_repo_url | default("https://github.com/cp2k/cp2k.git") }} /opt/cp2k && \
     cd /opt/cp2k && \
     git sparse-checkout init --cone && \
     git sparse-checkout set tests src/grid/sample_tasks tools/regtesting tools && \

@@ -287,6 +287,45 @@ def test_apt_partial_empty_or_official_skips_sed(
     assert "apt-get update" in out
 
 
+UPSTREAM_CP2K = "https://github.com/cp2k/cp2k.git"
+FORK_CP2K = "https://github.com/someone/cp2k.git"
+
+
+@pytest.mark.parametrize(
+    "variant_ctx",
+    [
+        # lock-derived (floating master track; lock_source_commits injection)
+        {"cp2k_source_commit": "a" * 40, "cp2k_branch": "master"},
+        # pinned (dual-write commit copy)
+        {"cp2k_dev_repo_commit": "b" * 40, "cp2k_branch": "master"},
+        # floating clone of the branch tip
+        {"cp2k_branch": "master"},
+    ],
+    ids=["lock-derived", "pinned", "floating"],
+)
+def test_upstream_clone_partial_honors_fork_url(
+    tmp_path: Path, variant_ctx: dict[str, str]
+) -> None:
+    """Every variant of the upstream-clone partial must clone from
+    template_vars.cp2k_source_repo_url when declared (fork builds), and fall
+    back to upstream for plain envs — a regression here strands fork-only
+    commits (git fetch against upstream fails)."""
+    stub = tmp_path / "Dockerfile.j2"
+    stub.write_text(
+        "{% include 'partials/cp2k_upstream_clone.j2' %}\n", encoding="utf-8"
+    )
+
+    out = render_template(stub, dict(variant_ctx))
+    assert UPSTREAM_CP2K in out
+    assert FORK_CP2K not in out
+
+    out = render_template(
+        stub, {**variant_ctx, "cp2k_source_repo_url": FORK_CP2K}
+    )
+    assert FORK_CP2K in out
+    assert UPSTREAM_CP2K not in out
+
+
 def test_nospack_dockerfile_honors_apt_mirror(tmp_path: Path) -> None:
     """Shared no_spack template rewrites or skips APT mirror like Debian partials."""
     import shutil
