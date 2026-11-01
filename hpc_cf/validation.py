@@ -717,6 +717,39 @@ def collect_render_copy_sources(
     return findings
 
 
+def collect_mirror_content(layout: ProjectLayout) -> list[ValidationFinding]:
+    """A configured-but-empty source mirror breaks the offline promise.
+
+    An empty ``assets/spack-mirror`` silently falls back to upstream
+    downloads when online and explodes mid-build when not — either way the
+    air-gapped contract is gone without a word (audit 2.8). Warning, not
+    error: online builds are a legitimate choice; the finding makes the
+    fallback explicit. Factory metadata (``.hpc_cf/`` run manifests) does
+    not count as mirror content.
+    """
+    mirror = layout.spack_mirror_dir
+    if mirror.is_dir():
+        content = [entry for entry in mirror.iterdir() if entry.name != ".hpc_cf"]
+        if content:
+            return []
+        state = "no source content"
+    else:
+        state = "directory missing"
+    return [
+        ValidationFinding(
+            code="mirror.empty",
+            severity=ValidationSeverity.WARNING,
+            message=f"source mirror {state}: {mirror}",
+            path=str(mirror),
+            fix_hint=(
+                "Run `python -m hpc_cf assets --env <name>` to populate the "
+                "mirror, or accept upstream fallback knowingly (online "
+                "builds only)."
+            ),
+        )
+    ]
+
+
 def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     candidates = [env_dir / "spack-env-file" / "spack.yaml", env_dir / "spack.yaml"]
@@ -825,6 +858,7 @@ def validate_environment(
                     require_bootstrap=True,
                 )
             )
+            report.extend(collect_mirror_content(layout))
             report.extend(
                 collect_spack_lock(
                     env_dir, allow_reconcretize=allow_reconcretize
