@@ -198,6 +198,34 @@ def test_apply_without_declaration_never_touches_the_lock(tmp_path: Path) -> Non
     assert "cp2k_source_commit" not in spec.template_vars
 
 
+def test_apply_declared_source_commit_from_lock_without_sidecar(
+    tmp_path: Path,
+) -> None:
+    """The committed lock alone is the authority — no sidecar required."""
+    import json
+
+    (tmp_path / "spack.lock").write_text(
+        json.dumps(
+            {
+                "concrete_specs": {
+                    "x": {
+                        "name": "cp2k",
+                        "parameters": {"commit": OTHER_SHA},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _float_spec()
+    spec.template_vars["cp2k_dev_repo_commit"] = "fallback"
+    apply_resolved_repo_pins(spec, tmp_path)
+    assert spec.template_vars["cp2k_source_commit"] == OTHER_SHA
+    # Sidecar application is untouched: the floating repo keeps its fallback.
+    assert spec.template_vars["cp2k_dev_repo_commit"] == "fallback"
+    assert spec.spack.custom_repos[0].commit is None
+
+
 def test_apply_declared_spec_missing_from_lock_raises(tmp_path: Path) -> None:
     import json
 
