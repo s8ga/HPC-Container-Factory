@@ -1,0 +1,7 @@
+# HPC Container Factory — development/CI dependencies
+# Runtime deps live in requirements.txt; this file adds the lint/test toolchain
+# used by the commit gate and .github/workflows/ci-tests.yml.
+# Install with:  uv pip install -r requirements-dev.txt
+#               pip install -r requirements-dev.txt
+ruff==0.15.18
+pytest==9.1.1

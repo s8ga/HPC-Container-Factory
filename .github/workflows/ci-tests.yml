@@ -1,0 +1,46 @@
+# Fast static gate for every push/PR: lint + unit suite (L0-L2) + the
+# repo-wide dual-write guard.
+#
+# Why this exists: the five build pipelines only run
+# `validate --profile config` per dispatched env, so the 600-test suite —
+# including the all-envs sweeps (plan↔rendered Dockerfile contract,
+# validation profiles) — and scripts/check-dual-write.py never executed in
+# CI. Config drift was only caught locally, if at all.
+#
+# Deliberately NOT gated on assets/podman: L3/L4 integration stays opt-in
+# (see AGENTS.md test layering) so this job stays ~1 minute.
+name: ci-tests
+
+on:
+  push:
+    branches: [v2, main]
+  pull_request:
+    branches: [v2, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up venv
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff, 0 errors required)
+        run: ./venv/bin/ruff check hpc_cf/ tests/ scripts/
+
+      - name: Unit tests (L0-L2)
+        run: ./venv/bin/pytest -q
+
+      # Same invariants validate already runs per env; the sweep covers
+      # cross-env contracts (monorepo pin unity, staging paths) that only
+      # make sense repo-wide.
+      - name: Dual-write guard sweep
+        run: ./venv/bin/python scripts/check-dual-write.py
