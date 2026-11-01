@@ -92,3 +92,26 @@ def test_build_input_profile_carries_mirror_warning(tmp_path: Path) -> None:
     )
     assert any(f.code == "mirror.empty" for f in report.findings)
     assert report.ok  # warning only — offline fallback is a choice
+
+
+# --- build-sif unknown env ------------------------------------------------------
+
+
+def test_build_sif_unknown_app_version_fails_loudly() -> None:
+    """Unknown --app-version must not fall back to hpc-cp2k:latest."""
+    import pytest
+
+    from hpc_cf.cli import run_new_cli
+
+    with pytest.raises(FileNotFoundError, match="No template found"):
+        run_new_cli(["build-sif", "--app-version", "definitely-not-an-env"])
+
+
+def test_build_sif_error_lists_available_envs() -> None:
+    import pytest
+
+    from hpc_cf.cli import run_new_cli
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        run_new_cli(["build-sif", "--app-version", "definitely-not-an-env"])
+    assert "Available versions:" in str(excinfo.value)

@@ -632,10 +632,10 @@ def run_new_cli(argv: list[str]) -> int:
                     "or --app-version/--env for auto-detection."
                 )
                 return 1
-            try:
-                resolved_template = select_template(args.app_version, None)
-            except FileNotFoundError:
-                resolved_template = None
+            # Unknown --app-version fails loudly with the available env
+            # list (select_template raises FileNotFoundError listing them);
+            # silently falling back to hpc-cp2k:latest packed the wrong image.
+            resolved_template = select_template(args.app_version, None)
             from hpc_cf.template import resolve_output_image_tag
             auto_image, auto_tag = resolve_output_image_tag(resolved_template)
             docker_image = docker_image or auto_image
