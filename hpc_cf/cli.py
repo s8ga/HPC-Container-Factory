@@ -12,6 +12,8 @@ import argparse
 import logging
 from pathlib import Path
 
+from jinja2 import TemplateError
+
 from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.sif import (
     build_sif,
@@ -729,7 +731,7 @@ def run_new_cli(argv: list[str]) -> int:
                     )
                     return 1
                 resolved_input = resolve_build_input(args.app_version, None)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, ValueError) as exc:
             report = ValidationReport(
                 profile=profile.value,
                 env_name=(
@@ -738,15 +740,35 @@ def run_new_cli(argv: list[str]) -> int:
                     else args.app_version
                 ),
             )
-            report.add(
-                ValidationFinding(
-                    code="template.missing",
-                    severity=ValidationSeverity.ERROR,
-                    message=str(exc),
-                    path=str(args.template) if args.template else None,
-                    fix_hint="Provide an existing Dockerfile.j2 path.",
+            if isinstance(exc, FileNotFoundError):
+                report.add(
+                    ValidationFinding(
+                        code="template.missing",
+                        severity=ValidationSeverity.ERROR,
+                        message=str(exc),
+                        path=str(args.template) if args.template else None,
+                        fix_hint="Provide an existing Dockerfile.j2 path.",
+                    )
                 )
-            )
+            else:
+                # env.yaml / resolved-repos.yaml / spack.lock input problems
+                # (e.g. sidecar drift, undeclared lock_source_commits spec)
+                # must surface as a structured finding so --format json
+                # always emits a parseable report instead of a traceback.
+                report.add(
+                    ValidationFinding(
+                        code="build_input.invalid",
+                        severity=ValidationSeverity.ERROR,
+                        message=str(exc),
+                        path=str(args.app_version or args.template),
+                        fix_hint=(
+                            "Fix the reported build input (env.yaml, "
+                            "resolved-repos.yaml, or spack.lock); "
+                            "re-running assets --allow-concretize regenerates "
+                            "the sidecars."
+                        ),
+                    )
+                )
             return _emit(report)
 
         env_dir = resolved_input.environment_dir
@@ -777,7 +799,7 @@ def run_new_cli(argv: list[str]) -> int:
                     path=str(resolved_input.render_template),
                 ):
                     report.add(finding)
-            except (FileNotFoundError, RuntimeError) as exc:
+            except (FileNotFoundError, RuntimeError, TemplateError) as exc:
                 report.add(
                     ValidationFinding(
                         code="template.render",
