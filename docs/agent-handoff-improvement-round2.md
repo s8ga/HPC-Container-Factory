@@ -374,3 +374,31 @@ D 与 E 可并行;C 的 `env set-version` 依赖 pin.py 机制已稳定,可最�
 1. **A 档顺序内提级**:2.1b-B1(cp2k_upstream_clone.j2 恢复 `cp2k_source_repo_url`)是本仓自己引入的回归,修复=一行 ×3 分支,应排 A 档第一;2.1a 的正则化修法照旧但按 P1 排期
 2. 2.1c 按修法照做(enabled:false + 守卫),无需紧急
 3. §3.5 验收表可沿用,但 2.1c 验收第 1 条的"或补齐 builder-installed"分支不建议(6.6.0 明确不迁 buildcache)
+
+---
+
+## 8. A 档执行记录(2026-11-02,§7.3 修订版顺序,11 commit 全绿)
+
+按 §7.3 修订顺序完成 A 档全部快赢项(每 commit ruff 0 错误 + pytest 全绿;
+基线 645 → 718 passed)。**§3.A 与 §7.2 维持 P1 的全部项已收口**;A+ 档剩余
+项见下表「未做」列。
+
+| 项 | commit | 内容 |
+|---|---|---|
+| 2.1b-B1+B2(§7.3 提级第一) | `296b39f` | `cp2k_upstream_clone.j2` 三变体恢复 `{{ cp2k_source_repo_url \| default(upstream) }}`;fork 形状过守卫(渲染逐字节不变已验证) |
+| 2.1(真 P0) | `cc65e41` | `RESERVED_CONTEXT_KEYS`(build_context 计算键 + plan/buildcache/no_spack 注入键)在 parse 拒绝;`lock_source_commits` 目标同受约束;契约测试钉住集合 ↔ build_context/plan_context 实际键集;`apt_mirror` 仍为文档化例外 |
+| 2.1a(+第四处) | `03fcc1b` | 四处清理(mirror/runtime/**fork 单版本强制**/stable release)全部 startswith → 锚定 `test()` 正则;契约测试按 tag 列表钉住匹配集 |
+| 2.1c | `6d76b15` | vasp 6.6.0-avx512 `buildcache.enabled: false`;validate config/build-input 新增 `buildcache.dockerfile_missing_stage` ERROR |
+| 2.6 + 2.2 | `d68746b` | prepare/binaries/runtime job 级降权(contents:read+packages:write,仅 sif 留 contents:write);concurrency 组三维化(env_name × fork_url × fork_branch),**regen-lock 组同步为 upstream-default 变体保持互斥**;ci-tests contents:read+timeout;stable-release packages:write 移到调用点 + resolve 5min timeout + env 族白名单 |
+| 2.3(artifact 部分) + 2.15c(.dot) | `f8485c9` | build-lock artifact 补 `lock-manifest.json`(两处消费点同步 cp);release 上传/清理 `DependencyGraph-*.dot`(与 BUILD_MANIFEST 共享保留预算) |
+| 2.4 | `74812af` | buildcache only-fail-closed/auto-fallback 消息带 status/resume/build 下一命令;repo-pin fix_hint 提 `pin set`;`__main__` 漏斗放宽(OSError/KeyError,KeyError 具名) |
+| 2.13b | `b58f572` | `_cmd_validate` 捕 ValueError → `build_input.invalid` finding;渲染探针补捕 jinja2 `TemplateError`(StrictUndefined 抛 UndefinedError 非 RuntimeError) |
+| 2.12a | `3ba3127` | producer 构建外层套 `SharedMirrorStore.shared_read()`(与正常 build 双锁 doctrine 对齐);测试断言 build_docker_stage 期间持锁 |
+| 2.15a | `2566a2b` | MKL/ROCm `libint &`+sleep 后台竞态 → 前台 `-j 12` 先装 libint 再全量;渲染+源测试钉住 |
+| 2.16 | `5159684` | ADD_NEW_ENV/ASSETS_GUIDE/TEMPLATE_MATRIX 改为 plan-driven 现实;README 两表 3 行 Spack 版本纠错;2025.2 README libint 版本、master-fa skala 路径纠错;新增两个 drift 守卫(版本列 == env.yaml;退役变量零出现) |
+
+**A 档未做(属 A+/B/C 档,见 §3)**:2.13a 渲染探针沉入 validate_environment +
+`*.def.j2` 校验(§7.2 判 P2);2.14 runtime_cleanup 前移(P2,仅 OCI 膨胀);
+2.12b/c/d(write_coverage check_kind 死代码、as_dict 漏 spec、六处原子写);
+2.15b GPU MOTD(P3);2.15d 其余 .def.j2/testsuite-file 修正;2.12 manifest
+回填(操作侧,§4);C 档 `env set-version`/`assets run|status|prune`/`status`。
