@@ -116,16 +116,13 @@ RUN {% if use_mirror %}
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 --only dependencies libint && \
 
         echo; \
-        echo "Installing libint..."; \
-        echo "Note: libint is a critical dependency that often takes the longest to build."; \
+        echo "Installing libint first (memory-bound: parallelism capped at 12)..."; \
         echo; \
 
-        spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20 libint & \
-
-        sleep 5 && \
+        spack -e {{ spack_env_name }} install --fail-fast -j 12 -p 20 libint && \
 
         echo; \
-        echo "Concurrently Install cp2k and it's dependencies..."; \
+        echo "Install cp2k and it's dependencies..."; \
         echo; \
 
         spack -e {{ spack_env_name }} install --fail-fast -j "$(nproc)" -p 20;
