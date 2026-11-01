@@ -39,6 +39,48 @@ def _write_valid_bootstrap(bootstrap: Path) -> None:
         path.write_text("bootstrap: valid\n", encoding="utf-8")
 
 
+def test_buildcache_enabled_without_producer_stage_is_error(tmp_path: Path) -> None:
+    """enabled:true on a 3-stage template must fail validation, not at
+    podman --target with a poisoned shared health state (2.1c)."""
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '1.1.1'\n  env_name: test-env\n"
+        "  buildcache:\n    enabled: true\n",
+        encoding="utf-8",
+    )
+    report = validate_environment(
+        env_dir, ValidationProfile.CONFIG, layout=ProjectLayout(project_root=tmp_path)
+    )
+    stage = [
+        f for f in report.findings if f.code == "buildcache.dockerfile_missing_stage"
+    ]
+    assert stage and stage[0].severity.value == "error"
+    assert not report.ok
+
+
+def test_buildcache_enabled_with_producer_stage_passes(tmp_path: Path) -> None:
+    env_dir = tmp_path / "env"
+    _write_minimal_env(env_dir)
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '1.1.1'\n  env_name: test-env\n"
+        "  buildcache:\n    enabled: true\n",
+        encoding="utf-8",
+    )
+    (env_dir / "Dockerfile.j2").write_text(
+        "FROM debian:trixie AS builder-installed\nFROM builder-installed AS builder\n",
+        encoding="utf-8",
+    )
+    report = validate_environment(
+        env_dir, ValidationProfile.CONFIG, layout=ProjectLayout(project_root=tmp_path)
+    )
+    assert not any(
+        f.code == "buildcache.dockerfile_missing_stage" for f in report.findings
+    )
+
+
 def test_config_profile_skips_missing_spack_tarball(tmp_path: Path) -> None:
     env_dir = tmp_path / "env"
     _write_minimal_env(env_dir)

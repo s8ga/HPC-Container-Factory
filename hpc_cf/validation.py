@@ -511,6 +511,48 @@ def collect_repo_pin_consistency(
     ]
 
 
+def collect_buildcache_stage(
+    spec: EnvironmentSpec,
+    env_dir: Path,
+) -> list[ValidationFinding]:
+    """buildcache producer contract: enabled envs need the 4-stage template.
+
+    ``buildcache build`` drives podman with ``--target builder-installed``
+    and consumer renders expect the buildcache install partials; an enabled
+    env on a 3-stage template dies at the podman step AND poisons the
+    shared health state (round-2 audit 2.1c). Gate the template up front.
+    """
+    if not (spec.method.runs_spack_validations and spec.spack.buildcache.enabled):
+        return []
+    dockerfile = env_dir / "Dockerfile.j2"
+    if not dockerfile.is_file():
+        # Missing-template diagnostics belong to the render probe; nothing
+        # stage-specific to check without a template.
+        return []
+    text = dockerfile.read_text(encoding="utf-8")
+    if "AS builder-installed" in text:
+        return []
+    return [
+        ValidationFinding(
+            code="buildcache.dockerfile_missing_stage",
+            severity=ValidationSeverity.ERROR,
+            message=(
+                "spack.buildcache.enabled is true but Dockerfile.j2 has no "
+                "`AS builder-installed` stage — buildcache build would fail "
+                "at podman --target and mark the shared cache unhealthy"
+            ),
+            path=str(dockerfile),
+            fix_hint=(
+                "Either migrate the template to the 4-stage producer shape "
+                "(builder-installed + spack_buildcache_config.j2 + "
+                "spack_buildcache_install.j2, see "
+                "cp2k_opensource-2026.2-force-avx512) or set "
+                "spack.buildcache.enabled: false."
+            ),
+        )
+    ]
+
+
 def is_nonempty_spack_lock(path: Path) -> bool:
     """Return True if *path* is a present, non-empty ``spack.lock`` file."""
     return path.is_file() and path.stat().st_size > 0
@@ -855,6 +897,7 @@ def validate_environment(
         if profile is not ValidationProfile.ASSETS:
             report.extend(collect_branch_consistency(env_dir))
             report.extend(collect_repo_pin_consistency(spec, env_dir))
+            report.extend(collect_buildcache_stage(spec, env_dir))
         if spec.method.runs_spack_validations:
             report.extend(collect_spack_yaml(env_dir))
 
