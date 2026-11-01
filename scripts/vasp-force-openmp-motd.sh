@@ -60,7 +60,7 @@ detect_simd() {
 }
 
 CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | sed 's/.*: //' || echo "Unknown")
-NPROC=$(nproc 2>/dev/null || echo "?")
+NPROC=$(nproc --all 2>/dev/null || echo "?")
 SIMD=$(detect_simd)
 
 # ── Memory info ──────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ if [[ -n "${MPI_AMDRUNVAR:-}" ]]; then
     echo "  For AMD CPUs: mpirun "'$MPI_AMDRUNVAR'" (adds libfakeintel)."
 fi
 echo "  ${DIM}Customize: ${CYA}echo "'$MPI_RUNVAR'"${RST} ${DIM}to inspect, or override in your launch script.${RST}"
-echo "  ${DIM}If you encountered shmem issue, please add ${CYA}\"--mca btl_sm_backing_directory /tmp\"${RST} ${DIM}in mpirun command to bypass it. ${RST}"
+echo "  ${DIM}If MLFF/GW aborts with /dev/shm error (Docker/Podman 64MB limit), use ${CYA}\"--ipc=host\"${RST}. ${RST}"
 
 echo " ${DIM}${LINE}${RST}"
 echo "  Type ${CYA}'vasp_std -v'${RST} for more details."
