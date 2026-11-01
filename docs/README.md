@@ -8,6 +8,7 @@ HPC-Container-Factory 的完整文档索引。顶层入口：[../README.md](../R
 |------|------|
 | [快速开始](QUICK_START.md) | 5 步完成构建（Dockerfile → 镜像 → SIF） |
 | [CLI 用法](GENERATE_CLI.md) | `hpc_cf` 全部子命令与参数 |
+| [校验体系](VALIDATION.md) | sanity 检查的 profile 分层；如何添加一条检查 |
 | [离线资源](ASSETS_GUIDE.md) | bootstrap + mirror 容器化构建流程 |
 | [SIF 构建](BUILD_SIF.md) | Apptainer SIF 转换、MOTD 技术方案 |
 | [模板矩阵](TEMPLATE_MATRIX.md) | 环境 ↔ 模板映射表 |

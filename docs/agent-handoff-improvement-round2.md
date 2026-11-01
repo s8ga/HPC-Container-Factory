@@ -397,8 +397,21 @@ D 与 E 可并行;C 的 `env set-version` 依赖 pin.py 机制已稳定,可最�
 | 2.15a | `2566a2b` | MKL/ROCm `libint &`+sleep 后台竞态 → 前台 `-j 12` 先装 libint 再全量;渲染+源测试钉住 |
 | 2.16 | `5159684` | ADD_NEW_ENV/ASSETS_GUIDE/TEMPLATE_MATRIX 改为 plan-driven 现实;README 两表 3 行 Spack 版本纠错;2025.2 README libint 版本、master-fa skala 路径纠错;新增两个 drift 守卫(版本列 == env.yaml;退役变量零出现) |
 
-**A 档未做(属 A+/B/C 档,见 §3)**:2.13a 渲染探针沉入 validate_environment +
-`*.def.j2` 校验(§7.2 判 P2);2.14 runtime_cleanup 前移(P2,仅 OCI 膨胀);
+**A 档未做(属 A+/B/C 档,见 §3)**:2.14 runtime_cleanup 前移(P2,仅 OCI 膨胀);
 2.12b/c/d(write_coverage check_kind 死代码、as_dict 漏 spec、六处原子写);
 2.15b GPU MOTD(P3);2.15d 其余 .def.j2/testsuite-file 修正;2.12 manifest
 回填(操作侧,§4);C 档 `env set-version`/`assets run|status|prune`/`status`。
+
+### §8.1 A+ 追加(2026-11-02,同日):渲染 sanity 默认化 + 收集器注册表
+
+用户目标「sanity 的默认 + 人类也可以轻松添加」落地为三个 commit:
+
+| commit | 内容 |
+|---|---|
+| `d6b522b` | `collect_render_sanity` 沉入 validate_environment(config+build-input):Dockerfile.j2 以完整真实形态(use_mirror=True 含 runtime 阶段)StrictUndefined 渲染 + COPY 源扫描;**全部 13 个 `*.def.j2`** 以 sif 契约上下文(docker_tar_filename 桩值)首次纳入渲染校验;cli 内联探针删除。COPY 扫描加固:续行合并、`--link` 无值 flag、根外路径 `copy.source_outside_root` ERROR;`repos.builtin.commit` 40-hex(原 40 任意字符 WARNING → ERROR)。2.13a/2.13c(部分)/2.13d 关闭 |
+| `7769f7f` | `_COLLECTORS` 声明式注册表:检查 = 一个 `collect_*` 函数 + 一行注册(profiles + spack_only);`test_validation_registry.py` 元测试保证公开 collect_* 不注册即失败。无行为变更 |
+| (本 commit) | `docs/VALIDATION.md` 配方 + AGENTS.md 一行指针 |
+
+注意:探针发现两个接线陷阱并已处理 —— hpc_cf 的 `render_template` 把
+UndefinedError 包成 **RuntimeError**(只捕 TemplateError 接不住);
+渲染不带 layout 才能回落默认仓库 templates 树(tmp 布局的合成环境需要)。

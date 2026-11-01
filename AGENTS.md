@@ -53,6 +53,10 @@ Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Docke
 ## Conventions
 
 - **Test-first**: write test → implement → verify all green before commit
+- **Sanity checks are registry-driven**: a new validation check is ONE
+  `collect_*` function plus ONE `_COLLECTORS` row in `hpc_cf/validation.py`
+  (render probes included, default profile). `tests/test_validation_registry.py`
+  fails on any unwired collector. Recipe: `docs/VALIDATION.md`.
 - **Spack CLI over config surgery**: whenever Spack provides an equivalent command,
   always use its CLI (`spack config` / `mirror` / `repo` / `external` / `env`) instead
   of directly mutating Spack YAML with `sed`, `yq`, PyYAML, string replacement, or
