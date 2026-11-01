@@ -384,8 +384,11 @@ jobs:
       # per day; a package-wide keep-N would count sibling envs' mirrors
       # against this env's budget and prune a mirror another run's
       # binaries job is about to restore (suspected contributor to the
-      # 2026-10-29 crane PROTOCOL_ERROR stream deaths). Prefix-filtered:
-      # keep the newest 3 versions tagged ${ENV_NAME}-*, never this run's.
+      # 2026-10-29 crane PROTOCOL_ERROR stream deaths). Exact-match
+      # filtered: keep the newest 3 versions tagged ${ENV_NAME}[-YYYYMMDD],
+      # never this run's. A bare startswith("${ENV_NAME}-") would also
+      # count ${ENV_NAME}-force-avx512 / ${ENV_NAME}-fork-* siblings into
+      # this env's budget and prune them.
       - name: Prune old mirror images (per-env prefix, best-effort)
         continue-on-error: true
         env:
@@ -394,8 +397,8 @@ jobs:
           set -euo pipefail
           REPO_PATH="/user/packages/container/hpc-cf-inputs/versions"
           mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            --jq --arg p "${ENV_NAME}-" --arg keep "${ENV_NAME}-${NIGHTLY_DATE}" \
-            '[.[] | select(any(.metadata.container.tags[]; startswith($p)))]
+            --jq --arg pat "^${ENV_NAME}(-[0-9]{8})?$" --arg keep "${ENV_NAME}-${NIGHTLY_DATE}" \
+            '[.[] | select(any(.metadata.container.tags[]; test($pat)))]
              | sort_by(.created_at) | reverse
              | .[3:]
              | map(select((.metadata.container.tags | index($keep)) == null))
@@ -781,7 +784,9 @@ jobs:
           set -euo pipefail
           REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
           KEEP_TAG="${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
-          mapfile -t OLD < <(gh api --paginate "$REPO_PATH"             -q --arg p "${ENV_SUFFIX}-" --arg keep "${KEEP_TAG}"             '.[] | select(any(.metadata.container.tags[]; startswith($p))) |
+          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
+            -q --arg pat "^${ENV_SUFFIX}-(nightly|release)(-[0-9]{8})?$" --arg keep "${KEEP_TAG}" \
+            '.[] | select(any(.metadata.container.tags[]; test($pat))) |
                  select((.metadata.container.tags | index($keep)) == null) | .id')
           if [ "${#OLD[@]}" -eq 0 ]; then
             echo "single fork version already enforced"
@@ -797,8 +802,10 @@ jobs:
       # freshly pushed images against this env's budget — three parallel
       # stable publishes raced it on 2026-10-29 and pruned each other's
       # dated images (and the -release float) seconds after upload.
-      # Prefix-filtered: keep the newest 7 versions tagged
-      # ${ENV_SUFFIX}-*, never this run's dated tags.
+      # Exact-match filtered: keep the newest 7 versions tagged
+      # ${ENV_SUFFIX}-(nightly|release)[-YYYYMMDD], never this run's dated
+      # tags. startswith("${ENV_SUFFIX}-") would count -force-avx512
+      # siblings and -fork-* images into this env's budget and prune them.
       - name: Prune old runtime images (per-env prefix, best-effort)
         continue-on-error: true
         env:
@@ -807,8 +814,8 @@ jobs:
           set -euo pipefail
           REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
           mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            --jq --arg p "${ENV_SUFFIX}-" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
-            '[.[] | select(any(.metadata.container.tags[]; startswith($p)))]
+            --jq --arg pat "^${ENV_SUFFIX}-(nightly|release)(-[0-9]{8})?$" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
+            '[.[] | select(any(.metadata.container.tags[]; test($pat)))]
              | sort_by(.created_at) | reverse
              | .[7:]
              | map(select((.metadata.container.tags | index($keep)) == null))
@@ -1131,7 +1138,7 @@ jobs:
           KEEP=5
           mapfile -t OLD_TAGS < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
             --json tagName \
-            --jq "[.[] | select(.tagName | startswith(\"stable-${ENV_NAME}-\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
+            --jq "[.[] | select(.tagName | test(\"^stable-${ENV_NAME}-[0-9]{8}$\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
           for tag in "${OLD_TAGS[@]}"; do
             echo "pruning stable release + tag: ${tag}"
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
