@@ -12,8 +12,6 @@ import argparse
 import logging
 from pathlib import Path
 
-from jinja2 import TemplateError
-
 from hpc_cf.environment import BuildcacheMode, BuildcachePolicy
 from hpc_cf.sif import (
     build_sif,
@@ -22,8 +20,6 @@ from hpc_cf.sif import (
 )
 from hpc_cf.template import (
     _extract_available_versions,
-    build_context,
-    render_template,
     resolve_build_input,
     select_template,
 )
@@ -773,45 +769,13 @@ def run_new_cli(argv: list[str]) -> int:
 
         env_dir = resolved_input.environment_dir
         report = validate_environment(
-            env_dir, profile, env_config=resolved_input.environment_spec
+            env_dir,
+            profile,
+            env_config=resolved_input.environment_spec,
+            # Render probes live inside validate_environment now (every
+            # profile); honor an explicit --template for the probe target.
+            render_template=resolved_input.render_template,
         )
-
-        # StrictUndefined render probe for config/template profile when a
-        # concrete template path is available.
-        if report.ok and profile is ValidationProfile.CONFIG:
-            try:
-                ctx = build_context(
-                    use_mirror=False,
-                    build_only=True,
-                    app_version=args.app_version or env_dir.name,
-                    template_path=resolved_input.render_template,
-                    resolved=resolved_input,
-                )
-                rendered = render_template(resolved_input.render_template, ctx)
-                # Same COPY-source contract the build path enforces after
-                # render; surfaced here so validate catches it pre-build.
-                from hpc_cf.execution import ProjectLayout
-                from hpc_cf.validation import collect_render_copy_sources
-
-                for finding in collect_render_copy_sources(
-                    rendered,
-                    ProjectLayout.default().project_root,
-                    path=str(resolved_input.render_template),
-                ):
-                    report.add(finding)
-            except (FileNotFoundError, RuntimeError, TemplateError) as exc:
-                report.add(
-                    ValidationFinding(
-                        code="template.render",
-                        severity=ValidationSeverity.ERROR,
-                        message=str(exc),
-                        path=str(resolved_input.render_template),
-                        fix_hint=(
-                            "Fix undefined Jinja variables or template syntax "
-                            "(StrictUndefined)."
-                        ),
-                    )
-                )
 
         rc = _emit(report)
         if report.ok:

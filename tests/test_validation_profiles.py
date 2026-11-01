@@ -469,3 +469,24 @@ def test_all_envs_with_assets_pass_build_input_profile() -> None:
 
     if not checked:
         pytest.skip("no env has all BUILD_INPUT assets available")
+
+
+def test_builtin_commit_must_be_40_hex(tmp_path: Path) -> None:
+    """Length-only let "z"*40 through; spack would fail deep inside the
+    solver instead of at validate (round-2 audit 2.13d)."""
+    env_dir = tmp_path / "spack-envs" / "env"
+    _write_minimal_env(env_dir)
+    (env_dir / "spack.yaml").write_text(
+        "spack:\n"
+        "  specs: [pkgconf]\n"
+        "  repos:\n"
+        "    builtin:\n"
+        "      commit: \"%s\"\n" % ("z" * 40),
+        encoding="utf-8",
+    )
+    report = validate_environment(
+        env_dir, ValidationProfile.CONFIG, layout=ProjectLayout(project_root=tmp_path)
+    )
+    bad = [f for f in report.findings if f.code == "spack_yaml.commit_format"]
+    assert bad and bad[0].severity.value == "error"
+    assert not report.ok

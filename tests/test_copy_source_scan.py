@@ -114,3 +114,44 @@ def test_generate_dockerfile_fails_closed_on_missing_copy_source(
             build_only=True,
             layout=ProjectLayout(project_root=tmp_path),
         )
+
+
+def test_continuation_lines_join_before_scan(tmp_path: Path) -> None:
+    """COPY split across backslash continuations is one statement."""
+    root = _root(tmp_path)
+    rendered = (
+        "COPY \\\n"
+        "  spack-envs/demo/libfakeintel \\\n"
+        "  /opt/libfakeintel/\n"
+    )
+    assert collect_render_copy_sources(rendered, root) == []
+
+    missing = "COPY \\\n  spack-envs/demo/nope.conf \\\n  /opt/t/\n"
+    findings = collect_render_copy_sources(missing, root)
+    assert [f.code for f in findings] == ["copy.source_missing"]
+
+
+def test_link_flag_takes_no_value(tmp_path: Path) -> None:
+    """COPY --link is a boolean flag; it must not eat the first source."""
+    root = _root(tmp_path)
+    rendered = "COPY --link spack-envs/demo/libfakeintel /opt/libfakeintel/\n"
+    assert collect_render_copy_sources(rendered, root) == []
+
+    missing = "COPY --link spack-envs/demo/nope.conf /opt/t/\n"
+    findings = collect_render_copy_sources(missing, root)
+    assert [f.code for f in findings] == ["copy.source_missing"]
+    assert "nope.conf" in findings[0].message
+
+
+def test_sources_outside_project_root_are_rejected(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    findings = collect_render_copy_sources(
+        "COPY ../outside/file /dst\n"
+        "COPY /etc/passwd /dst\n",
+        root,
+    )
+    assert [f.code for f in findings] == [
+        "copy.source_outside_root",
+        "copy.source_outside_root",
+    ]
+    assert findings[0].severity.value == "error"

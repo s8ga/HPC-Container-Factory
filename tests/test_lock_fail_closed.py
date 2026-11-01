@@ -17,7 +17,12 @@ from hpc_cf.validation import ValidationProfile, validate_environment
 
 def _write_spack_env(env_dir: Path, *, with_lock: bool = True) -> None:
     env_dir.mkdir(parents=True, exist_ok=True)
-    (env_dir / "env.yaml").write_text(
+    # Real layout: env.yaml/spack.yaml/lock live under spack-env-file/ (the
+    # rendered env-create partial COPYs that directory into the image; the
+    # render-sanity probe reports the flat layout as copy.source_missing).
+    conf = env_dir / "spack-env-file"
+    conf.mkdir(parents=True, exist_ok=True)
+    (conf / "env.yaml").write_text(
         "schema_version: 1\nmethod: spack\n"
         "spack:\n  version: '1.1.1'\n  env_name: test-env\n",
         encoding="utf-8",
@@ -26,12 +31,12 @@ def _write_spack_env(env_dir: Path, *, with_lock: bool = True) -> None:
         "{% include 'partials/spack_env_create.j2' %}\n",
         encoding="utf-8",
     )
-    (env_dir / "spack.yaml").write_text(
+    (conf / "spack.yaml").write_text(
         "spack:\n  specs: [pkgconf]\n",
         encoding="utf-8",
     )
     if with_lock:
-        (env_dir / "spack.lock").write_text('{"concrete":true}\n', encoding="utf-8")
+        (conf / "spack.lock").write_text('{"concrete":true}\n', encoding="utf-8")
 
 
 def _write_valid_bootstrap(bootstrap: Path) -> None:
@@ -91,7 +96,9 @@ def test_build_input_ok_with_nonempty_lock(tmp_path: Path) -> None:
 
 
 def test_allow_reconcretize_downgrades_missing_lock(tmp_path: Path) -> None:
-    env_dir = tmp_path / "env"
+    # Under spack-envs/ so the rendered env-create COPY path
+    # (spack-envs/<env>/spack-env-file) resolves inside the tmp root.
+    env_dir = tmp_path / "spack-envs" / "env"
     _write_spack_env(env_dir, with_lock=False)
     layout = ProjectLayout(project_root=tmp_path)
     layout.assets_dir.mkdir()

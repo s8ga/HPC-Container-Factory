@@ -20,7 +20,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
 try:
@@ -687,15 +687,19 @@ def collect_lock_input_manifest(
 
 _COPY_LINE_RE = re.compile(r"^\s*COPY\s+(?P<rest>.+?)\s*$", re.MULTILINE)
 _GLOB_CHARS = ("*", "?", "[")
+# COPY flags that take no value; other bare ``--flag`` tokens (``--chmod``,
+# ``--chown``) consume the following token as their value.
+_COPY_FLAG_NO_VALUE = frozenset({"--link"})
 
 
 def _copy_sources(rest: str) -> list[str]:
     """Extract source paths from the token stream after ``COPY``.
 
     Skips flag tokens (``--from=``-carrying lines are filtered by the
-    caller; ``--chmod[=v]`` / ``--chown[=v]`` lose their value token too)
-    and the final destination token. Returns [] when nothing is copyable
-    from the build context (multi-stage ``--from`` sources, URLs).
+    caller; ``--chmod[=v]`` / ``--chown[=v]`` lose their value token too;
+    value-less flags like ``--link`` eat nothing) and the final destination
+    token. Returns [] when nothing is copyable from the build context
+    (multi-stage ``--from`` sources, URLs).
     """
     if rest.startswith("["):
         try:
@@ -713,7 +717,7 @@ def _copy_sources(rest: str) -> list[str]:
             skip_next = False
             continue
         if token.startswith("--"):
-            if "=" not in token:
+            if "=" not in token and token not in _COPY_FLAG_NO_VALUE:
                 skip_next = True
             continue
         sources.append(token)
@@ -732,15 +736,34 @@ def collect_render_copy_sources(
     ``libfakeintel/``, ``testsuite-file/``, scripts. A missing source used
     to surface only as a mid-build podman failure; it is a config error and
     fails closed right after render. Multi-stage ``COPY --from`` sources
-    and URLs are image-side, not context-side, and are skipped.
+    and URLs are image-side, not context-side, and are skipped. Sources
+    must also stay inside the project root (absolute or ``..``-escaping
+    paths cannot come from the build context podman uploads).
     """
     findings: list[ValidationFinding] = []
-    for match in _COPY_LINE_RE.finditer(rendered_text):
+    # Join backslash continuations first so a COPY split across lines scans
+    # as one statement (only COPY-prefixed lines are matched below).
+    joined = re.sub(r"\\\s*\n\s*", " ", rendered_text)
+    for match in _COPY_LINE_RE.finditer(joined):
         rest = match.group("rest")
         if "--from=" in rest:
             continue
         for src in _copy_sources(rest):
             if "://" in src:
+                continue
+            if src.startswith("/") or ".." in PurePosixPath(src).parts:
+                findings.append(
+                    ValidationFinding(
+                        code="copy.source_outside_root",
+                        severity=ValidationSeverity.ERROR,
+                        message=f"COPY source escapes the project root: {src}",
+                        path=path,
+                        fix_hint=(
+                            "COPY sources must be relative paths under the "
+                            "project root (the podman build context)."
+                        ),
+                    )
+                )
                 continue
             if any(ch in src for ch in _GLOB_CHARS):
                 if next(project_root.glob(src), None) is None:
@@ -770,6 +793,129 @@ def collect_render_copy_sources(
                         ),
                     )
                 )
+    return findings
+
+
+def collect_render_sanity(
+    spec: EnvironmentSpec,
+    env_dir: Path,
+    *,
+    layout: ProjectLayout | None = None,
+    allow_reconcretize: bool = False,
+    render_template: Path | None = None,
+) -> list[ValidationFinding]:
+    """StrictUndefined render probes over the env's real template surface.
+
+    Sanity by default (round-2 audit 2.13a plus the ``*.def.j2`` blind
+    spot): the Dockerfile AND every SIF definition template must render
+    cleanly with the exact context shape the build/sif paths produce. An
+    undefined variable, a typo'd include, or a COPY of a nonexistent file
+    is a config error before any container runs — not a mid-pipeline
+    surprise. Rendering uses the full real shape (``use_mirror=True``,
+    runtime stage included) so both template halves are exercised.
+    """
+    from jinja2 import TemplateError
+
+    from hpc_cf.template import (
+        ResolvedBuildInput,
+        build_context,
+        render_template as render,
+        resolve_build_input,
+    )
+
+    layout = layout or ProjectLayout.default()
+    tpl = render_template or (env_dir / "Dockerfile.j2")
+    findings: list[ValidationFinding] = []
+
+    resolved: ResolvedBuildInput | None = None
+    try:
+        # Full resolve applies the resolved-repos / lock-source-commit
+        # sidecars exactly like the build path, so the master track's
+        # lock-derived clone branch is probed too, not just its fallback.
+        candidate = resolve_build_input(env_dir.name, None, layout=layout)
+        if candidate.environment_dir.name == env_dir.name:
+            resolved = candidate
+    except (FileNotFoundError, ValueError):
+        resolved = None
+    if resolved is None:
+        # Synthetic/off-tree env dirs (tests, --template flows): probe with
+        # the already-parsed spec instead of name-based discovery.
+        resolved = ResolvedBuildInput(
+            environment_spec=spec,
+            environment_dir=env_dir,
+            render_template=tpl,
+        )
+
+    try:
+        context = build_context(
+            use_mirror=True,
+            build_only=False,
+            app_version=env_dir.name,
+            template_path=tpl if tpl.is_file() else None,
+            resolved=resolved,
+            layout=layout,
+            allow_reconcretize=allow_reconcretize,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        return [
+            ValidationFinding(
+                code="template.render",
+                severity=ValidationSeverity.ERROR,
+                message=f"build context assembly failed: {exc}",
+                path=str(tpl),
+                fix_hint="Fix the reported env.yaml / sidecar input.",
+            )
+        ]
+
+    if tpl.is_file():
+        try:
+            # No explicit layout: partials resolve from the template's own
+            # directory and the project templates tree (same search as the
+            # build path), never from a caller-local layout that has no
+            # templates copied into it.
+            rendered = render(tpl, context)
+        except (TemplateError, RuntimeError) as exc:
+            findings.append(
+                ValidationFinding(
+                    code="template.render",
+                    severity=ValidationSeverity.ERROR,
+                    message=f"Dockerfile render failed (StrictUndefined): {exc}",
+                    path=str(tpl),
+                    fix_hint=(
+                        "Fix undefined Jinja variables or template syntax; "
+                        "declare the variable in env.yaml template_vars."
+                    ),
+                )
+            )
+        else:
+            findings.extend(
+                collect_render_copy_sources(
+                    rendered, layout.project_root, path=str(tpl)
+                )
+            )
+
+    # SIF definitions render with the same context plus the exported tar
+    # name (sif.py contract); docker_tar_filename is a per-run value, so a
+    # stable stub exercises everything the template can check.
+    def_context = dict(context)
+    def_context["docker_tar_filename"] = "image.tar"
+    for def_tpl in sorted(env_dir.glob("*.def.j2")):
+        try:
+            render(def_tpl, def_context)
+        except (TemplateError, RuntimeError) as exc:
+            findings.append(
+                ValidationFinding(
+                    code="template.render",
+                    severity=ValidationSeverity.ERROR,
+                    message=f"definition template render failed: {exc}",
+                    path=str(def_tpl),
+                    fix_hint=(
+                        "Fix undefined Jinja variables or syntax in the "
+                        "*.def.j2 (context: default_image_tag, "
+                        "docker_tar_filename, ...)."
+                    ),
+                )
+            )
     return findings
 
 
@@ -840,19 +986,23 @@ def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
 
     builtin = ((data.get("spack", {}) or {}).get("repos", {}) or {}).get("builtin", {}) or {}
     commit = builtin.get("commit")
-    # Length-only gate (not hex alphabet). Message must match this check.
-    if commit is not None and not (isinstance(commit, str) and len(commit) == 40):
+    # Full hex gate: 40 chars of anything else (e.g. "z" * 40) would pass a
+    # length-only check and blow up deep inside spack instead of here.
+    if commit is not None and not (
+        isinstance(commit, str) and re.fullmatch(r"[0-9a-fA-F]{40}", commit)
+    ):
         findings.append(
             ValidationFinding(
                 code="spack_yaml.commit_format",
-                severity=ValidationSeverity.WARNING,
+                severity=ValidationSeverity.ERROR,
                 message=(
-                    f"repos.builtin.commit is not exactly 40 characters: {commit!r}"
+                    f"repos.builtin.commit is not a 40-hex git SHA: {commit!r}"
                 ),
                 path=str(spack_yaml),
                 fix_hint=(
-                    "Set repos.builtin.commit to a 40-character string "
-                    "(typically a full git SHA; this check validates length only)."
+                    "Set repos.builtin.commit to the full 40-hex builtin "
+                    "repo commit (`git -C spack rev-parse HEAD` inside the "
+                    "spack checkout used for concretization)."
                 ),
             )
         )
@@ -879,6 +1029,7 @@ def validate_environment(
     env_config: dict | EnvironmentSpec | None = None,
     layout: ProjectLayout | None = None,
     allow_reconcretize: bool = False,
+    render_template: Path | None = None,
 ) -> ValidationReport:
     """Run the named validation profile and return a structured report."""
     profile = ValidationProfile.parse(profile)
@@ -900,6 +1051,15 @@ def validate_environment(
             report.extend(collect_branch_consistency(env_dir))
             report.extend(collect_repo_pin_consistency(spec, env_dir))
             report.extend(collect_buildcache_stage(spec, env_dir))
+            report.extend(
+                collect_render_sanity(
+                    spec,
+                    env_dir,
+                    layout=layout,
+                    allow_reconcretize=allow_reconcretize,
+                    render_template=render_template,
+                )
+            )
         if spec.method.runs_spack_validations:
             report.extend(collect_spack_yaml(env_dir))
 

@@ -80,3 +80,66 @@ def test_undefined_render_var_becomes_json_finding(
     assert code == 1
     assert payload["ok"] is False
     assert "template.render" in [f["code"] for f in payload["findings"]]
+
+
+def test_default_build_input_profile_runs_render_probe(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The render probe used to be CONFIG-only; the default CLI profile is
+    BUILD_INPUT, so the daily `hpc_cf validate <env>` never rendered the
+    template (round-2 audit 2.13a). Now every profile probes."""
+    from hpc_cf.template import ResolvedBuildInput
+
+    env_dir = tmp_path / "synth-env"
+    conf = env_dir / "spack-env-file"
+    conf.mkdir(parents=True)
+    (conf / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n  version: '1.2.0'\n  env_name: synth-env\n",
+        encoding="utf-8",
+    )
+    (conf / "spack.yaml").write_text("spack:\n  specs: [pkgconf]\n", encoding="utf-8")
+    (env_dir / "Dockerfile.j2").write_text(
+        "FROM debian\nRUN echo {{ no_such_var }}\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(
+        "hpc_cf.cli.resolve_build_input",
+        lambda *_a, **_k: ResolvedBuildInput(
+            environment_spec=None, environment_dir=env_dir,
+            render_template=env_dir / "Dockerfile.j2",
+        ),
+    )
+    code, payload = _run_validate_cli(capsys)  # default profile = build-input
+    assert code == 1
+    assert payload["ok"] is False
+    assert "template.render" in [f["code"] for f in payload["findings"]]
+
+
+def test_def_template_undefined_var_is_a_finding(tmp_path: Path) -> None:
+    """*.def.j2 templates never went through any render validation; probe
+    them with the sif context contract."""
+    from hpc_cf.execution import ProjectLayout
+    from hpc_cf.validation import ValidationProfile, validate_environment
+
+    env_dir = tmp_path / "spack-envs" / "defenv"
+    conf = env_dir / "spack-env-file"
+    conf.mkdir(parents=True)
+    (conf / "env.yaml").write_text(
+        "schema_version: 1\nmethod: no_spack\n"
+        "spack:\n  version: '1.2.0'\n  env_name: defenv\n"
+        "script: echo hi\n",
+        encoding="utf-8",
+    )
+    (env_dir / "Dockerfile.j2").write_text("FROM debian\n", encoding="utf-8")
+    (env_dir / "app.def.j2").write_text(
+        "Bootstrap: docker-archive\nFrom: {{ docker_tar_filename }}\n"
+        "Version {{ typoed_var }}\n",
+        encoding="utf-8",
+    )
+    report = validate_environment(
+        env_dir, ValidationProfile.CONFIG, layout=ProjectLayout(project_root=tmp_path)
+    )
+    render = [f for f in report.findings if f.code == "template.render"]
+    assert render and any("app.def.j2" in (f.path or "") for f in render)
+    assert any("typoed_var" in f.message for f in render)
