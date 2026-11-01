@@ -33,6 +33,11 @@ from hpc_cf.environment import (
     parse_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout
+from hpc_cf.lock_manifest import (
+    LOCK_MANIFEST_FILENAME,
+    compare_lock_inputs,
+    read_lock_manifest,
+)
 from hpc_cf.repo_pins import check_env_repo_pins
 
 logger = logging.getLogger(__name__)
@@ -544,6 +549,85 @@ def collect_spack_lock(
     ]
 
 
+def collect_lock_input_manifest(
+    spec: EnvironmentSpec,
+    env_dir: Path,
+    *,
+    allow_reconcretize: bool = False,
+) -> list[ValidationFinding]:
+    """Compare spack.lock provenance (lock-manifest.json) with current inputs.
+
+    A non-empty lock alone proves nothing about WHICH inputs produced it.
+    The manifest records the spack.yaml sha256 and env.yaml repo pins the
+    concretizer saw; drift means the lock builds a stale dependency graph —
+    an error unless ``--allow-reconcretize`` downgrades it, matching the
+    missing-lock doctrine. Locks without a manifest (pre-dating the
+    sidecar) get a warning until the next assets concretize refreshes it.
+    """
+    candidates = [
+        env_dir / "spack-env-file" / "spack.lock",
+        env_dir / "spack.lock",
+    ]
+    lock = next((c for c in candidates if is_nonempty_spack_lock(c)), None)
+    if lock is None:
+        return []  # collect_spack_lock owns the missing-lock finding
+
+    try:
+        manifest = read_lock_manifest(lock.parent)
+    except ValueError as exc:
+        return [
+            ValidationFinding(
+                code="lock.manifest_invalid",
+                severity=ValidationSeverity.ERROR,
+                message=str(exc),
+                path=str(lock.parent / LOCK_MANIFEST_FILENAME),
+                fix_hint=(
+                    "Delete the manifest and re-run "
+                    "`python -m hpc_cf assets --env <name> --allow-concretize` "
+                    "to regenerate lock + manifest together."
+                ),
+            )
+        ]
+    if manifest is None:
+        return [
+            ValidationFinding(
+                code="lock.provenance_unknown",
+                severity=ValidationSeverity.WARNING,
+                message=(
+                    f"{lock.name} has no {LOCK_MANIFEST_FILENAME}: its inputs "
+                    "(spack.yaml / custom_repos pins) cannot be verified"
+                ),
+                path=str(lock.parent / LOCK_MANIFEST_FILENAME),
+                fix_hint=(
+                    "Re-run `python -m hpc_cf assets --env <name> "
+                    "--allow-concretize` to regenerate lock + manifest "
+                    "together."
+                ),
+            )
+        ]
+
+    drift = compare_lock_inputs(manifest, spec, lock.parent)
+    if not drift:
+        return []
+    severity = (
+        ValidationSeverity.WARNING if allow_reconcretize else ValidationSeverity.ERROR
+    )
+    return [
+        ValidationFinding(
+            code="lock.stale_input",
+            severity=severity,
+            message="spack.lock predates its current inputs: " + "; ".join(drift),
+            path=str(lock),
+            fix_hint=(
+                "Inputs changed after concretization. Re-run "
+                "`python -m hpc_cf assets --env <name> --allow-concretize` "
+                "(delete the stale lock first), or pass "
+                "--allow-reconcretize to build knowingly."
+            ),
+        )
+    ]
+
+
 def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     candidates = [env_dir / "spack-env-file" / "spack.yaml", env_dir / "spack.yaml"]
@@ -655,6 +739,13 @@ def validate_environment(
             report.extend(
                 collect_spack_lock(
                     env_dir, allow_reconcretize=allow_reconcretize
+                )
+            )
+            report.extend(
+                collect_lock_input_manifest(
+                    spec,
+                    env_dir,
+                    allow_reconcretize=allow_reconcretize,
                 )
             )
 

@@ -28,6 +28,7 @@ from hpc_cf.environment import (
     load_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
+from hpc_cf.lock_manifest import write_lock_manifest
 from hpc_cf.mirror_prune import (
     FETCH_SPECS_FILENAME,
     PRUNE_REPORT_FILENAME,
@@ -190,6 +191,7 @@ def run_mirror(
     with store.exclusive_write():
         run = store.begin_run(env_name)
         stats: dict[str, int] = {"present": -1, "added": -1, "failed": -1}
+        concretized = False
         try:
             if has_lock:
                 stats = ops.run_mirror_pipeline(
@@ -202,6 +204,7 @@ def run_mirror(
                     "spack.lock missing — --allow-concretize: running "
                     "concretize + mirror"
                 )
+                concretized = True
                 stats = ops.run_all_pipeline(
                     host_dir,
                     str(container_dir),
@@ -215,6 +218,10 @@ def run_mirror(
                     "or place a non-empty spack.lock before --download-mirror"
                 )
 
+            if concretized:
+                # Only a fresh concretize knows its own inputs; blessing a
+                # pre-existing lock with the current files would mask drift.
+                write_lock_manifest(env_config, host_dir)
             _write_resolved_repo_sidecar(ops, host_dir)
 
             store.write_manifest(
