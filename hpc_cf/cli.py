@@ -423,6 +423,46 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
     )
 
+    pin_parser = subparsers.add_parser(
+        "pin",
+        help="Atomically bump repo pins across their dual-write copies",
+    )
+    pin_actions = pin_parser.add_subparsers(dest="pin_action", required=True)
+    pin_set_parser = pin_actions.add_parser(
+        "set",
+        help="Set a git custom_repos commit pin (and its template_vars copies)",
+    )
+    pin_set_parser.add_argument(
+        "--env",
+        dest="env",
+        action="append",
+        metavar="NAME",
+        help="Environment under spack-envs/ (repeatable)",
+    )
+    pin_set_parser.add_argument(
+        "--all",
+        dest="all",
+        action="store_true",
+        help="Operate on every env whose repos match --repo (others skipped)",
+    )
+    pin_set_parser.add_argument(
+        "--repo",
+        required=True,
+        metavar="NS|URL-SUBSTRING",
+        help="Match git custom_repos by exact namespace or URL substring",
+    )
+    pin_set_parser.add_argument(
+        "--commit",
+        required=True,
+        metavar="SHA",
+        help="New 40-hex commit pin",
+    )
+    pin_set_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the edit plan without writing",
+    )
+
     assets_parser = subparsers.add_parser(
         "assets",
         help="Prepare bootstrap/mirror assets and mirror worker container",
@@ -596,6 +636,13 @@ def run_new_cli(argv: list[str]) -> int:
             "--buildcache-mode oci"
         )
 
+    if args.command == "pin" and getattr(args, "pin_action", None) == "set":
+        has_envs = bool(getattr(args, "env", None))
+        if has_envs and getattr(args, "all", False):
+            parser.error("pin set: use either --env or --all, not both")
+        if not has_envs and not getattr(args, "all", False):
+            parser.error("pin set: pass --env NAME (repeatable) or --all")
+
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.getLogger("hpc_cf").setLevel(logging.DEBUG)
@@ -760,6 +807,12 @@ def run_new_cli(argv: list[str]) -> int:
 
     if args.command == "buildcache":
         return BuildcacheService().run(buildcache_request_from_args(args))
+
+    if args.command == "pin":
+        from hpc_cf.pin import run_pin_set
+        from hpc_cf.requests import pin_request_from_args
+
+        return run_pin_set(pin_request_from_args(args))
 
     if args.command == "gc":
         from hpc_cf.storage_gc import run_storage_gc

@@ -92,6 +92,28 @@ class BuildcacheRequest:
     build_secret: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class PinSetRequest:
+    """Typed input for ``pin set`` (atomic repo-pin bump)."""
+
+    envs: tuple[str, ...] = ()
+    all_envs: bool = False
+    repo: str = ""
+    commit: str = ""
+    dry_run: bool = False
+
+
+def pin_request_from_args(args: Any) -> PinSetRequest:
+    """Map a parsed CLI namespace onto :class:`PinSetRequest`."""
+    return PinSetRequest(
+        envs=tuple(getattr(args, "env", None) or ()),
+        all_envs=bool(getattr(args, "all", False)),
+        repo=getattr(args, "repo", "") or "",
+        commit=getattr(args, "commit", "") or "",
+        dry_run=bool(getattr(args, "dry_run", False)),
+    )
+
+
 def assets_request_from_args(args: Any) -> AssetsRequest:
     """Map a parsed CLI namespace onto :class:`AssetsRequest`."""
     return AssetsRequest(
