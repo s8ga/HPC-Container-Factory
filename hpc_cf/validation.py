@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 
 try:
     import yaml
@@ -1022,6 +1022,137 @@ def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
     return findings
 
 
+# ---------------------------------------------------------------------------
+# Collector registry — how a sanity check is added
+# ---------------------------------------------------------------------------
+# 1. Write a ``collect_*`` function returning ``list[ValidationFinding]``.
+# 2. Add ONE row to ``_COLLECTORS`` below: the profiles it belongs to and
+#    whether it is spack-only (skipped for ``method: no_spack``).
+# 3. Extend its tests; ``tests/test_validation_registry.py`` FAILS if a
+#    public ``collect_*`` function is not wired into the table, so a new
+#    check cannot silently ship unregistered (or registered-but-dead).
+
+
+@dataclass(frozen=True)
+class _CollectorContext:
+    """Everything a registered collector may need."""
+
+    spec: EnvironmentSpec
+    env_dir: Path
+    layout: ProjectLayout
+    profile: ValidationProfile
+    allow_reconcretize: bool
+    render_template: Path | None
+
+
+_CollectorFn = Callable[[_CollectorContext], list[ValidationFinding]]
+
+
+@dataclass(frozen=True)
+class _CollectorSpec:
+    name: str
+    profiles: frozenset[ValidationProfile]
+    fn: _CollectorFn
+    # Skip when the env is method: no_spack (no spack.yaml/lock/assets).
+    spack_only: bool = False
+
+
+_SHARED_PROFILES = frozenset(
+    {ValidationProfile.CONFIG, ValidationProfile.BUILD_INPUT}
+)
+_ALL_PROFILES = frozenset(
+    {
+        ValidationProfile.CONFIG,
+        ValidationProfile.BUILD_INPUT,
+        ValidationProfile.ASSETS,
+    }
+)
+_BUILD_INPUT_PROFILES = frozenset({ValidationProfile.BUILD_INPUT})
+_ASSETS_PROFILES = frozenset({ValidationProfile.ASSETS})
+
+_COLLECTORS: tuple[_CollectorSpec, ...] = (
+    _CollectorSpec(
+        name="branch_consistency",
+        profiles=_SHARED_PROFILES,
+        fn=lambda ctx: collect_branch_consistency(ctx.env_dir),
+    ),
+    _CollectorSpec(
+        name="repo_pin_consistency",
+        profiles=_SHARED_PROFILES,
+        fn=lambda ctx: collect_repo_pin_consistency(ctx.spec, ctx.env_dir),
+    ),
+    _CollectorSpec(
+        name="buildcache_stage",
+        profiles=_SHARED_PROFILES,
+        fn=lambda ctx: collect_buildcache_stage(ctx.spec, ctx.env_dir),
+    ),
+    _CollectorSpec(
+        name="render_sanity",
+        profiles=_SHARED_PROFILES,
+        fn=lambda ctx: collect_render_sanity(
+            ctx.spec,
+            ctx.env_dir,
+            layout=ctx.layout,
+            allow_reconcretize=ctx.allow_reconcretize,
+            render_template=ctx.render_template,
+        ),
+    ),
+    _CollectorSpec(
+        name="spack_yaml",
+        profiles=_ALL_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_spack_yaml(ctx.env_dir),
+    ),
+    _CollectorSpec(
+        name="manual_packages",
+        profiles=_BUILD_INPUT_PROFILES,
+        fn=lambda ctx: collect_manual_packages(
+            ctx.spec, project_root=ctx.layout.project_root
+        ),
+    ),
+    _CollectorSpec(
+        name="spack_assets",
+        profiles=_BUILD_INPUT_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_spack_assets(
+            ctx.spec, assets_dir=ctx.layout.assets_dir, require_bootstrap=True
+        ),
+    ),
+    _CollectorSpec(
+        name="mirror_content",
+        profiles=_BUILD_INPUT_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_mirror_content(ctx.layout),
+    ),
+    _CollectorSpec(
+        name="spack_lock",
+        profiles=_BUILD_INPUT_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_spack_lock(
+            ctx.env_dir, allow_reconcretize=ctx.allow_reconcretize
+        ),
+    ),
+    _CollectorSpec(
+        name="lock_input_manifest",
+        profiles=_BUILD_INPUT_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_lock_input_manifest(
+            ctx.spec,
+            ctx.env_dir,
+            allow_reconcretize=ctx.allow_reconcretize,
+        ),
+    ),
+    _CollectorSpec(
+        name="spack_assets",
+        profiles=_ASSETS_PROFILES,
+        spack_only=True,
+        fn=lambda ctx: collect_spack_assets(
+            ctx.spec, assets_dir=ctx.layout.assets_dir
+        ),
+    ),
+)
+
+
 def validate_environment(
     env_dir: Path,
     profile: ValidationProfile | str = ValidationProfile.BUILD_INPUT,
@@ -1041,59 +1172,20 @@ def validate_environment(
     if spec is None:
         return report
 
-    # Shared config/template checks.
-    if profile in (
-        ValidationProfile.CONFIG,
-        ValidationProfile.BUILD_INPUT,
-        ValidationProfile.ASSETS,
-    ):
-        if profile is not ValidationProfile.ASSETS:
-            report.extend(collect_branch_consistency(env_dir))
-            report.extend(collect_repo_pin_consistency(spec, env_dir))
-            report.extend(collect_buildcache_stage(spec, env_dir))
-            report.extend(
-                collect_render_sanity(
-                    spec,
-                    env_dir,
-                    layout=layout,
-                    allow_reconcretize=allow_reconcretize,
-                    render_template=render_template,
-                )
-            )
-        if spec.method.runs_spack_validations:
-            report.extend(collect_spack_yaml(env_dir))
-
-    if profile is ValidationProfile.BUILD_INPUT:
-        report.extend(
-            collect_manual_packages(spec, project_root=layout.project_root)
-        )
-        if spec.method.runs_spack_validations:
-            report.extend(
-                collect_spack_assets(
-                    spec,
-                    assets_dir=layout.assets_dir,
-                    require_bootstrap=True,
-                )
-            )
-            report.extend(collect_mirror_content(layout))
-            report.extend(
-                collect_spack_lock(
-                    env_dir, allow_reconcretize=allow_reconcretize
-                )
-            )
-            report.extend(
-                collect_lock_input_manifest(
-                    spec,
-                    env_dir,
-                    allow_reconcretize=allow_reconcretize,
-                )
-            )
-
-    if profile is ValidationProfile.ASSETS:
-        if spec.method.runs_spack_validations:
-            report.extend(
-                collect_spack_assets(spec, assets_dir=layout.assets_dir)
-            )
+    ctx = _CollectorContext(
+        spec=spec,
+        env_dir=env_dir,
+        layout=layout,
+        profile=profile,
+        allow_reconcretize=allow_reconcretize,
+        render_template=render_template,
+    )
+    for collector in _COLLECTORS:
+        if profile not in collector.profiles:
+            continue
+        if collector.spack_only and not spec.method.runs_spack_validations:
+            continue
+        report.extend(collector.fn(ctx))
 
     # Surface non-error findings via the logger (parity with legacy validators).
     for f in report.findings:
