@@ -1,5 +1,35 @@
 # 当前已知问题
 
+## WSL2 宿主 binfmt_misc 使 apptainer def 文件构建 FATAL（EINVAL）
+
+**症状**：`hpc_cf build-sif`（或任何 `apptainer build <x>.def`）在 WSL2 上报
+`FATAL: failed to mount binfmt_misc filesystem: invalid argument`，stage 2
+（fakeroot 运行引擎）启动即死；`docker-archive://` URI 直连转换构建不受影响
+（这也是无 `*.def.j2` env 的回退路径一直正常的原因）。
+
+**根因**（2026-11-01 实测定位）：def 文件构建要把宿主 `binfmt_misc` 传播进
+user namespace；WSL 的 binfmt_misc 是跨发行版共享的非标准挂载，该传播在
+本机内核（6.18.54.1-microsoft-standard-WSL2）上返回 EINVAL。宿主侧触发条件
+在 2026-09-23 `qemu-user-binfmt`（作为 qemu 依赖被自动安装）入机后出现：
+systemd 每次启动注册约 20 个 qemu 交叉架构条目。2026-07 之前的 def 构建
+（cp2k 2026.2 / abacus 3.10.1 SIF）均正常。
+
+**规避**（构建前执行；重启 WSL 后 systemd 会重新挂载注册，需重做）：
+
+```bash
+sudo umount -l /proc/sys/fs/binfmt_misc
+```
+
+**持久选项**（按需选用）：
+- 不需要跨架构容器执行时：`sudo apt purge qemu-user-binfmt`（自动安装的依赖，
+  移除后启动不再注册 qemu 条目；WSLInterop 的 .exe 支持不受影响）；
+- 或在 `.wslconfig`/`wsl.conf` 关闭 interop（`[interop] enabled=false`），使
+  启动时 binfmt_misc 保持空挂载。
+
+**上游状态**：apptainer ≤ 1.5.5 的 release notes 无相关修复条目；相关讨论见
+[apptainer#1232](https://github.com/apptainer/apptainer/issues/1232) 与
+[microsoft/WSL#13885](https://github.com/microsoft/WSL/issues/13885)。
+
 ## Spack 1.2.0：env view 更新在 Docker overlayfs 上 EXDEV 失败
 
 spack v1.2.0 PR #52551 把 env view 更新从 symlink swap 改为 `os.rename`，
