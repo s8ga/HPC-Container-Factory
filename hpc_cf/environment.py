@@ -265,6 +265,9 @@ class BuildcacheConfig:
     url: str | None = None
     username_var: str | None = None
     password_var: str | None = None
+    # Bare package names never expected in the binary cache (e.g. recipes with
+    # disable_redistribute(binary=True), which spack push skips silently).
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass
@@ -472,6 +475,7 @@ class EnvironmentSpec:
                     "url": self.spack.buildcache.url,
                     "username_var": self.spack.buildcache.username_var,
                     "password_var": self.spack.buildcache.password_var,
+                    "exclude": list(self.spack.buildcache.exclude),
                 },
                 "custom_repos": repos,
             },
@@ -510,7 +514,7 @@ _SPACK_KEYS = frozenset({
 _PHASE_POLICY_KEYS = frozenset({"update_builtin", "repo_scope"})
 _BUILDCACHE_KEYS = frozenset({
     "enabled", "padded_length", "policy", "coverage",
-    "mode", "url", "username_var", "password_var",
+    "mode", "url", "username_var", "password_var", "exclude",
 })
 _CUSTOM_REPO_KEYS = frozenset({
     "url",
@@ -661,6 +665,17 @@ def _parse_buildcache(raw: Any) -> BuildcacheConfig:
                 "with mode 'oci'"
             )
         url = None
+    exclude: list[str] = []
+    for name in _require_str_list(
+        data.get("exclude", []), path="spack.buildcache.exclude"
+    ):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+            raise ValueError(
+                "spack.buildcache.exclude entries must be bare package names "
+                f"(no @version or variant constraints); got {name!r}"
+            )
+        if name not in exclude:
+            exclude.append(name)
     return BuildcacheConfig(
         enabled=enabled,
         padded_length=padded_length,
@@ -670,6 +685,7 @@ def _parse_buildcache(raw: Any) -> BuildcacheConfig:
         url=url,
         username_var=username_var,
         password_var=password_var,
+        exclude=tuple(exclude),
     )
 
 

@@ -67,6 +67,7 @@ class BuildcachePlan:
     url: str | None = None
     username_var: str | None = None
     password_var: str | None = None
+    exclude_specs: tuple[str, ...] = ()
 
     @property
     def check_excludes_external(self) -> bool:
@@ -172,6 +173,11 @@ def build_spack_environment_plan(spec: EnvironmentSpec) -> SpackEnvironmentPlan:
             url=spec.spack.buildcache.url,
             username_var=spec.spack.buildcache.username_var,
             password_var=spec.spack.buildcache.password_var,
+            exclude_specs=tuple(
+                dict.fromkeys(
+                    mp.mirror_exclude_spec() for mp in spec.manual_packages
+                )
+            ),
         ),
     )
 
@@ -194,6 +200,7 @@ def plan_context(plan: SpackEnvironmentPlan) -> dict:
         "spack_buildcache_url": plan.buildcache.url,
         "spack_buildcache_username_var": plan.buildcache.username_var,
         "spack_buildcache_password_var": plan.buildcache.password_var,
+        "spack_buildcache_exclude_specs": list(plan.buildcache.exclude_specs),
         "spack_buildcache_check_excludes_external": (
             plan.buildcache.check_excludes_external
         ),

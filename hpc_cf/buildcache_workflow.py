@@ -91,6 +91,7 @@ class BuildcacheService:
             failed_publish_output,
             failed_publish_step,
             inspect_image_digest,
+            manual_package_exclude_specs,
             promote_producer_image,
             publish,
             publish_oci,
@@ -118,6 +119,8 @@ class BuildcacheService:
             "mount_buildcache": backend.mode is not BuildcacheMode.OCI,
         }
         try:
+
+            exclude_specs = manual_package_exclude_specs(spec)
 
             def run_publish() -> tuple[Any, int]:
                 if backend.mode is BuildcacheMode.OCI:
@@ -149,6 +152,7 @@ class BuildcacheService:
                         password_var=password_var,
                         credentials=credentials,
                         timeout_seconds=request.operation_timeout_seconds,
+                        exclude_specs=exclude_specs,
                     )
                 return publish(
                     engine=request.engine,
@@ -156,6 +160,7 @@ class BuildcacheService:
                     env_name=spec.spack.env_name,
                     layout=self.layout,
                     timeout_seconds=request.operation_timeout_seconds,
+                    exclude_specs=exclude_specs,
                 )
 
             try:
@@ -247,6 +252,7 @@ class BuildcacheService:
         from hpc_cf.buildcache import (
             collect_environment_provenance,
             inspect_image_digest,
+            manual_package_exclude_specs,
             producer_image_ref,
             publish_success_state,
             remove_temporary_image,
@@ -393,6 +399,7 @@ class BuildcacheService:
                         env_name=spec.spack.env_name,
                         layout=self.layout,
                         timeout_seconds=request.operation_timeout_seconds,
+                        exclude_specs=manual_package_exclude_specs(spec),
                     )
                     run.log_path("verify").write_text(
                         result.stdout or "", encoding="utf-8"

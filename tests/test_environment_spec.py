@@ -87,6 +87,7 @@ def test_parse_buildcache_config_and_roundtrip() -> None:
                     "padded_length": 128,
                     "policy": "auto",
                     "coverage": "non_external",
+                    "exclude": ["vasp", "intel-oneapi-mkl"],
                 },
             },
         }
@@ -98,6 +99,7 @@ def test_parse_buildcache_config_and_roundtrip() -> None:
     assert spec.spack.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
     assert spec.spack.buildcache.mode is BuildcacheMode.LOCAL
     assert spec.spack.buildcache.url is None
+    assert spec.spack.buildcache.exclude == ("vasp", "intel-oneapi-mkl")
     assert spec.as_dict()["spack"]["buildcache"] == {
         "enabled": True,
         "padded_length": 128,
@@ -107,6 +109,7 @@ def test_parse_buildcache_config_and_roundtrip() -> None:
         "url": None,
         "username_var": None,
         "password_var": None,
+        "exclude": ["vasp", "intel-oneapi-mkl"],
     }
 
 
@@ -132,6 +135,7 @@ def test_buildcache_defaults_disabled_and_exclude_external_specs() -> None:
         ({"padded_length": True}, "strict integer"),
         ({"policy": "sometimes"}, "policy"),
         ({"coverage": "all_specs"}, "coverage"),
+        ({"exclude": ["vasp@6.6.1"]}, "bare package name"),
     ],
 )
 def test_invalid_buildcache_config_rejected(

@@ -134,11 +134,15 @@ spack -e "$env" buildcache check \
   "${spec_hashes[@]}"
 ```
 
-Push uses installed hashes only. Check still uses every non-external concrete
-spec in the active environment. Spack external specs are deliberately excluded
-because they have no binary package to push. The publisher does not use
-`--force`; package deduplication and internal layout remain Spack's
-responsibility.
+Push uses installed hashes only. Check covers every non-external concrete spec
+in the active environment except excluded package names. Three exclusion
+classes exist: Spack external specs (no binary package to push),
+`manual_packages` entries (non-distributable sources imply non-distributable
+binaries), and env.yaml `spack.buildcache.exclude` for packages whose recipes
+declare `disable_redistribute(binary=True)` (e.g. `intel-oneapi-mkl`) — Spack's
+push skips those silently, so the check must not demand them. The publisher
+does not use `--force`; package deduplication and internal layout remain
+Spack's responsibility.
 
 ### Unsigned trust boundary
 

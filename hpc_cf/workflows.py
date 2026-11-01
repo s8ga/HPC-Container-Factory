@@ -177,6 +177,7 @@ class BuildService:
         from hpc_cf.buildcache import (
             collect_environment_provenance,
             inspect_image_digest,
+            manual_package_exclude_specs,
             producer_image_ref,
             require_coverage,
             resolve_consumer_policy,
@@ -368,6 +369,7 @@ class BuildService:
                             image_ref=producer_ref,
                             env_name=spec.spack.env_name,
                             layout=self.layout,
+                            exclude_specs=manual_package_exclude_specs(spec),
                         )
                 build_docker_like(
                     dockerfile=dockerfile,

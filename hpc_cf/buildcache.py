@@ -9,7 +9,7 @@ import re
 import shlex
 import subprocess
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -618,6 +618,26 @@ def run_in_installed_image(
     )
 
 
+def manual_package_exclude_specs(spec: Any) -> tuple[str, ...]:
+    """Return buildcache-excluded package names, deduplicated.
+
+    Two sources, unioned: ``manual_packages`` entries (non-distributable
+    sources imply non-distributable binaries) plus env.yaml
+    ``spack.buildcache.exclude`` (e.g. recipes with
+    ``disable_redistribute(binary=True)``, which spack push skips silently).
+    """
+    if spec is None:
+        return ()
+    buildcache = getattr(getattr(spec, "spack", None), "buildcache", None)
+    declared = getattr(buildcache, "exclude", None) or ()
+    return tuple(
+        dict.fromkeys(
+            [mp.mirror_exclude_spec() for mp in getattr(spec, "manual_packages", ())]
+            + [str(name) for name in declared]
+        )
+    )
+
+
 def publish(
     *,
     engine: str,
@@ -625,10 +645,12 @@ def publish(
     env_name: str,
     layout: ProjectLayout,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    exclude_specs: Sequence[str] = (),
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     script = build_publish_script(
         env_name=env_name,
         store_path=layout.container_publisher_buildcache_dir(),
+        exclude_specs=exclude_specs,
     )
     result = run_in_installed_image(
         engine=engine,
@@ -655,6 +677,7 @@ def publish_oci(
     password_var: str | None = None,
     credentials: dict[str, str] | None = None,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    exclude_specs: Sequence[str] = (),
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     """OCI-mirror publisher: registry push with a count-based coverage gate.
 
@@ -668,6 +691,7 @@ def publish_oci(
         mirror_url=mirror_url,
         username_var=username_var,
         password_var=password_var,
+        exclude_specs=exclude_specs,
     )
     result = run_in_installed_image(
         engine=engine,
@@ -712,10 +736,12 @@ def verify(
     env_name: str,
     layout: ProjectLayout,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
+    exclude_specs: Sequence[str] = (),
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     script = build_verify_script(
         env_name=env_name,
         store_path=layout.container_publisher_buildcache_dir(),
+        exclude_specs=exclude_specs,
     )
     result = run_in_installed_image(
         engine=engine,
