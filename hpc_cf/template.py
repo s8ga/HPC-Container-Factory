@@ -634,6 +634,24 @@ def generate_dockerfile(
     content = render_template(
         resolved.render_template, context, layout=root
     )
+    # Render-time COPY contract: every context-side source the rendered
+    # Dockerfile COPYs must exist now — a missing tarball/patch/script is a
+    # config error, not a mid-build podman failure.
+    from hpc_cf.validation import ValidationSeverity, collect_render_copy_sources
+
+    copy_findings = collect_render_copy_sources(
+        content, root.project_root, path=str(resolved.render_template)
+    )
+    copy_errors = [
+        f.message
+        for f in copy_findings
+        if f.severity is ValidationSeverity.ERROR
+    ]
+    if copy_errors:
+        raise ValueError(
+            "rendered Dockerfile COPYs missing sources:\n- "
+            + "\n- ".join(copy_errors)
+        )
     write_output(content, output)
     return output
 

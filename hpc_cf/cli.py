@@ -718,7 +718,18 @@ def run_new_cli(argv: list[str]) -> int:
                     template_path=resolved_input.render_template,
                     resolved=resolved_input,
                 )
-                render_template(resolved_input.render_template, ctx)
+                rendered = render_template(resolved_input.render_template, ctx)
+                # Same COPY-source contract the build path enforces after
+                # render; surfaced here so validate catches it pre-build.
+                from hpc_cf.execution import ProjectLayout
+                from hpc_cf.validation import collect_render_copy_sources
+
+                for finding in collect_render_copy_sources(
+                    rendered,
+                    ProjectLayout.default().project_root,
+                    path=str(resolved_input.render_template),
+                ):
+                    report.add(finding)
             except (FileNotFoundError, RuntimeError) as exc:
                 report.add(
                     ValidationFinding(

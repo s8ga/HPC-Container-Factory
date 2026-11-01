@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -626,6 +627,94 @@ def collect_lock_input_manifest(
             ),
         )
     ]
+
+
+_COPY_LINE_RE = re.compile(r"^\s*COPY\s+(?P<rest>.+?)\s*$", re.MULTILINE)
+_GLOB_CHARS = ("*", "?", "[")
+
+
+def _copy_sources(rest: str) -> list[str]:
+    """Extract source paths from the token stream after ``COPY``.
+
+    Skips flag tokens (``--from=``-carrying lines are filtered by the
+    caller; ``--chmod[=v]`` / ``--chown[=v]`` lose their value token too)
+    and the final destination token. Returns [] when nothing is copyable
+    from the build context (multi-stage ``--from`` sources, URLs).
+    """
+    if rest.startswith("["):
+        try:
+            entries = json.loads(rest)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(entries, list) or len(entries) < 2:
+            return []
+        return [str(entry) for entry in entries[:-1]]
+    tokens = rest.split()
+    sources: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token.startswith("--"):
+            if "=" not in token:
+                skip_next = True
+            continue
+        sources.append(token)
+    return sources[:-1] if len(sources) >= 2 else []
+
+
+def collect_render_copy_sources(
+    rendered_text: str,
+    project_root: Path,
+    *,
+    path: str = "<rendered Dockerfile>",
+) -> list[ValidationFinding]:
+    """Every COPY source in a rendered Dockerfile must exist in the context.
+
+    COPY lines create dependencies the schema never sees (audit 2.9):
+    ``libfakeintel/``, ``testsuite-file/``, scripts. A missing source used
+    to surface only as a mid-build podman failure; it is a config error and
+    fails closed right after render. Multi-stage ``COPY --from`` sources
+    and URLs are image-side, not context-side, and are skipped.
+    """
+    findings: list[ValidationFinding] = []
+    for match in _COPY_LINE_RE.finditer(rendered_text):
+        rest = match.group("rest")
+        if "--from=" in rest:
+            continue
+        for src in _copy_sources(rest):
+            if "://" in src:
+                continue
+            if any(ch in src for ch in _GLOB_CHARS):
+                if next(project_root.glob(src), None) is None:
+                    findings.append(
+                        ValidationFinding(
+                            code="copy.source_missing",
+                            severity=ValidationSeverity.ERROR,
+                            message=f"COPY source glob matches nothing: {src}",
+                            path=path,
+                            fix_hint=(
+                                f"Add the file under {project_root} or fix "
+                                "the COPY line in the template."
+                            ),
+                        )
+                    )
+                continue
+            if not (project_root / src).exists():
+                findings.append(
+                    ValidationFinding(
+                        code="copy.source_missing",
+                        severity=ValidationSeverity.ERROR,
+                        message=f"COPY source not found: {src}",
+                        path=path,
+                        fix_hint=(
+                            f"Add the file under {project_root} or fix the "
+                            "COPY line in the template."
+                        ),
+                    )
+                )
+    return findings
 
 
 def collect_spack_yaml(env_dir: Path) -> list[ValidationFinding]:
