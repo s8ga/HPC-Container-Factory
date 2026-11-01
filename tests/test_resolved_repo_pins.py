@@ -71,6 +71,7 @@ def _float_spec() -> EnvironmentSpec:
                 commit=OTHER_SHA,
             ),
         ],
+        lock_source_commits={"cp2k": "cp2k_source_commit"},
     ))
 
 
@@ -145,7 +146,7 @@ def test_write_sidecar_and_apply_roundtrip(tmp_path: Path) -> None:
     assert pinned_repo.commit == OTHER_SHA  # pin is authoritative
 
 
-def test_apply_sets_cp2k_source_commit_from_lock(tmp_path: Path) -> None:
+def test_apply_sets_declared_source_commit_from_lock(tmp_path: Path) -> None:
     import json
 
     (tmp_path / RESOLVED_REPO_PINS_FILENAME).write_text(
@@ -169,6 +170,68 @@ def test_apply_sets_cp2k_source_commit_from_lock(tmp_path: Path) -> None:
     spec = _float_spec()
     apply_resolved_repo_pins(spec, tmp_path)
     assert spec.template_vars["cp2k_source_commit"] == OTHER_SHA
+
+
+def test_apply_without_declaration_never_touches_the_lock(tmp_path: Path) -> None:
+    """Audit 2.4: non-cp2k envs with a sidecar must not parse the lock.
+
+    The old hardcoded ``next(... name == "cp2k")`` raised a bogus
+    "malformed spack.lock" for any env that shipped a sidecar without a
+    cp2k concrete spec.
+    """
+    import json
+
+    (tmp_path / RESOLVED_REPO_PINS_FILENAME).write_text(
+        yaml.safe_dump({"repos": {"cp2k_dev": {"commit": SHA, "branch": "master"}}}),
+        encoding="utf-8",
+    )
+    # Lock has NO cp2k spec — the old code exploded here.
+    (tmp_path / "spack.lock").write_text(
+        json.dumps(
+            {"concrete_specs": {"x": {"name": "abacus", "parameters": {}}}}
+        ),
+        encoding="utf-8",
+    )
+    spec = _float_spec()
+    spec.spack.lock_source_commits = {}
+    apply_resolved_repo_pins(spec, tmp_path)
+    assert "cp2k_source_commit" not in spec.template_vars
+
+
+def test_apply_declared_spec_missing_from_lock_raises(tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / RESOLVED_REPO_PINS_FILENAME).write_text(
+        yaml.safe_dump({"repos": {"cp2k_dev": {"commit": SHA}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "spack.lock").write_text(
+        json.dumps({"concrete_specs": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="no concrete spec named 'cp2k'"):
+        apply_resolved_repo_pins(_float_spec(), tmp_path)
+
+
+def test_apply_declared_spec_without_commit_param_raises(tmp_path: Path) -> None:
+    import json
+
+    (tmp_path / RESOLVED_REPO_PINS_FILENAME).write_text(
+        yaml.safe_dump({"repos": {"cp2k_dev": {"commit": SHA}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "spack.lock").write_text(
+        json.dumps(
+            {
+                "concrete_specs": {
+                    "x": {"name": "cp2k", "parameters": {"commit": "v2026.1"}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="no 40-hex git commit"):
+        apply_resolved_repo_pins(_float_spec(), tmp_path)
 
 
 def test_apply_missing_sidecar_is_noop(tmp_path: Path) -> None:

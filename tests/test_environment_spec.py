@@ -126,6 +126,52 @@ def test_buildcache_defaults_disabled_and_exclude_external_specs() -> None:
     assert spec.spack.buildcache.coverage is BuildcacheCoverage.NON_EXTERNAL
 
 
+def test_lock_source_commits_parse_and_roundtrip() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.0",
+                "env_name": "e",
+                "lock_source_commits": {"cp2k": "cp2k_source_commit"},
+            },
+        }
+    )
+    assert spec.spack.lock_source_commits == {"cp2k": "cp2k_source_commit"}
+    assert spec.as_dict()["spack"]["lock_source_commits"] == {
+        "cp2k": "cp2k_source_commit"
+    }
+
+    # Undeclared → empty and absent from serialization.
+    plain = parse_environment_spec(
+        {"schema_version": 1, "spack": {"version": "1.1.1", "env_name": "e"}}
+    )
+    assert plain.spack.lock_source_commits == {}
+    assert "lock_source_commits" not in plain.as_dict()["spack"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ({"cp2k": "not an identifier"}, "template-var identifier"),
+        ({"cp2k": 42}, "template-var identifier"),
+        (["cp2k"], "mapping"),
+    ],
+)
+def test_lock_source_commits_rejects_invalid_shapes(raw, message) -> None:  # noqa: ANN001
+    with pytest.raises(ValueError, match=message):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "spack": {
+                    "version": "1.2.0",
+                    "env_name": "e",
+                    "lock_source_commits": raw,
+                },
+            }
+        )
+
+
 @pytest.mark.parametrize(
     ("buildcache", "message"),
     [

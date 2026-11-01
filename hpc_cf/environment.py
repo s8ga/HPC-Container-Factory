@@ -326,6 +326,10 @@ class SpackConfig:
         )
     )
     buildcache: BuildcacheConfig = field(default_factory=BuildcacheConfig)
+    # Expose lock-resolved source commits to image templates: concrete spec
+    # name (as keyed in spack.lock's concrete_specs) → template_vars key.
+    # Declared per env; the loader never guesses app names.
+    lock_source_commits: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -478,6 +482,11 @@ class EnvironmentSpec:
                     "exclude": list(self.spack.buildcache.exclude),
                 },
                 "custom_repos": repos,
+                **(
+                    {"lock_source_commits": dict(self.spack.lock_source_commits)}
+                    if self.spack.lock_source_commits
+                    else {}
+                ),
             },
             "mirror_builder": {
                 "system_pkgs": list(self.mirror_builder.system_pkgs),
@@ -510,6 +519,7 @@ _TOP_LEVEL_KEYS = frozenset({
 _IMAGES_KEYS = frozenset({"builder", "runtime", "output_name", "output_tag"})
 _SPACK_KEYS = frozenset({
     "version", "env_name", "custom_repos", "assets", "image", "buildcache",
+    "lock_source_commits",
 })
 _PHASE_POLICY_KEYS = frozenset({"update_builtin", "repo_scope"})
 _BUILDCACHE_KEYS = frozenset({
@@ -830,7 +840,42 @@ def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
             data.get("image"), default=image_default, label="image",
         ),
         buildcache=_parse_buildcache(data.get("buildcache")),
+        lock_source_commits=_parse_lock_source_commits(
+            data.get("lock_source_commits")
+        ),
     )
+
+
+_SPEC_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+_TEMPLATE_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _parse_lock_source_commits(raw: Any) -> dict[str, str]:
+    """Parse ``spack.lock_source_commits`` (spec name → template var).
+
+    Declares which concrete specs' resolved git commits (from spack.lock)
+    should be exposed to image templates, e.g.::
+
+        lock_source_commits:
+          cp2k: cp2k_source_commit
+    """
+    if raw is None:
+        return {}
+    data = _require_mapping(raw, path="spack.lock_source_commits")
+    mapping: dict[str, str] = {}
+    for key, value in data.items():
+        if not (isinstance(key, str) and _SPEC_NAME_RE.fullmatch(key)):
+            raise ValueError(
+                "spack.lock_source_commits keys must be Spack package "
+                f"names, got {key!r}"
+            )
+        if not (isinstance(value, str) and _TEMPLATE_VAR_NAME_RE.fullmatch(value)):
+            raise ValueError(
+                f"spack.lock_source_commits[{key!r}] must be a template-var "
+                f"identifier, got {value!r}"
+            )
+        mapping[key] = value
+    return mapping
 
 
 def _parse_mirror_builder(raw: Any) -> MirrorBuilderConfig:
@@ -987,6 +1032,10 @@ def apply_resolved_repo_pins(
     convention ``<namespace>_repo_commit`` is set so per-env Dockerfiles
     clone the resolved sha. env.yaml itself is never rewritten; a missing
     sidecar is a no-op (env.yaml's static values remain the fallback).
+
+    Additionally, ``spack.lock_source_commits`` (spec name → template var)
+    declares which concrete specs' resolved source commits from spack.lock
+    should be exposed to image templates; nothing is guessed by app name.
     """
 
     from hpc_cf.env import find_env_yaml
@@ -1031,28 +1080,51 @@ def apply_resolved_repo_pins(
             sidecar,
         )
 
-    # Expose the exact cp2k source commit the lock resolved, so image-side
-    # consumers (the tests clone) check out precisely what was built — even
-    # when the recipe repo and the source repo resolve at different moments.
+    # Expose the exact source commits the lock resolved for DECLARED specs,
+    # so image-side consumers (e.g. the cp2k regtest clone) check out
+    # precisely what was built — even when the recipe repo and the source
+    # repo resolve at different moments. Declarative via
+    # spack.lock_source_commits (spec name → template var); envs that
+    # declare nothing never touch the lock here.
+    lock_source_commits = spec.spack.lock_source_commits
+    if not lock_source_commits:
+        return spec
     lock_path = config_dir / "spack.lock"
-    if lock_path.is_file():
-        try:
-            lock = json.loads(lock_path.read_text(encoding="utf-8"))
-            cp2k = next(
-                s
-                for s in lock.get("concrete_specs", {}).values()
-                if s.get("name") == "cp2k"
-            )
-            source_commit = cp2k.get("parameters", {}).get("commit")
-            if isinstance(source_commit, str) and _GIT_SHA40_RE.fullmatch(
-                source_commit
-            ):
-                spec.template_vars["cp2k_source_commit"] = source_commit
-                logger.info("cp2k source commit from lock: %s", source_commit)
-        except (json.JSONDecodeError, StopIteration, KeyError) as exc:
+    if not lock_path.is_file():
+        return spec
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        concrete = lock.get("concrete_specs", {})
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"malformed spack.lock next to {RESOLVED_REPO_PINS_FILENAME}: {exc}"
+        ) from exc
+    for spec_name, template_var in sorted(lock_source_commits.items()):
+        matches = [
+            entry
+            for entry in concrete.values()
+            if isinstance(entry, dict) and entry.get("name") == spec_name
+        ]
+        if not matches:
             raise ValueError(
-                f"malformed spack.lock next to {RESOLVED_REPO_PINS_FILENAME}: {exc}"
-            ) from exc
+                f"lock_source_commits: no concrete spec named {spec_name!r} "
+                f"in {lock_path}"
+            )
+        source_commit = None
+        for entry in matches:
+            candidate = entry.get("parameters", {}).get("commit")
+            if isinstance(candidate, str) and _GIT_SHA40_RE.fullmatch(candidate):
+                source_commit = candidate
+                break
+        if source_commit is None:
+            raise ValueError(
+                f"lock_source_commits: concrete spec {spec_name!r} in "
+                f"{lock_path} has no 40-hex git commit parameter"
+            )
+        spec.template_vars[template_var] = source_commit.lower()
+        logger.info(
+            "%s source commit from lock: %s", spec_name, source_commit
+        )
     return spec
 
 
