@@ -26,13 +26,8 @@ LABEL stage="builder-installed" \
 # ABACUS BUILD
 # ============================================================================
 
-# Fetch s8ga abacus + s8_overrides at the pinned monorepo commit (env.yaml).
-RUN git clone --filter=blob:none --sparse --no-checkout \
-        "{{ s8ga_repo_url }}" /opt/s8ga-spack-packages && \
-    cd /opt/s8ga-spack-packages && \
-    git fetch --depth 1 origin "{{ s8ga_repo_commit }}" && \
-    git sparse-checkout set "{{ s8ga_abacus_repo_path }}" "{{ s8ga_overrides_repo_path }}" && \
-    git checkout "{{ s8ga_repo_commit }}"
+# Stage s8ga abacus + s8_overrides at the pinned s8ga monorepo commit (plan-driven; data from env.yaml custom_repos).
+{% include 'partials/spack_staging_clones.j2' %}
 
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}

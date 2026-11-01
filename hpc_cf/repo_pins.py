@@ -287,7 +287,13 @@ def _check_force_avx512_image_path(
 
 
 def _check_s8ga_repo_commit(*, env_name: str, spec: object) -> list[str]:
-    """When either side pins s8ga, require both sides present and equal."""
+    """Legacy ``s8ga_repo_commit`` mirror must match when it exists.
+
+    Plan-driven staging (spack_staging_clones partial) reads the pin from
+    custom_repos directly, so a pinned repo WITHOUT the template_vars copy
+    is fine now; a declared copy that matches no repo pin (or drifts from
+    it) is still an error.
+    """
     s8ga_repos = _s8ga_git_repos(spec)
     template_present = S8GA_REPO_COMMIT_KEY in spec.template_vars
     template_commit = (
@@ -305,13 +311,6 @@ def _check_s8ga_repo_commit(*, env_name: str, spec: object) -> list[str]:
 
     errors: list[str] = []
     if not template_present:
-        identities = ", ".join(
-            repr(_repo_identity(repo)) for repo in s8ga_repos if repo.commit
-        )
-        errors.append(
-            f"{env_name}: s8ga custom_repos have commit ({identities}) "
-            f"but template_vars.{S8GA_REPO_COMMIT_KEY} is missing"
-        )
         return errors
 
     for repo in s8ga_repos:
@@ -365,7 +364,17 @@ def _check_monorepo_pin_unity(*, env_name: str, spec: EnvironmentSpec) -> list[s
     return errors
 
 
-def _check_repo_commit_vars(*, env_name: str, spec: EnvironmentSpec) -> list[str]:
+_USED_REPO_COMMIT_VAR_RE = re.compile(
+    r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*_repo_commit)\b"
+)
+
+
+def _check_repo_commit_vars(
+    *,
+    env_name: str,
+    spec: EnvironmentSpec,
+    dockerfile_text: str,
+) -> list[str]:
     """``<name>_repo_commit`` vars must be 40-hex and match a repo pin.
 
     The suffix is the factory's naming convention (env.yaml declarations and
@@ -374,6 +383,10 @@ def _check_repo_commit_vars(*, env_name: str, spec: EnvironmentSpec) -> list[str
     Exception: for a floating repo, the env.yaml-declared
     ``<namespace>_repo_commit`` var is the documented static fallback used
     when the sidecar is missing — its sha need not match anything.
+
+    Conversely, a Dockerfile consuming ``{{ <name>_repo_commit }}`` needs
+    the var declared; with plan-driven staging a pinned repo may omit the
+    var, but a USED var may not be missing.
     """
     pinned_commits = {
         (repo.commit or "").lower() for repo in _git_repos(spec) if repo.commit
@@ -398,7 +411,20 @@ def _check_repo_commit_vars(*, env_name: str, spec: EnvironmentSpec) -> list[str
                 f"{env_name}: template_vars.{key}={value} matches no git "
                 "custom_repos commit in this env (orphan repo-pin copy)"
             )
+    used = set(_USED_REPO_COMMIT_VAR_RE.findall(_strip_hash_comments(dockerfile_text)))
+    for key in sorted(used):
+        if key not in spec.template_vars:
+            errors.append(
+                f"{env_name}: Dockerfile.j2 uses {{{{ {key} }}}} but "
+                "template_vars does not declare it (var-driven staging needs "
+                "the dual-write copy; plan-driven staging should not reference it)"
+            )
     return errors
+
+
+_STAGING_CLONES_PARTIAL_RE = re.compile(
+    r"\{\%-?\s*include\s+['\"]partials/spack_staging_clones\.j2['\"]"
+)
 
 
 def _url_staged_in_dockerfile(
@@ -406,7 +432,7 @@ def _url_staged_in_dockerfile(
     spec: EnvironmentSpec,
     dockerfile_text: str,
 ) -> bool:
-    """True when the Dockerfile clones *url* (literal or via a template var)."""
+    """True when the Dockerfile clones *url* (literal, var, or plan partial)."""
     if url and url.lower() in dockerfile_text.lower():
         return True
     for key, value in spec.template_vars.items():
@@ -416,7 +442,9 @@ def _url_staged_in_dockerfile(
             and _uses_template_var(dockerfile_text, key)
         ):
             return True
-    return False
+    # Plan-driven staging clones whatever the plan says — the suffix/root
+    # contract is then the partial's data requirement, so it must hold.
+    return _STAGING_CLONES_PARTIAL_RE.search(dockerfile_text) is not None
 
 
 def _check_staging_path_contract(
@@ -534,7 +562,13 @@ def check_env_repo_pins(
     )
     errors.extend(_check_s8ga_repo_commit(env_name=env_name, spec=spec))
     errors.extend(_check_monorepo_pin_unity(env_name=env_name, spec=spec))
-    errors.extend(_check_repo_commit_vars(env_name=env_name, spec=spec))
+    errors.extend(
+        _check_repo_commit_vars(
+            env_name=env_name,
+            spec=spec,
+            dockerfile_text=dockerfile_text,
+        )
+    )
     errors.extend(
         _check_staging_path_contract(
             env_name=env_name,

@@ -379,12 +379,13 @@ def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
     ],
 )
 def test_opensource_cp2k_pins_repo_commits(env_name: str) -> None:
-    """Repo pins stay consistent across custom_repos/template_vars/Dockerfile.
+    """Repo pins stay consistent across custom_repos/plan/template_vars/Dockerfile.
 
     Pins are deliberately NOT hardcoded here: bumping a pin in env.yaml
-    must not require editing the test. What must hold is the dual-write
-    invariant — every pinned 40-hex sha appears in custom_repos, the
-    matching template var, and a real (non-comment) git checkout line.
+    must not require editing the test. The upstream cp2k pin keeps its
+    dual-write template var (still var-driven staging); the s8ga pin is
+    plan-driven (spack_staging_clones) and must appear in the render with
+    NO template_vars mirror left behind.
     """
     env_dir = SPACK_ENVS_DIR / env_name
     spec = load_environment_spec(env_dir)
@@ -406,12 +407,16 @@ def test_opensource_cp2k_pins_repo_commits(env_name: str) -> None:
         if repo.type == "git" and "s8ga" in (repo.url or "").lower()
     ]
     if not s8ga_repos:
-        assert "s8ga_repo_commit" not in spec.template_vars
         return
-    s8ga_pin = spec.template_vars["s8ga_repo_commit"]
+    pins = {repo.commit for repo in s8ga_repos if repo.commit}
+    assert len(pins) == 1, "monorepo entries must share one pin"
+    s8ga_pin = next(iter(pins))
     assert re.fullmatch(r"[0-9a-f]{40}", s8ga_pin)
     assert all(repo.commit == s8ga_pin for repo in s8ga_repos)
-    assert f'git checkout "{s8ga_pin}"' in rendered
+    # Plan-driven staging: the pin renders from plan data, unquoted via
+    # shell_quote, and no template_vars mirror may remain.
+    assert f"git checkout {s8ga_pin}" in rendered
+    assert "s8ga_repo_commit" not in spec.template_vars
 
 
 def test_vasp_image_skips_builtin_update() -> None:
@@ -446,10 +451,12 @@ def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
     rendered = _render_env_dockerfile(env_dir)
-    # Pin is read from the spec, not hardcoded: the dual-write invariant
-    # (monorepo commit shared by both custom_repos entries, template var,
-    # and rendered checkouts) is the contract under test.
-    pin = spec.template_vars["s8ga_repo_commit"]
+    # Pin is read from the spec, not hardcoded: the monorepo commit is
+    # shared by both custom_repos entries and renders via the plan-driven
+    # staging partial — no template_vars mirror remains.
+    pins = {repo.commit for repo in spec.spack.custom_repos if repo.commit}
+    assert len(pins) == 1
+    pin = next(iter(pins))
     assert re.fullmatch(r"[0-9a-f]{40}", pin)
 
     assert spec.spack.version == "1.2.0"
@@ -457,11 +464,11 @@ def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
     assert [repo.namespace for repo in plan.assets.repos] == ["abacus", "s8_overrides"]
     assert [repo.namespace for repo in plan.image.repos] == ["abacus", "s8_overrides"]
     assert all(repo.commit == pin for repo in spec.spack.custom_repos)
-    assert spec.template_vars["s8ga_repo_commit"] == pin
+    assert "s8ga_repo_commit" not in spec.template_vars
     assert "spack env create abacus-env" in rendered
     assert "AS builder-installed" in rendered
     assert "FROM builder-installed AS builder" in rendered
-    assert f'git checkout "{pin}"' in rendered
+    assert f"git checkout {pin}" in rendered
     assert "/opt/s8ga-spack-packages/spack_repo/abacus" in rendered
     assert "/opt/s8ga-spack-packages/spack_repo/s8_overrides" in rendered
     assert "/opt/spack-env-file/repos/" not in rendered
@@ -539,17 +546,15 @@ def test_cp2k_force_avx512_dockerfile_wires_spack_image_repos_partial(
     env_name: str,
     expected_image_paths: list[str],
 ) -> None:
-    """CP2K force-avx512: image repos from plan partial; sparse clone stays local."""
+    """CP2K force-avx512: image repos + staging clones from plan partials."""
     env_dir = SPACK_ENVS_DIR / env_name
     src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
     assert "{% include 'partials/spack_image_repos.j2' %}" in src
-    # Sparse clone may still use force_avx512_repo_path; handwritten dual add must not.
-    assert (
-        '/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}' not in src
-    )
+    assert "{% include 'partials/spack_staging_clones.j2' %}" in src
+    # Plan-driven staging retired the template_vars mirrors entirely.
     assert "repo add --scope {{ spack_repo_scope }}" not in src
     assert "{{ cp2k_dev_repo_path }}" in src  # staging cp remains
-    assert "{{ force_avx512_repo_path }}" in src  # sparse-checkout remains
+    assert "force_avx512_repo" not in src
 
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
@@ -559,14 +564,9 @@ def test_cp2k_force_avx512_dockerfile_wires_spack_image_repos_partial(
     assert plan.image.scope_flag() == "env:cp2k-env"
     assert [r.image_path for r in plan.image.repos] == expected_image_paths
 
-    force_path = spec.template_vars["force_avx512_repo_path"]
-    assert (
-        f"/opt/s8ga-spack-packages/{force_path}"
-        == "/opt/s8ga-spack-packages/spack_repo/s8_overrides"
-    )
     s8ga = next(r for r in spec.spack.custom_repos if r.namespace == "s8_overrides")
-    assert s8ga.image_path == f"/opt/s8ga-spack-packages/{force_path}"
-    assert s8ga.sparse_path == force_path
+    assert s8ga.sparse_path == "spack_repo/s8_overrides"
+    assert s8ga.image_path == "/opt/s8ga-spack-packages/spack_repo/s8_overrides"
 
     last = -1
     terminators = frozenset("/ \"'\n\t&")

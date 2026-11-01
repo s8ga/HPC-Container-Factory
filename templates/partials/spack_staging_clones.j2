@@ -1,0 +1,24 @@
+{#- Plan-driven staging clones for image-phase git custom repos.
+
+    Consumes plan_context key ``spack_staging_clones`` (built by
+    SpackEnvironmentPlan.staging_clones): repos sharing (url, commit) are
+    one git history, so ONE clone at the shared root plus the union of
+    sparse paths stages them all. Data (url / commit / paths / root) comes
+    exclusively from env.yaml custom_repos — no per-app template_vars
+    mirrors, so the dual-write surface for staging is gone.
+
+    Only repos whose explicit image_path == <clone-root>/<sparse_path>
+    appear here; other staging (plan-derived recipe paths, upstream
+    source clones for regtests) stays in per-env templates.
+
+    All tokens are shell_quote'd (Jinja filter) so config-derived values
+    cannot break out of the RUN line.
+-#}
+{% for clone in spack_staging_clones %}
+RUN git clone --filter=blob:none --sparse --no-checkout \
+        {{ clone.url | shell_quote }} {{ clone.clone_root | shell_quote }} && \
+    cd {{ clone.clone_root | shell_quote }} && \
+    git fetch --depth 1 origin {{ clone.commit | shell_quote }} && \
+    git sparse-checkout set{% for path in clone.sparse_paths %} {{ path | shell_quote }}{% endfor %} && \
+    git checkout {{ clone.commit | shell_quote }}
+{% endfor %}

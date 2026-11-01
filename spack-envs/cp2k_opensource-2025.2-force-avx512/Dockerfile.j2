@@ -44,26 +44,22 @@ RUN git clone --filter=blob:none --no-checkout \
       { echo "ERROR: pinned commit $(git rev-parse HEAD) is not on {{ cp2k_branch }}"; exit 1; } && \
     echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
 
-# Fetch the force-AVX512 package overrides at the pinned s8ga monorepo commit.
-RUN git clone --filter=blob:none --sparse --no-checkout \
-        "{{ force_avx512_repo_url }}" /opt/s8ga-spack-packages && \
-    cd /opt/s8ga-spack-packages && \
-    git fetch --depth 1 origin "{{ s8ga_repo_commit }}" && \
-    git sparse-checkout set "{{ force_avx512_repo_path }}" && \
-    git checkout "{{ s8ga_repo_commit }}"
+# Stage the force-AVX512 package overrides at the pinned s8ga monorepo commit
+# (plan-driven; data from env.yaml custom_repos).
+{% include 'partials/spack_staging_clones.j2' %}
 
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
 # Repo priority: builtin < CP2K dev_repo < s8 < local cp2k_dev (libint) < local CP2K.
+# Stage the cp2k dev recipe repo; registration order comes from the plan
+# (custom_repos[] via spack_image_repos, same priority order as env.yaml).
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
-    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} "/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}" && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos_cp2k_dev/ && \
-    spack -e {{ spack_env_name }} repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
-    spack -e {{ spack_env_name }} repo ls
+    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/
+{% include 'partials/spack_image_repos.j2' %}
+
+RUN spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
 {% include 'partials/spack_buildcache_config.j2' %}

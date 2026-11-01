@@ -33,10 +33,29 @@ class PlannedRepo:
     # dir is resolved by callers via env_dir + path / git clone layout).
     url: str | None = None
     branch: str | None = None
+    # Resolved pin (env.yaml commit, or the sidecar-injected tip for
+    # floating repos once build input is resolved).
+    commit: str | None = None
     sparse_path: str | None = None
     path: str | None = None
     # Absolute path expected in the rendered Dockerfile ``repo add`` line.
     image_path: str = ""
+
+
+@dataclass(frozen=True)
+class StagingClone:
+    """One monorepo sparse clone staging several image-phase repos.
+
+    Repos sharing (url, commit) are one git history: a single clone at
+    ``clone_root`` with the union of ``sparse_paths`` stages them all,
+    replacing the per-app handwritten clone blocks and their
+    ``s8ga_*`` / ``force_avx512_*`` template_vars mirrors.
+    """
+
+    url: str
+    commit: str
+    clone_root: str
+    sparse_paths: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -123,10 +142,60 @@ def _to_planned(repo: CustomRepo) -> PlannedRepo:
         phases=repo.phases,
         url=repo.url,
         branch=repo.branch,
+        commit=repo.commit,
         sparse_path=repo.sparse_path,
         path=repo.path,
         image_path=default_image_path(repo),
     )
+
+
+def staging_clones(repos: tuple[PlannedRepo, ...]) -> tuple[StagingClone, ...]:
+    """Group image-phase git repos into one sparse clone per (url, commit).
+
+    Only repos whose explicit ``image_path`` equals
+    ``<clone-root>/<sparse_path>`` participate: the staging partial clones
+    at the root and sparse-checkouts the union of paths, so the suffix
+    relationship is the data contract (repo-pin validation enforces it).
+    Repos without a resolved commit (floating, sidecar missing) or with a
+    plan-derived default image_path are staged by other means and skipped
+    here.
+    """
+    groups: dict[tuple[str, str], list[PlannedRepo]] = {}
+    order: list[tuple[str, str]] = []
+    for repo in repos:
+        if repo.type != "git" or not repo.url or not repo.sparse_path:
+            continue
+        if not repo.commit:
+            continue
+        image = (repo.image_path or "").rstrip("/")
+        suffix = "/" + repo.sparse_path.strip("/")
+        if not image.endswith(suffix):
+            continue
+        key = (repo.url, repo.commit)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(repo)
+
+    clones: list[StagingClone] = []
+    for key in order:
+        url, commit = key
+        members = groups[key]
+        first = members[0]
+        suffix = "/" + (first.sparse_path or "").strip("/")
+        root = (first.image_path or "").rstrip("/")[: -len(suffix)]
+        sparse_paths = tuple(
+            dict.fromkeys((m.sparse_path or "").strip("/") for m in members)
+        )
+        clones.append(
+            StagingClone(
+                url=url,
+                commit=commit,
+                clone_root=root,
+                sparse_paths=sparse_paths,
+            )
+        )
+    return tuple(clones)
 
 
 def _phase_plan(
@@ -211,6 +280,15 @@ def plan_context(plan: SpackEnvironmentPlan) -> dict:
                 "image_path": r.image_path,
             }
             for r in plan.image.repos
+        ],
+        "spack_staging_clones": [
+            {
+                "url": clone.url,
+                "commit": clone.commit,
+                "clone_root": clone.clone_root,
+                "sparse_paths": list(clone.sparse_paths),
+            }
+            for clone in staging_clones(plan.image.repos)
         ],
         # Overridden by build_context(allow_reconcretize=...); default fail-closed.
         "allow_reconcretize": False,
