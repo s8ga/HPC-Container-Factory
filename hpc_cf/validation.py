@@ -39,7 +39,7 @@ from hpc_cf.lock_manifest import (
     compare_lock_inputs,
     read_lock_manifest,
 )
-from hpc_cf.repo_pins import check_env_repo_pins
+from hpc_cf.repo_pins import check_env_repo_pins, expand_partial_includes
 
 logger = logging.getLogger(__name__)
 
@@ -481,6 +481,14 @@ def collect_repo_pin_consistency(
     dockerfile_text = (
         dockerfile.read_text(encoding="utf-8") if dockerfile.is_file() else ""
     )
+    # Source-level checks look through {% include 'partials/...' %} so
+    # partial-hosted clone/registration logic still counts as var usage.
+    project_root = (
+        env_dir.parent.parent
+        if env_dir.parent.name == "spack-envs"
+        else ProjectLayout.default().project_root
+    )
+    dockerfile_text = expand_partial_includes(dockerfile_text, project_root)
     errors = check_env_repo_pins(env_dir.name, spec, dockerfile_text)
     path = str(dockerfile if dockerfile.is_file() else env_dir)
     return [

@@ -22,7 +22,7 @@ from hpc_cf.env import find_env_yaml, list_available_envs
 from hpc_cf.environment import load_environment_spec
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.lock_manifest import LOCK_MANIFEST_FILENAME, read_lock_manifest
-from hpc_cf.repo_pins import check_env_repo_pins
+from hpc_cf.repo_pins import check_env_repo_pins, expand_partial_includes
 from hpc_cf.requests import PinSetRequest
 
 logger = logging.getLogger(__name__)
@@ -229,6 +229,12 @@ def _apply_pin(
         dockerfile_text = (
             dockerfile.read_text(encoding="utf-8") if dockerfile.is_file() else ""
         )
+        project_root = (
+            env_dir.parent.parent
+            if env_dir.parent.name == "spack-envs"
+            else ProjectLayout.default().project_root
+        )
+        dockerfile_text = expand_partial_includes(dockerfile_text, project_root)
         guard_errors = check_env_repo_pins(env_dir.name, spec, dockerfile_text)
         if guard_errors:
             raise ValueError(

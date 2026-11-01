@@ -45,9 +45,10 @@ RUN mkdir -p /opt/vasp && \
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
-# Add local repo with custom vasp package.py
-RUN spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
-    spack -e {{ spack_env_name }} repo ls
+# Add local repo with custom vasp package.py (plan-driven registration).
+{% include 'partials/spack_image_repos.j2' %}
+
+RUN spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
 

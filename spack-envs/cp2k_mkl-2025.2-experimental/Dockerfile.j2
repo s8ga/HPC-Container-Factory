@@ -30,25 +30,19 @@ LABEL stage="builder" \
 # Fetch CP2K source — only the directories needed for regtesting.
 # Uses sparse checkout to avoid downloading the full ~1GB+ repo.
 # The actual build comes from spack (source mirror), not this clone.
-
-RUN git clone --filter=blob:none --no-checkout -b {{ cp2k_branch }} \
-        https://github.com/cp2k/cp2k.git /opt/cp2k && \
-    cd /opt/cp2k && \
-    git sparse-checkout init --cone && \
-    git sparse-checkout set tests src/grid/sample_tasks tools/regtesting tools && \
-    git checkout && \
-    echo "✅ Sparse checkout done: $(du -sh /opt/cp2k | cut -f1)"
+{% include 'partials/cp2k_upstream_clone.j2' %}
 
 {% include 'partials/spack_env_create.j2' %}
 {% include 'partials/spack_update_builtin.j2' %}
 {% include 'partials/spack_compiler_find.j2' %}
 
 # Add custom spack repo from CP2K developers and our local repo with custom package overrides
+# (registration order comes from the plan via spack_image_repos).
 RUN mkdir -p /opt/spack-repo/spack_repo/ && \
-    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/ && \
-    spack repo add --scope {{ spack_repo_scope }} /opt/spack-repo/spack_repo/{{ cp2k_dev_repo_path.split('/')[-1] }}/ && \
-    spack repo add --scope {{ spack_repo_scope }} /opt/spack-env-file/repos/ && \
-    spack -e {{ spack_env_name }} repo ls
+    cp -a /opt/cp2k/{{ cp2k_dev_repo_path }}/ /opt/spack-repo/spack_repo/
+{% include 'partials/spack_image_repos.j2' %}
+
+RUN spack -e {{ spack_env_name }} repo ls
 
 {% include 'partials/spack_zlib_fix.j2' %}
 

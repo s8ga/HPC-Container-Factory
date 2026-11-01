@@ -386,7 +386,8 @@ def _check_repo_commit_vars(
 
     Conversely, a Dockerfile consuming ``{{ <name>_repo_commit }}`` needs
     the var declared; with plan-driven staging a pinned repo may omit the
-    var, but a USED var may not be missing.
+    var, but a USED var may not be missing. Vars injected at build time
+    from spack.lock via ``lock_source_commits`` are exempt.
     """
     pinned_commits = {
         (repo.commit or "").lower() for repo in _git_repos(spec) if repo.commit
@@ -396,6 +397,7 @@ def _check_repo_commit_vars(
         for repo in _git_repos(spec)
         if not repo.commit and repo.namespace
     }
+    injected_keys = set(spec.spack.lock_source_commits.values())
     errors: list[str] = []
     for key, value in spec.template_vars.items():
         if not key.endswith(_REPO_COMMIT_VAR_SUFFIX):
@@ -412,7 +414,7 @@ def _check_repo_commit_vars(
                 "custom_repos commit in this env (orphan repo-pin copy)"
             )
     used = set(_USED_REPO_COMMIT_VAR_RE.findall(_strip_hash_comments(dockerfile_text)))
-    for key in sorted(used):
+    for key in sorted(used - injected_keys):
         if key not in spec.template_vars:
             errors.append(
                 f"{env_name}: Dockerfile.j2 uses {{{{ {key} }}}} but "
@@ -539,12 +541,108 @@ def _check_staging_var_wiring(
 # ---------------------------------------------------------------------------
 
 
+_INCLUDE_RE = re.compile(
+    r"\{\%-?\s*include\s+['\"](?P<rel>partials/[A-Za-z0-9_.-]+\.j2)['\"]\s*-?\%\}"
+)
+
+
+def expand_partial_includes(
+    dockerfile_text: str,
+    project_root: Path,
+    *,
+    max_depth: int = 3,
+) -> str:
+    """Inline ``{% include 'partials/...' %}`` bodies (bounded depth).
+
+    Var-usage checks are source-level; with clone/registration logic living
+    in shared partials, the raw Dockerfile.j2 no longer mentions the vars.
+    Missing partials are left as-is (the render would fail anyway).
+    """
+    if max_depth <= 0:
+        return dockerfile_text
+
+    def _repl(match: re.Match[str]) -> str:
+        partial = project_root / "templates" / match.group("rel")
+        if not partial.is_file():
+            return match.group(0)
+        return expand_partial_includes(
+            partial.read_text(encoding="utf-8"),
+            project_root,
+            max_depth=max_depth - 1,
+        )
+
+    return _INCLUDE_RE.sub(_repl, dockerfile_text)
+
+
+_GUARD_LINE_RE = re.compile(
+    r"^\s*\{%-?\s*(?:(?P<kind>elif|else|endif)|"
+    r"if\s+(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s+is\s+defined)\s*-?%\}\s*$"
+)
+
+
+def _eliminate_undefined_branches(text: str, defined_vars: set[str]) -> str:
+    """Drop ``{% if X is defined %}`` branches whose guard var is undefined.
+
+    Source-level scanning cannot evaluate Jinja, but shared partials select
+    variants (lock-derived / pinned / floating) with exactly this guard
+    form on their own lines. Unreachable branches must not count as var
+    usage. Constructs other than single-level ``is defined`` guards pass
+    through verbatim (conservative).
+    """
+    out: list[str] = []
+    active = True  # current branch taken at guard depth 1
+    any_taken = False
+    depth = 0
+    for line in text.splitlines(keepends=True):
+        guard = _GUARD_LINE_RE.match(line.rstrip("\n"))
+        if guard is None:
+            if depth == 0 or active:
+                out.append(line)
+            continue
+        kind = guard.group("kind")
+        if kind == "endif":
+            depth = max(depth - 1, 0)
+            if depth == 0:
+                active = True
+                any_taken = False
+            continue
+        if kind == "elif":
+            if depth == 1:
+                active = not any_taken
+                any_taken = any_taken or active
+            continue
+        if kind == "else":
+            if depth == 1:
+                active = not any_taken
+            continue
+        # Entering `if X is defined`.
+        depth += 1
+        if depth == 1:
+            active = guard.group("var") in defined_vars
+            any_taken = active
+        else:
+            # Nested guard: keep the whole block verbatim.
+            active = True
+            any_taken = True
+        continue
+    return "".join(out)
+
+
 def check_env_repo_pins(
     env_name: str,
     spec: EnvironmentSpec,
     dockerfile_text: str,
 ) -> list[str]:
-    """All repo-pin invariants for one environment; empty list means clean."""
+    """All repo-pin invariants for one environment; empty list means clean.
+
+    *dockerfile_text* should already have partial includes expanded (see
+    :func:`expand_partial_includes`); unreachable ``is defined`` branches
+    are eliminated here from the declared/injected vars.
+    """
+    defined_vars = set(spec.template_vars) | set(
+        spec.spack.lock_source_commits.values()
+    )
+    dockerfile_text = _eliminate_undefined_branches(dockerfile_text, defined_vars)
     errors: list[str] = []
     errors.extend(
         _check_cp2k_dual_write(
@@ -591,7 +689,9 @@ def check_project(project_root: Path) -> list[str]:
     errors: list[str] = []
     for env_dir in _environment_dirs(project_root):
         spec = load_environment_spec(env_dir)
-        dockerfile_text = _dockerfile_text(env_dir)
+        dockerfile_text = expand_partial_includes(
+            _dockerfile_text(env_dir), project_root
+        )
         errors.extend(
             check_env_repo_pins(
                 env_dir.name,
