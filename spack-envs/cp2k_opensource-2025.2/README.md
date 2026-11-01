@@ -18,7 +18,7 @@ CP2K 2025.2 开源版本（纯 CPU），使用 OpenBLAS + OpenMPI 工具链，�
 ```
 cosma@2.7.0          deepmdkit@3.1.0       dftd4@3.7.0
 elpa@2025.01.001     fftw@3.3.10           greenx@2.2
-hdf5@1.14.6          lammps-user-pace      libint@2.9.0
+hdf5@1.14.6          lammps-user-pace      libint@2.13.1
 libsmeagol@1.2       libvori@220621        libxc@7.0.0
 libxsmm@1.17         pexsi@2.0.0           plumed@2.9.2
 py-torch@2.7         sirius@7.9.0          spglib@2.5.0

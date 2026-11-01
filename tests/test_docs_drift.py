@@ -58,3 +58,53 @@ def test_quickstart_has_no_hardcoded_env_count() -> None:
         "QUICKSTART.md hardcodes an env count; point readers at "
         "`python -m hpc_cf dockerfile --app-version` instead"
     )
+
+
+# Version column of the README env tables (docs drifted 3 rows stale once:
+# 2025.2/2025.2fa listed 1.1.0, 2026.1fa 1.1.1 while env.yaml said 1.2.0).
+_VERSION_ROW_RE = re.compile(
+    r"^\|\s*`(?P<env>[a-z0-9._-]+)`\s*\|(?P<rest>[^|]*)\|\s*(?P<ver>\d+\.\d+\.\d+)\s*\|",
+    re.IGNORECASE,
+)
+
+
+def test_readme_spack_versions_match_env_yaml() -> None:
+    from hpc_cf.environment import load_environment_spec
+
+    for rel in ("README.md", "docs/README.md"):
+        for line in (PROJECT_ROOT / rel).read_text(encoding="utf-8").splitlines():
+            match = _VERSION_ROW_RE.match(line)
+            if not match:
+                continue
+            env = match.group("env")
+            env_dir = PROJECT_ROOT / "spack-envs" / env
+            assert env_dir.is_dir(), f"{rel}: unknown env row {env}"
+            actual = load_environment_spec(env_dir).spack.version
+            assert match.group("ver") == actual, (
+                f"{rel}: {env} listed as Spack {match.group('ver')} but "
+                f"env.yaml pins {actual}; regenerate the table row"
+            )
+
+
+_RETIRED_VAR_NAMES = (
+    "force_avx512_repo_path",
+    "force_avx512_repo_url",
+    "force_avx512_repo_branch",
+    "s8ga_repo_url",
+    "s8ga_repo_commit",
+    "s8ga_abacus_repo_path",
+    "s8ga_vasp_repo_path",
+    "s8ga_overrides_repo_path",
+)
+
+
+def test_docs_do_not_teach_retired_repo_vars() -> None:
+    """Docs that instruct declaring retired dual-write vars send readers
+    straight into a guard error (round-2 audit 2.16)."""
+    for rel in ("docs/ADD_NEW_ENV.md", "docs/ASSETS_GUIDE.md"):
+        text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
+        for name in _RETIRED_VAR_NAMES:
+            assert name not in text, (
+                f"{rel} still references retired template var {name}; "
+                "staging is plan-driven (spack_staging_clones.j2)"
+            )

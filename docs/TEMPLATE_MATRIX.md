@@ -34,15 +34,17 @@
 | Spack install / bootstrap / mirror 注册 | 公共安装步骤；mirror 使用 `{{ spack_mirror_scope }}`（默认 site） |
 | 环境创建 + lock 导入 | 使用 `{{ spack_env_name }}`（来自 `SpackEnvironmentPlan`） |
 | view / cleanup | `spack env view` 与 gc |
-| `spack_image_repos.j2`（可选） | 按 `spack_image_repos` 注册 image-phase 自定义 repo；**ABACUS** opensource 与 **CP2K** opensource force-avx512（2026.1 / 2026.2）已接线；其余应用仍为 per-env 手写 |
+| `spack_image_repos.j2` | 按 `spack_image_repos` 注册 image-phase 自定义 repo（`custom_repos[].image_path`）；**所有** method=spack 环境已接线，无手写 `spack repo add` 残留 |
+| `spack_staging_clones.j2` | monorepo staging：共享 url+commit 的 repo 合并为一次 sparse clone（`clone_root` + 合并 `sparse_paths`），plan-driven |
+| `cp2k_upstream_clone.j2` | CP2K 上游 regtest 源码 clone，三变体（lock-derived / pinned / floating），fork 走 `cp2k_source_repo_url` |
 
 应用构建、manual source、regtest、ROCm 等仍留在各 per-env 模板。
 
 **契约诚实化**：
 - `SpackEnvironmentPlan` 对 **assets** 路径是可靠共享约束；image 侧自定义 repo
-  在 ABACUS opensource 与 CP2K opensource force-avx512（2026.1 / 2026.2）已走
-  `spack_image_repos` partial；其余应用仍以 **per-env Dockerfile.j2 +
-  `template_vars`** 为准（双写时需人工保持同步）
+  注册与 monorepo staging 同样 plan-driven（`spack_image_repos` /
+  `spack_staging_clones` partial）；剩余 `template_vars` 双写面（如
+  `cp2k_branch`、`cp2k_dev_repo_commit`）由 repo-pin 守卫强制同步
 - 渲染结果中的 `spack env create <name>` 必须来自 plan，不得硬编码固定 env 名
 - `repo_scope`（自定义 repo）与 `mirror_scope`（mirror 注册）相互独立；
   `mirror_scope` **有意固定 site**，不从 env.yaml 配置

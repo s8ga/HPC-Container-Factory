@@ -71,7 +71,7 @@ GauXC 以 `+skala skala_version=1.1` 构建。模型路径由环境变量提供�
 
 ```bash
 echo "$GAUXC_SKALA_MODEL"
-# /opt/spack-view/share/gauxc/onedft_models/skala-1.1.fun
+# /opt/spack-view/share/gauxc/onedft_models/skala-1.1-rev1.fun
 ```
 
 容器模板会在构建期间检查该文件存在。只有 `GAUXC_SKALA_MODEL` 非空时，

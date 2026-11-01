@@ -66,14 +66,18 @@ template_vars: {}               # 注入 Dockerfile.j2（StrictUndefined：缺�
   - **git**: 有 `url` → sparse clone + register
   - **local**: 有 `path` → 直接 register（相对 `spack-env-file/`）
   - **phases**: `both`（默认）/ `assets` / `image`（例如仅镜像构建用的 AVX512 override）
-  - 若同一 git repo 的 branch/url 也出现在 `template_vars`（如 `cp2k_branch`），
-    **短期双写必须同步**；ABACUS opensource 与 CP2K force-avx512（2026.1 /
-    2026.2）的 image 注册已走 `spack_image_repos` partial
-    （`custom_repos[].image_path`）；其他应用仍可能手写 `spack repo add`
-  - CP2K force-avx512：sparse clone 仍用 `force_avx512_repo_path`；
-    `custom_repos[].image_path` 必须等于
-    `/opt/s8ga-spack-packages/{{ force_avx512_repo_path }}`（由
-    `scripts/check-dual-write.py` 守卫，避免 `image_path` 死配置）
+  - image 阶段全部 plan-driven：所有 method=spack 的 Dockerfile 通过
+    `templates/partials/spack_image_repos.j2` 注册自定义 repo
+    （`custom_repos[].image_path`），共享 url+commit 的 monorepo 由
+    `templates/partials/spack_staging_clones.j2` 一次 sparse clone 完成
+    staging。**不要**在 Dockerfile 手写 `spack repo add`；旧的
+    `s8ga_*` / `force_avx512_*` 变量镜像已全部退役，声明了会被
+    repo-pin 守卫直接拒绝（见 `hpc_cf/repo_pins.py` 头部清单）
+  - 若同一 git repo 的 branch/url/commit 仍出现在 `template_vars`（如
+    `cp2k_branch`、`cp2k_dev_repo_commit`），**双写必须同步**；
+    `hpc_cf validate` / `scripts/check-dual-write.py` 守卫 pin 一致性，
+    repo bump 用 `python -m hpc_cf pin set --env <name> --repo <ns>
+    --commit <sha>` 原子完成
 
 ### Step 3: 修改 `spack-env-file/spack.yaml`
 
