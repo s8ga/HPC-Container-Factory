@@ -16,6 +16,7 @@ from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     ProjectLayout,
     SharedBuildcacheStore,
+    SharedMirrorStore,
 )
 from hpc_cf.requests import BuildcacheRequest
 from hpc_cf.validation import ValidationProfile
@@ -554,7 +555,15 @@ class BuildcacheService:
         # cannot reuse a stale builder-installed stage. CLI --build-opt appends.
         producer_build_opts = ["--no-cache", *list(request.build_opts)]
         try:
-            with store.consumer_lock():
+            # The producer Dockerfile bind-mounts the verified source
+            # mirror read-only; hold the mirror LOCK_SH for the whole
+            # build (same doctrine as the normal build path) so a
+            # concurrent assets --prune-mirror-apply cannot delete
+            # archives mid-install while this run only holds
+            # buildcache.lock.
+            with store.consumer_lock(), SharedMirrorStore(
+                self.layout
+            ).shared_read():
                 build_docker_stage(
                     dockerfile=dockerfile,
                     image_ref=temporary_image_ref,

@@ -171,6 +171,52 @@ def test_buildcache_build_renders_producer_with_auto_policy(
     assert captured["buildcache_producer"] is True
 
 
+def test_producer_build_holds_mirror_shared_read_lock(tmp_path: Path) -> None:
+    """The producer mounts the source mirror read-only; a concurrent
+    assets --prune-mirror-apply must not delete archives mid-build, so
+    build_docker_stage has to run inside SharedMirrorStore.shared_read()
+    (the normal build path's dual-lock doctrine, round-2 audit 2.12a)."""
+    from contextlib import contextmanager
+
+    from hpc_cf.workflows import BuildcacheRequest, BuildcacheService
+
+    layout, _, resolved = _producer_service_inputs(tmp_path)
+    state = {"held": False, "observed_during_build": None}
+
+    @contextmanager
+    def fake_shared_read(self):
+        state["held"] = True
+        try:
+            yield
+        finally:
+            state["held"] = False
+
+    def fake_build_docker_stage(**_kwargs: object) -> None:
+        state["observed_during_build"] = state["held"]
+
+    with (
+        _producer_patches(resolved),
+        patch(
+            "hpc_cf.template.generate_dockerfile",
+            return_value=tmp_path / "Dockerfile",
+        ),
+        patch(
+            "hpc_cf.sif.build_docker_stage", side_effect=fake_build_docker_stage
+        ),
+        patch("hpc_cf.buildcache.remove_temporary_image"),
+        patch(
+            "hpc_cf.execution.SharedMirrorStore.shared_read",
+            fake_shared_read,
+        ),
+    ):
+        assert BuildcacheService(layout).run(
+            BuildcacheRequest(action="build", env=PILOT)
+        ) == 0
+
+    assert state["observed_during_build"] is True
+    assert state["held"] is False
+
+
 def test_publisher_script_pushes_indexes_then_checks_explicit_non_external_hashes() -> None:
     from hpc_cf.buildcache_ops import build_publish_script
     from hpc_cf.config import IMAGE_SPACK_ROOT, IMAGE_SPACK_SETUP_SCRIPT
