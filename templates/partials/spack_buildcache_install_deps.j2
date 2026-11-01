@@ -1,0 +1,86 @@
+{# Dependency-only buildcache install for environments with proprietary manual_packages
+   (such as VASP) that must never enter or be pulled from binary buildcaches.
+
+   Producer builds install `--only dependencies` (plus any build-only concrete
+   dependency specs skipped by binary reuse, excluding spack_buildcache_exclude_specs)
+   so all redistributable dependencies are published while proprietary packages stay
+   uninstalled and absent from the producer image.
+
+   Consumer builds pull/install `--only dependencies` via binary-cache, leaving the
+   proprietary root package to be compiled locally with `--use-buildcache never` in
+   a subsequent Dockerfile step.
+
+   Never emit bash array-length expansions that contain a hash character in this
+   Dockerfile fragment: the Dockerfile lexer treats hash as a line comment even
+   inside shell quotes. #}
+{% set _excl_csv = spack_buildcache_exclude_specs | default([]) | join(',') %}
+{% set _excl_args = spack_buildcache_exclude_specs | default(['vasp'], true) | join(' ') %}
+{% if spack_buildcache_mode is defined and spack_buildcache_mode == 'oci' %}
+RUN{% if spack_buildcache_policy == 'auto' %}
+    --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+{% endif %}
+{% if spack_buildcache_username_var %}
+    --mount=type=secret,id=buildcache-creds \
+{% endif %}
+    bash -o pipefail -c 'set -euo pipefail; \
+{% if spack_buildcache_username_var %}
+    set -a; . /run/secrets/buildcache-creds; set +a; \
+{% endif %}
+    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache{% if spack_buildcache_producer %} \
+        --autopush{% endif %}{% if spack_buildcache_username_var %} \
+        --oci-username-variable {{ spack_buildcache_username_var }} \
+        --oci-password-variable {{ spack_buildcache_password_var }}{% endif %} \
+        {{ spack_buildcache_url }}; \
+{% else %}
+RUN --mount=type=bind,source=assets/spack-buildcache,target=/opt/spack-buildcache,readonly \
+{% if spack_buildcache_policy == 'auto' %}
+    --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
+{% endif %}
+    bash -o pipefail -c 'set -euo pipefail; \
+    spack -e {{ spack_env_name }} mirror add --scope env:{{ spack_env_name }} --unsigned binary-cache \
+        file:///opt/spack-buildcache; \
+{% endif %}
+{% if spack_buildcache_producer %}
+    set +e; \
+    spack -e {{ spack_env_name }} install --only-concrete --only dependencies \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20 {{ _excl_args }}; \
+    _hpc_cf_install_rc=$?; \
+    mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); excl={x for x in \"{{ _excl_csv }}\".split(\",\") if x}; print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed) and (s.name not in excl)))"); \
+    if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
+        echo "Installing concrete dependency specs skipped by binary reuse"; \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+            -j "$(nproc)" -p 20 "${_hpc_cf_missing[@]}"; \
+        _hpc_cf_missing_rc=$?; \
+        if [ "${_hpc_cf_missing_rc}" -ne 0 ]; then _hpc_cf_install_rc="${_hpc_cf_missing_rc}"; fi; \
+    fi; \
+    set -e; \
+    mapfile -t _hpc_cf_installed < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); excl={x for x in \"{{ _excl_csv }}\".split(\",\") if x}; print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and s.installed and (s.name not in excl)))"); \
+    _hpc_cf_installed_count=$(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); excl={x for x in \"{{ _excl_csv }}\".split(\",\") if x}; print(sum(1 for s in e.all_specs() if (not s.external) and s.installed and (s.name not in excl)))"); \
+    echo "HPC_CF_INSTALL_RC=${_hpc_cf_install_rc}"; \
+    echo "HPC_CF_INSTALLED_SPEC_COUNT=${_hpc_cf_installed_count}"; \
+    if [ -z "${_hpc_cf_installed[0]:-}" ]; then \
+        echo "Producer install left no non-external dependency specs on disk" >&2; \
+        exit 1; \
+    fi; \
+    if [ "${_hpc_cf_install_rc}" -ne 0 ]; then \
+        echo "HPC_CF_PARTIAL_INSTALL=1"; \
+        echo "Producer install incomplete; keeping image for partial buildcache push"; \
+        exit 0; \
+    fi'
+{% else %}
+    spack -e {{ spack_env_name }} install --only-concrete --only dependencies \
+        --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+        -j "$(nproc)" -p 20 {{ _excl_args }}; \
+    mapfile -t _hpc_cf_extra_roots < <(spack -e {{ spack_env_name }} python -c \
+        "import spack.environment as ev; e=ev.active_environment(); excl={x for x in \"{{ _excl_csv }}\".split(\",\") if x}; print(chr(10).join(\"/\"+x.hash for x in e.explicit_roots() if (not e.specs_by_hash[x.hash].external) and (not e.specs_by_hash[x.hash].installed) and (e.specs_by_hash[x.hash].name not in excl)))"); \
+    if [ -n "${_hpc_cf_extra_roots[0]:-}" ]; then \
+        spack -e {{ spack_env_name }} install --only-concrete \
+            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
+            -j "$(nproc)" -p 20 "${_hpc_cf_extra_roots[@]}"; \
+    fi'
+{% endif %}

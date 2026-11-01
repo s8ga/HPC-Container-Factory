@@ -19,6 +19,8 @@
 | `cp2k_rocm-2026.1-gfx942` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 | `vasp_mkl-6.6.0-avx2` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 | `vasp_mkl-6.6.0-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `vasp_mkl-6.6.1-avx2` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
+| `vasp_mkl-6.6.1-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持 |
 
 这里的“支持”只表示模板可由现行发现与渲染契约处理，不代表 OCI/SIF 构建、
 应用测试、性能或特定硬件验证均已完成。具体仓库测试范围应查看对应发布说明。

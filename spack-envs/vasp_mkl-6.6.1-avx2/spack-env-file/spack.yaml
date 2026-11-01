@@ -1,0 +1,164 @@
+# Spack environment for MPI-parallel VASP 6.6.1 + Intel oneMKL (AVX2 / force-avx512 ELPA).
+# Recipes: s8ga spack_repo/vasp + s8_overrides (pinned via env.yaml commit).
+
+spack:
+  concretizer:
+    unify: true
+
+  config:
+    connect_timeout: 30
+    install_tree:
+      root: /opt/spack
+      padded_length: 0
+    build_stage:
+      - /tmp/spack-build
+    deprecated: true
+
+  packages:
+    all:
+      buildable: true
+      prefer:
+        - "~cuda"
+        - "+fortran"
+        - "+mpi"
+        - "+mpi_f08"
+        - "~opencl"
+        - "+openmp"
+        - "+pic"
+        - "~rocm"
+        - "~tests"
+        - "build_system=cmake"
+        - "build_type=Release"
+        - target="x86_64_v3"
+
+    pkgconf:
+      # Avoid pkgconf 3.x ${includedir} expansion regression on transitive Requires: (mstore -> mctc-lib).
+      require:
+        - "@:2"
+
+    mpi:
+      require:
+        - openmpi
+
+    mpich:
+      require:
+        - "~xpmem"
+
+    openmpi:
+      require:
+        - "+internal-hwloc"
+
+    xpmem:
+      require:
+        - "xpmem@master ~kernel-module"
+
+    libfabric:
+      require:
+        - "~cuda"
+
+    yasm:
+      # Avoid builtin yasm CMake path missing cxx build dep under global prefer.
+      require:
+        - "build_system=autotools"
+
+    blas:
+      require:
+        - intel-oneapi-mkl
+
+    lapack:
+      require:
+        - intel-oneapi-mkl
+
+    fftw-api:
+      require:
+        - intel-oneapi-mkl
+
+    scalapack:
+      require:
+        - netlib-scalapack
+
+    intel-oneapi-mkl:
+      require:
+        - "+shared"
+        - "+gfortran"
+        - "~ilp64"
+        - "~cluster"
+        - "threads=openmp"
+
+    elpa:
+      require:
+        - "+openmp"
+        - "+force_all_x86_kernel"
+        - "+runtime_kernel_autodetect"
+
+    hdf5:
+      require:
+        - "+fortran"
+        - "+mpi"
+
+    libxc:
+      require:
+        - "~cuda"
+        - "~fhc"
+        - "+fortran"
+        - "build_system=cmake"
+
+    dftd4:
+      require:
+        - "build_system=cmake"
+
+    simple-dftd3:
+      require:
+        - "build_system=cmake"
+
+    mctc-lib:
+      require:
+        - "build_system=cmake"
+
+    multicharge:
+      require:
+        - "build_system=cmake"
+
+    wannier90:
+      require:
+        - "~mpi"
+        - "+shared"
+
+    libmbd:
+      require:
+        - "~shared"
+        - "+static"
+        - "~mpi"
+        - "build_system=cmake"
+
+  repos:
+    builtin:
+      commit: 01edd466b4da9e0e3c50fe18f58d46dca97e4b97
+
+  specs:
+    # MPI & math stack
+    - "openmpi@5.0.10"
+    - "libfabric@2.6.0"
+    - "intel-oneapi-mkl@2026.1.0"
+    - "netlib-scalapack@2.2.3"
+    - "elpa@2026.02.002"
+    # VASP feature dependencies
+    - "hdf5@1.14.6"
+    - "libxc@7.1.2"
+    - "dftd4@4.3.0"
+    - "mctc-lib@0.6.1"
+    - "multicharge@0.5.0"
+    - "simple-dftd3@1.6.0"
+    - "libmbd@0.15.0"
+    - "wannier90@3.1.0"
+    - "libbeef@0.1.3"
+    - "cppflow@2.0.4aw"
+    - "libtensorflow-cc@2.20.0"
+    # Full-featured VASP 6.6.1 CPU CMake build
+    - "vasp@6.6.1~cuda+dftd4+elpa~fftlib+grace+hdf5+libbeef+libmbd+libxc+openmp+sdftd3+shmem+vaspml+vaspsol+vtst+wannier90 build_system=cmake generator=ninja"
+
+  # Create the unified view after `spack gc` in the Dockerfile (overlayfs +
+  # spack v1.2.0 rename hits EXDEV if the env view updates during install).
+  view: false
+
+# EOF
