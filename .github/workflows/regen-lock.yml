@@ -1,7 +1,8 @@
 # Lock regeneration entry point: runs ONLY the pipeline's prepare job
 # (concretize + source mirror + verify + prune + mirror publish) via its
 # prepare_only gate, and uploads the build-lock artifact (spack.lock +
-# resolved-repos.yaml) to commit back as the env's committed lock.
+# resolved-repos.yaml + lock-manifest.json) to commit back as the env's
+# committed lock.
 #
 # This is the remote equivalent of the local
 #   python -m hpc_cf assets --env <env> --allow-concretize

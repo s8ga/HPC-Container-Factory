@@ -89,3 +89,29 @@ def test_stable_release_whitelists_env_families() -> None:
     in seconds instead of building for hours (2026-10-29 misroute)."""
     text = (WORKFLOWS_DIR / "stable-release.yml").read_text(encoding="utf-8")
     assert "cp2k_opensource-*|abacus_opensource-*" in text
+
+
+# --- build-lock artifact + release assets ------------------------------------
+
+
+def test_build_lock_artifact_carries_the_manifest() -> None:
+    """prepare must ship lock-manifest.json with the lock, or the CI regen
+    path throws away the provenance sidecar it just created (2.3)."""
+    text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
+    upload = text[text.index("name: build-lock") :]
+    upload = upload[: upload.index("retention-days")]
+    assert "spack.lock" in upload
+    assert "resolved-repos.yaml" in upload
+    assert "lock-manifest.json" in upload
+    # Both consumers (binaries producer, runtime consumer) place the
+    # manifest beside the lock so validate sees provenance, not
+    # provenance_unknown noise.
+    assert text.count("downloaded-lock/lock-manifest.json") == 2
+
+
+def test_dependency_graph_ships_and_prunes_with_the_manifest() -> None:
+    """The extracted DependencyGraph-*.dot must be uploaded to the release
+    and share the manifest assets' retention budget (2.15c)."""
+    text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
+    assert 'RELEASE_ASSETS+=("DependencyGraph-' in text
+    assert 'test("(BUILD_MANIFEST|DependencyGraph)-")' in text
