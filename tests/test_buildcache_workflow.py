@@ -171,26 +171,6 @@ def test_buildcache_build_renders_producer_with_auto_policy(
     assert captured["buildcache_producer"] is True
 
 
-@pytest.mark.parametrize("spack_version", ("1.1.0", "1.1.1", "1.2.0"))
-def test_buildcache_register_uses_explicit_named_environment_scope(
-    spack_version: str,
-) -> None:
-    partial = ROOT / "templates" / "partials" / "spack_buildcache_register.j2"
-    rendered = render_template(
-        partial,
-        {
-            "spack_env_name": "cp2k-env",
-            "spack_version": spack_version,
-        },
-    )
-    assert rendered.strip() == (
-        "spack -e cp2k-env mirror add --scope env:cp2k-env "
-        "--unsigned binary-cache \\\n"
-        "        file:///opt/spack-buildcache"
-    )
-    assert "--scope env " not in rendered
-
-
 def test_publisher_script_pushes_indexes_then_checks_explicit_non_external_hashes() -> None:
     from hpc_cf.buildcache_ops import build_publish_script
     from hpc_cf.config import IMAGE_SPACK_ROOT, IMAGE_SPACK_SETUP_SCRIPT

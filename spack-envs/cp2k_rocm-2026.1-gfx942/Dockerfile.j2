@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 {% include 'partials/locale_c_utf8.j2' %}
 
 # Build arguments for GPU target and parallelism (kept for flexibility).
-ARG AMDGPU_TARGETS="gfx942"
+ARG AMDGPU_TARGETS="{{ amdgpu_targets }}"
 ARG SPACK_MAKE_JOBS=0
 
 # ============================================================================

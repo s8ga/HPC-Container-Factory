@@ -98,13 +98,16 @@ class BuildcachePlan:
 class SpackEnvironmentPlan:
     """Authoritative Spack contract for one environment.
 
-    The plan is the reliable shared contract for **assets** scripts
-    (prepare/register/mirror). For image Dockerfiles, ABACUS opensource and
-    CP2K opensource force-avx512 (2026.1 / 2026.2) include
+    The plan is the shared contract for **assets** scripts
+    (prepare/register/mirror) and for image Dockerfiles: every method=spack
+    Dockerfile registers image-phase repos through
     ``templates/partials/spack_image_repos.j2`` (plan-driven
-    ``custom_repos[].image_path``); other apps still stage/register custom repos
-    via per-env Dockerfile.j2 + ``template_vars`` handwritten ``spack repo add``
-    lines.
+    ``custom_repos[].image_path``, order and scope from env.yaml), and
+    monorepo staging clones come from ``spack_staging_clones.j2``
+    (:func:`staging_clones` groups same-URL repos into one sparse clone).
+    Upstream source clones for regtests stay app-specific
+    (``cp2k_upstream_clone.j2``); ``template_vars`` remain only for that
+    app-shaped surface.
     """
 
     version: str
