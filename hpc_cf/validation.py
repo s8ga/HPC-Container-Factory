@@ -33,6 +33,7 @@ from hpc_cf.environment import (
     parse_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout
+from hpc_cf.repo_pins import check_env_repo_pins
 
 logger = logging.getLogger(__name__)
 
@@ -460,6 +461,38 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
     return findings
 
 
+def collect_repo_pin_consistency(
+    spec: EnvironmentSpec,
+    env_dir: Path,
+) -> list[ValidationFinding]:
+    """Custom_repos ↔ template_vars pin consistency (dual-write guard).
+
+    Same invariants as ``scripts/check-dual-write.py`` (see
+    ``hpc_cf.repo_pins``): app-shaped CP2K/s8ga contracts plus key-name-
+    agnostic pin-unity / repo-commit-var / staging-path / var-wiring checks.
+    """
+    dockerfile = env_dir / "Dockerfile.j2"
+    dockerfile_text = (
+        dockerfile.read_text(encoding="utf-8") if dockerfile.is_file() else ""
+    )
+    errors = check_env_repo_pins(env_dir.name, spec, dockerfile_text)
+    path = str(dockerfile if dockerfile.is_file() else env_dir)
+    return [
+        ValidationFinding(
+            code="repo_pins.inconsistent",
+            severity=ValidationSeverity.ERROR,
+            message=error,
+            path=path,
+            fix_hint=(
+                "env.yaml custom_repos and their template_vars copies must "
+                "agree; run scripts/check-dual-write.py for the same "
+                "diagnostics outside validate."
+            ),
+        )
+        for error in errors
+    ]
+
+
 def is_nonempty_spack_lock(path: Path) -> bool:
     """Return True if *path* is a present, non-empty ``spack.lock`` file."""
     return path.is_file() and path.stat().st_size > 0
@@ -603,6 +636,7 @@ def validate_environment(
     ):
         if profile is not ValidationProfile.ASSETS:
             report.extend(collect_branch_consistency(env_dir))
+            report.extend(collect_repo_pin_consistency(spec, env_dir))
         if spec.method.runs_spack_validations:
             report.extend(collect_spack_yaml(env_dir))
 
