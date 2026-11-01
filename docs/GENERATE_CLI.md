@@ -29,6 +29,9 @@ python -m hpc_cf <command> [options]
 | `build-sif` | 从 OCI 镜像构建 Apptainer SIF |
 | `pack-apptainer` | 打包本地 apptainer 为 makeself 自解压包 |
 | `assets` | 准备离线资源（bootstrap + source mirror） |
+| `buildcache` | 生产者构建/verify/resume/status（二进制缓存） |
+| `pin` | `pin set` 原子化更新 repo pin（含双写副本） |
+| `gc` | 清理构建产物（builder tag / 悬空镜像）；有活跃构建时拒绝，需 `--dry-run` 或 `--force` |
 
 ## dockerfile
 

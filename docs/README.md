@@ -91,6 +91,7 @@ hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共�
 | `cp2k_opensource-2025.2-force-avx512` | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
 | `cp2k_opensource-2026.1-force-avx512` | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
 | `cp2k_opensource-2026.2-force-avx512` | 1.2.0 | `cp2k_opensource:2026.2-force-avx512` |
+| `cp2k_opensource-master-force-avx512` | 1.2.0 | `cp2k_opensource:master-force-avx512` |
 | `cp2k_rocm-2026.1-gfx942` | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
 | `vasp_mkl-6.6.0-avx2` | 1.1.1 | `vasp_mkl:6.6.0-avx2` |
 | `vasp_mkl-6.6.0-avx512` | 1.1.1 | `vasp_mkl:6.6.0-avx512` |

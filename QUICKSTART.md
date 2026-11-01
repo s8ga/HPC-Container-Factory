@@ -86,7 +86,7 @@ apptainer exec \
 python -m hpc_cf dockerfile --app-version
 ```
 
-CLI 当前发现 9 个环境，不会自动选择默认环境；需要显式传入环境名。
+CLI 不会自动选择默认环境；需要显式传入环境名（运行 `python -m hpc_cf dockerfile --app-version` 获取实时清单）。
 
 ## 更多文档
 

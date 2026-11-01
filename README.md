@@ -25,6 +25,7 @@
 | `cp2k_opensource-2025.2-force-avx512` | CP2K 2025.2 强制 AVX512 kernel | 1.1.0 | `cp2k_opensource:2025.2-force-avx512` |
 | `cp2k_opensource-2026.1-force-avx512` | CP2K 2026.1 强制 AVX512 kernel | 1.1.1 | `cp2k_opensource:2026.1-force-avx512` |
 | `cp2k_opensource-2026.2-force-avx512` | CP2K 2026.2 强制 AVX512 kernel | 1.2.0 | `cp2k_opensource:2026.2-force-avx512` |
+| `cp2k_opensource-master-force-avx512` | CP2K master 浮动轨道 + 强制 AVX512 kernel | 1.2.0 | `cp2k_opensource:master-force-avx512` |
 | `cp2k_rocm-2026.1-gfx942` | CP2K 2026.1 ROCm GPU 版 | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
 | `vasp_mkl-6.6.0-avx2` | VASP 6.6.0 MKL AVX2 | 1.1.1 | `vasp_mkl:6.6.0-avx2` |
 | `vasp_mkl-6.6.0-avx512` | VASP 6.6.0 MKL AVX512 | 1.1.1 | `vasp_mkl:6.6.0-avx512` |
