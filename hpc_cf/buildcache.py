@@ -259,16 +259,31 @@ def resolve_consumer_policy(
     ):
         return requested
     if requested is BuildcachePolicy.AUTO:
-        logger.warning("Buildcache missing or unhealthy; falling back to source install")
+        logger.warning(
+            "Buildcache missing or unhealthy; falling back to source install "
+            "(inspect: python -m hpc_cf buildcache status --env <env>)"
+        )
         return BuildcachePolicy.NEVER
     if oci:
         raise RuntimeError(
             "oci buildcache has no successful coverage record for this lock; "
-            "policy 'only' fails closed"
+            "policy 'only' fails closed. Next: `python -m hpc_cf buildcache "
+            "build --env <env>` to (re)publish, `buildcache status --env "
+            "<env>` to inspect, `buildcache resume --env <env>` to finish an "
+            "interrupted publish"
         )
     if not store.layout.spack_buildcache_dir.is_dir():
-        raise RuntimeError("buildcache store does not exist; policy 'only' fails closed")
-    raise RuntimeError("buildcache store is missing healthy state or is unhealthy")
+        raise RuntimeError(
+            "buildcache store does not exist; policy 'only' fails closed. "
+            "Next: `python -m hpc_cf buildcache build --env <env>` to "
+            "create it, `buildcache status --env <env>` to inspect"
+        )
+    raise RuntimeError(
+        "buildcache store is missing healthy state or is unhealthy. Next: "
+        "`python -m hpc_cf buildcache status --env <env>` to inspect, "
+        "`buildcache resume --env <env>` to finish an interrupted publish, "
+        "`buildcache build --env <env>` to republish"
+    )
 
 
 def coverage_path_for_lock(layout: ProjectLayout, lock_path: Path) -> Path:

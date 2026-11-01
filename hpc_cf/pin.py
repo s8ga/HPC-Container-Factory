@@ -185,7 +185,7 @@ def _apply_pin(
         logger.error(
             "%s: old pin %s appears %d time(s) but %d site(s) reference it "
             "(custom_repos=%d, template_vars=%d) — drifted config; fix with "
-            "scripts/check-dual-write.py first",
+            "scripts/check-dual-write.py first, then re-run `pin set`",
             env_dir.name,
             old_commit,
             occurrences,

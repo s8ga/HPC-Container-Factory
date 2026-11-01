@@ -66,3 +66,61 @@ def test_main_runtime_error_passthrough(caplog, monkeypatch) -> None:
 
     assert exc_info.value.code == 1
     assert any("boom" in r.message for r in caplog.records)
+
+
+def test_main_key_error_names_the_key(caplog, monkeypatch) -> None:
+    """A bare KeyError must not escape as a traceback; name the key."""
+    monkeypatch.setattr(
+        "hpc_cf.cli.run_new_cli",
+        lambda argv: (_ for _ in ()).throw(KeyError("env.yaml")),
+    )
+    monkeypatch.setattr("sys.argv", ["hpc_cf", "assets"])
+
+    from hpc_cf.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    logged = " ".join(r.message for r in caplog.records)
+    assert "missing configuration key" in logged
+    assert "env.yaml" in logged
+
+
+def test_main_permission_error_is_a_clean_message(caplog, monkeypatch) -> None:
+    """OSError subclasses (PermissionError, disk full, …) get the handler
+    instead of a bare traceback (round-2 audit 2.4)."""
+    monkeypatch.setattr(
+        "hpc_cf.cli.run_new_cli",
+        lambda argv: (_ for _ in ()).throw(PermissionError("/opt/spack-mirror")),
+    )
+    monkeypatch.setattr("sys.argv", ["hpc_cf", "assets"])
+
+    from hpc_cf.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    assert any("/opt/spack-mirror" in r.message for r in caplog.records)
+
+
+def test_only_fail_closed_errors_name_the_next_command() -> None:
+    """The buildcache only-fail-closed paths must point at status/resume/
+    build instead of dead-ending (round-2 audit 2.4)."""
+    import re
+    from pathlib import Path
+
+    import hpc_cf.buildcache as bc
+
+    src = Path(bc.__file__).read_text(encoding="utf-8")
+    only_msgs = [
+        message
+        for message in re.findall(r'"([^"]*fails closed[^"]*)"', src)
+        # "not enabled" is a config error, not a store-state dead end.
+        if "not enabled" not in message
+    ]
+    assert only_msgs, "expected fail-closed messages in resolve_consumer_policy"
+    for message in only_msgs:
+        assert "buildcache" in message, message
+        assert "status" in message or "build" in message, message

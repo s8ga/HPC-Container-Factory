@@ -504,7 +504,9 @@ def collect_repo_pin_consistency(
             fix_hint=(
                 "env.yaml custom_repos and their template_vars copies must "
                 "agree; run scripts/check-dual-write.py for the same "
-                "diagnostics outside validate."
+                "diagnostics outside validate. Repo-pin bumps should go "
+                "through `python -m hpc_cf pin set --env <name> --repo "
+                "<ns> --commit <sha>` (atomic, guard-checked)."
             ),
         )
         for error in errors

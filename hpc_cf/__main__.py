@@ -26,8 +26,18 @@ def main() -> None:
 
     try:
         code = run_new_cli(argv)
-    except (FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        msg = str(exc)
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        KeyError,
+        subprocess.CalledProcessError,
+    ) as exc:
+        # OSError covers FileNotFoundError/PermissionError (paths, mounts,
+        # disk); KeyError carries only the bare key name, so name it.
+        msg = str(exc) or repr(exc)
+        if isinstance(exc, KeyError):
+            msg = f"missing configuration key: {exc}"
         if isinstance(exc, subprocess.CalledProcessError) and exc.stdout:
             msg += f"\n--- output (last 2000 chars) ---\n{exc.stdout[-2000:]}"
         logging.getLogger(__name__).error(msg)
