@@ -25,11 +25,12 @@ on:
         default: cp2k_opensource-master-force-avx512
 
 concurrency:
-  # Same serialization family as the pipeline itself (hpc-cf-pipeline-<env>):
-  # a regen run and a nightly/stable run of one env must not interleave
-  # dated-mirror publishes. The pipeline's own group nests inside this
-  # one and never conflicts with itself.
-  group: hpc-cf-pipeline-${{ inputs.env_name }}
+  # Same serialization family as the pipeline itself — the upstream-default
+  # variant of its 3-dimension group (env_name, fork_url, fork_branch): a
+  # regen run and a nightly/stable run of one env must not interleave
+  # dated-mirror publishes. Fork dispatches of the same env carry fork
+  # dimensions and stay parallel (fork tags are disjoint).
+  group: hpc-cf-pipeline-${{ inputs.env_name }}-upstream-default
   cancel-in-progress: false
 
 jobs:

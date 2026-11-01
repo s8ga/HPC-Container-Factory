@@ -113,19 +113,28 @@ env:
   FLAGSHIP_ENV: "cp2k_opensource-2026.2-force-avx512"
 
 # NOTE: a reusable workflow's own permissions block can only DOWNGRADE what
-# the caller grants. The sif job creates releases, so contents must stay
-# write here (callers stable-release / nightly-cp2k grant the same).
+# the caller grants, so the top-level block must stay at the maximum any
+# job needs (sif creates releases; prepare/binaries/runtime push GHCR
+# packages). Each job below declares its own minimal set and downgrades
+# from this ceiling; callers (stable-release / nightly-cp2k / regen-lock)
+# grant the same.
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  # Constant prefix (NOT github.workflow): nightly, stable-release and
-  # regen-lock dispatches of the SAME env must serialize against each
-  # other — they all write the same dated mirror tag and float, and a
-  # stable publish racing a nightly publish of one env interleaves
-  # crane pushes on identical tags. Different envs stay fully parallel.
-  group: hpc-cf-pipeline-${{ inputs.fork_branch || inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}
+  # Constant prefix (NOT github.workflow): same-env dispatches must
+  # serialize against each other — they write the same dated mirror tag
+  # and float, and a stable publish racing a nightly publish of one env
+  # interleaves crane pushes on identical tags. The group keys on ALL
+  # three dispatch dimensions: the old `fork_branch || env_name || …`
+  # fallback made a fork_url-only dispatch (fork_branch empty) land in the
+  # UPSTREAM group of that env, and two envs sharing a fork_branch name
+  # blocked each other. Fork runs write only fork-suffixed tags (see the
+  # exact-match prune filters), so a fork run parallel to its base env's
+  # nightly is safe. regen-lock uses the upstream-default variant of this
+  # group. Different envs stay fully parallel.
+  group: hpc-cf-pipeline-${{ inputs.env_name || 'cp2k_opensource-2026.2-force-avx512' }}-${{ inputs.fork_url || 'upstream' }}-${{ inputs.fork_branch || 'default' }}
   cancel-in-progress: false # never kill a publication mid-run
 
 jobs:
@@ -133,6 +142,10 @@ jobs:
     name: prepare (lock + source mirror)
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    permissions:
+      # crane push/prune of the hpc-cf-inputs mirror package only.
+      contents: read
+      packages: write
     outputs:
       date: ${{ steps.vars.outputs.date }}
     steps:
@@ -427,6 +440,10 @@ jobs:
     # slow install fails inside hpc_cf and the always()-step below still
     # gets to run; the remaining ~15 min cover the restore prelude.
     timeout-minutes: 350
+    permissions:
+      # Buildcache producer pushes to the oci GHCR mirror only.
+      contents: read
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -599,6 +616,10 @@ jobs:
     outputs:
       date: ${{ needs.binaries.outputs.date }}
     timeout-minutes: 120
+    permissions:
+      # Runtime image push/prune in the shared IMAGE_NAME package.
+      contents: read
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@v7

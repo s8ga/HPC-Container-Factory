@@ -22,9 +22,15 @@ concurrency:
   group: ci-tests-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     runs-on: ubuntu-latest
+    # ruff + full unit suite stay well under 5 minutes; the ceiling only
+    # guards against a hung pip/pytest.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 

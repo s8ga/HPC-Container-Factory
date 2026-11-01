@@ -33,14 +33,18 @@ on:
         required: false
         default: ""
 
+# This workflow's own jobs only cut the release branch; the GHCR pushes
+# happen in the reusable pipeline, which receives its grant at the call
+# site below (job-level permissions there, workflow-level ceiling here
+# keeps packages: write away from the resolve job).
 permissions:
   contents: write
-  packages: write
 
 jobs:
   resolve:
     name: resolve env and cut the release branch
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       env_name: ${{ steps.env.outputs.env_name }}
     steps:
@@ -73,6 +77,18 @@ jobs:
             echo "::error::unknown env '${ENV_NAME}' (no spack-envs/${ENV_NAME} at ${GITHUB_SHA})"
             exit 1
           fi
+          # Env-family guard: this track only serves the opensource
+          # pipeline families. VASP/MKL/ROCm envs are intentionally
+          # outside it (licensing / buildcache track); a misrouted
+          # dispatch used to run for hours with CP2K release notes
+          # (2026-10-29 abacus misroute) — fail in seconds instead.
+          case "${ENV_NAME}" in
+            cp2k_opensource-*|abacus_opensource-*) ;;
+            *)
+              echo "::error::env '${ENV_NAME}' is outside the opensource pipeline families (cp2k_opensource-*, abacus_opensource-*). VASP/MKL/ROCm environments are not served by stable-release."
+              exit 1
+              ;;
+          esac
           echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
           echo "resolved env: ${ENV_NAME}"
       - name: Cut/re-point release/<env> at the dispatch commit
@@ -101,3 +117,9 @@ jobs:
       channel: stable
       # Build the exact dispatch commit — never a moving ref.
       factory_ref: ${{ github.sha }}
+    # Grant the reusable pipeline what its jobs downgrade from: sif
+    # creates releases (contents), prepare/binaries/runtime push GHCR
+    # packages. The resolve job above never sees packages: write.
+    permissions:
+      contents: write
+      packages: write
