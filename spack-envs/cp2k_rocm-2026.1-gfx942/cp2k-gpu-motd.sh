@@ -77,15 +77,18 @@ detect_rocm_version() {
 }
 
 detect_gpus() {
-    # Try rocm-smi first (most accurate)
+    # Try rocm-smi first (most accurate). grep -c prints the count (0 on no
+    # match) AND exits 1 — the trailing `|| true` keeps set -e happy without
+    # a second "0" line; without it GPU_COUNT became $'0\n0' and the
+    # arithmetic below died with a syntax error on GPU-less hosts.
     if command -v rocm-smi &>/dev/null; then
-        rocm-smi --showproductname 2>/dev/null | grep -c 'GPU\[' || echo "0"
-    # Fallback: check /dev/kfd (AMD GPU) or /dev/dri (generic)
+        local count
+        count=$(rocm-smi --showproductname 2>/dev/null | grep -c 'GPU\[' || true)
+        echo "${count:-0}"
+    # Fallback: /dev/kfd present means at least one AMD GPU node exists
+    # (it is a single char device — there is nothing to count).
     elif [[ -c /dev/kfd ]]; then
-        # Count unique GPU IDs from kfd
-        ls /dev/kfd &>/dev/null | wc -l
-        # If kfd exists but we can't count, at least report 1
-        echo "1" 2>/dev/null || echo "0"
+        echo "1"
     else
         echo "0"
     fi
