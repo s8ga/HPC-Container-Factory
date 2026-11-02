@@ -11,6 +11,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from hpc_cf.atomic_io import atomic_write_text
 from hpc_cf.config import (
     APPTAINER_INSTALL_SCRIPT,
     APPTAINER_INSTALL_SCRIPT_SHA256,
@@ -262,7 +263,7 @@ def _read_oci_tar_image_id(tar_path: Path) -> str | None:
 
 def _write_oci_tar_image_id(tar_path: Path, image_id: str) -> None:
     sidecar = _oci_tar_id_sidecar(tar_path)
-    sidecar.write_text(f"{image_id}\n", encoding="utf-8")
+    atomic_write_text(sidecar, f"{image_id}\n")
 
 
 def inspect_local_image_id(
@@ -589,7 +590,7 @@ def build_sif(
             artifacts_dir,
             what="definition file",
         )
-        def_file.write_text(def_content, encoding="utf-8")
+        atomic_write_text(def_file, def_content)
         logger.info("Definition file written: %s", def_file)
 
         cmd = [apptainer, "build", "--force",

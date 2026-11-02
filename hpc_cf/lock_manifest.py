@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from hpc_cf.atomic_io import atomic_write_json
 from hpc_cf.environment import EnvironmentSpec
 
 logger = logging.getLogger(__name__)
@@ -62,10 +63,7 @@ def write_lock_manifest(spec: EnvironmentSpec, config_dir: Path) -> Path:
     """Write the manifest next to spack.yaml/spack.lock; returns its path."""
     manifest = build_manifest(spec, config_dir)
     path = config_dir / LOCK_MANIFEST_FILENAME
-    path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, manifest)
     logger.info("Lock input manifest written: %s", path)
     return path
 

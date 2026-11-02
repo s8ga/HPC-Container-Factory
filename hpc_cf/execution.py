@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Protocol
 
+from hpc_cf.atomic_io import atomic_write_json
+
 logger = logging.getLogger(__name__)
 
 # Retention for ``assets/spack-mirror/.hpc_cf/runs/*`` (run-scoped logs/manifests).
@@ -426,7 +428,7 @@ class SharedMirrorStore:
         if error:
             payload["error"] = error
         path = run.manifest_path
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        atomic_write_json(path, payload)
         logger.info("Wrote mirror manifest (%s): %s", status, path)
         return path
 
@@ -601,10 +603,4 @@ class SharedBuildcacheStore:
 
     @staticmethod
     def _write_json(path: Path, payload: Mapping[str, object]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        temporary.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(path)
+        atomic_write_json(path, payload)

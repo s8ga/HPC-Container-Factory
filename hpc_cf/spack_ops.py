@@ -843,13 +843,17 @@ spack -e {env_q} mirror create -d {mirror_dir} --all -D --private{exclude_flag} 
     def _build_fetch_specs_script(self, out_path: str) -> str:
         env_q = shell_quote(self.env.spack.env_name)
         out_q = shell_quote(out_path)
+        # Stage to .tmp then mv -f: a killed run (or a stray warning on
+        # stdout) must not leave a torn fetch-specs.json — the prune
+        # planner consumes it fail-closed.
+        tmp_q = shell_quote(f"{out_path}.tmp")
         payload = _FETCH_SPECS_PY.replace("__ENV_NAME__", self.env.spack.env_name)
         return f"""{self._source_spack()}
 mkdir -p "$(dirname {out_q})"
 cat > /tmp/hpc_cf_fetch_specs.py <<'HPC_CF_PY'
 {payload}
 HPC_CF_PY
-spack -e {env_q} python /tmp/hpc_cf_fetch_specs.py > {out_q}
+spack -e {env_q} python /tmp/hpc_cf_fetch_specs.py > {tmp_q} && mv -f {tmp_q} {out_q}
 """
 
     # ── Mirror verify ─────────────────────────────────────────────────────

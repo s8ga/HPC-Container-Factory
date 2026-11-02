@@ -19,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+from hpc_cf.atomic_io import atomic_write_json, atomic_write_text
 from hpc_cf.container import Container
 from hpc_cf.env import list_available_envs, spack_version_for_env
 from hpc_cf.environment import (
@@ -148,11 +149,11 @@ def _write_resolved_repo_sidecar(ops: SpackOps, host_dir: Path) -> None:
             entry["branch"] = repo.branch
         repos_meta[repo.namespace] = entry
     sidecar = host_dir / RESOLVED_REPO_PINS_FILENAME
-    sidecar.write_text(
+    atomic_write_text(
+        sidecar,
         yaml.safe_dump(
             {"schema_version": 1, "repos": repos_meta}, sort_keys=True
         ),
-        encoding="utf-8",
     )
     logger.info(
         "Resolved repo pins recorded in %s (%s)",
@@ -439,10 +440,7 @@ def run_mirror_prune(
             "archive_delete_blobs": [str(p) for p in plan.archive_delete_blobs],
         }
         report_host = mirror_host / ".hpc_cf" / PRUNE_REPORT_FILENAME
-        report_host.parent.mkdir(parents=True, exist_ok=True)
-        report_host.write_text(
-            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        atomic_write_json(report_host, report)
 
         if plan.is_noop:
             logger.info("mirror-prune: nothing to delete (steady state)")
