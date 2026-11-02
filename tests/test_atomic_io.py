@@ -66,9 +66,8 @@ def test_text_write_roundtrip(tmp_path: Path) -> None:
 
 def test_fetch_specs_script_stages_to_tmp() -> None:
     """The container-side fetch-specs redirect must stage to .tmp + mv."""
-    from tests.test_mirror_prune_wiring import _NoopContainer, _env_config
-
     from hpc_cf.spack_ops import SpackOps
+    from tests.test_mirror_prune_wiring import _env_config, _NoopContainer
 
     ops = SpackOps(_env_config(), _NoopContainer())
     script = ops._build_fetch_specs_script("/opt/x/fetch-specs.json")

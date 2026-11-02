@@ -35,8 +35,8 @@ from hpc_cf.workflows import (
     BuildcacheService,
     BuildService,
     assets_request_from_args,
-    buildcache_request_from_args,
     build_request_from_args,
+    buildcache_request_from_args,
 )
 
 logger = logging.getLogger(__name__)

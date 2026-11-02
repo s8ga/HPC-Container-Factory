@@ -13,8 +13,8 @@ import inspect
 
 import hpc_cf.validation as validation
 from hpc_cf.validation import (
-    ValidationProfile,
     _COLLECTORS,
+    ValidationProfile,
     validate_environment,
 )
 

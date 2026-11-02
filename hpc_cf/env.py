@@ -8,7 +8,7 @@ for structured ``ValidationReport`` output and profile selection.
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 from hpc_cf.config import DEFAULT_SPACK_VERSION
@@ -31,7 +31,7 @@ from hpc_cf.validation import (
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=None)
+@cache
 def find_env_yaml(env_dir: Path) -> Path:
     """Resolve the env.yaml file for an environment directory.
 

@@ -19,7 +19,6 @@ import pytest
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.template import build_context, render_template, select_template
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 

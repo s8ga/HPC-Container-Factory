@@ -595,7 +595,7 @@ OCI_HASH_1="$first_hash" python3 - <<'PYEOF'
 import json, os, re, urllib.request
 data = json.load(urllib.request.urlopen(os.environ["OCI_TAGS_URL"], timeout=15))
 tags = data.get("tags") or []
-pkg_tags = [t for t in tags if re.match(r"^pkgconf-[^-]+-[a-z0-9]{{32}}\.spack$", t)]
+pkg_tags = [t for t in tags if re.match(r"^pkgconf-[^-]+-[a-z0-9]{{32}}\\.spack$", t)]
 assert pkg_tags, "no pkgconf tag in registry: " + repr(tags)
 assert any(os.environ["OCI_HASH_1"] in t for t in tags), "pushed dag hash missing: " + repr(tags)
 print("TAGS_OK count=" + str(len(tags)))

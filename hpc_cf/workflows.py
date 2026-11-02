@@ -13,7 +13,6 @@ Domain steps live in ``assets`` / ``template`` / ``sif`` / ``buildcache``.
 from __future__ import annotations
 
 import logging
-
 from typing import NamedTuple
 
 from hpc_cf.buildcache_workflow import BuildcacheService
@@ -21,8 +20,8 @@ from hpc_cf.environment import BuildcacheMode, BuildcachePolicy, EnvironmentSpec
 from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore, SharedMirrorStore
 from hpc_cf.requests import (
     AssetsRequest,
-    BuildRequest,
     BuildcacheRequest,
+    BuildRequest,
     assets_request_from_args,
     build_request_from_args,
     buildcache_request_from_args,

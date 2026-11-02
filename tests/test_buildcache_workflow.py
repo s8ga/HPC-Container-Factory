@@ -9,19 +9,17 @@ import threading
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-
-from hpc_cf.environment import BuildcacheMode
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from hpc_cf.environment import BuildcacheMode
 from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     ProjectLayout,
     SharedBuildcacheStore,
 )
 from hpc_cf.template import build_context, render_template
-
 
 ROOT = Path(__file__).resolve().parent.parent
 PILOT = "cp2k_opensource-2025.2"

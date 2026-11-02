@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from hpc_cf.env import find_env_yaml, load_env_yaml
 from hpc_cf.environment import (
     SUPPORTED_SCHEMA_VERSION,
     BuildcacheCoverage,
@@ -17,9 +18,7 @@ from hpc_cf.environment import (
     load_environment_spec,
     parse_environment_spec,
 )
-from hpc_cf.env import find_env_yaml, load_env_yaml
 from hpc_cf.spack_ops import load_env_config
-
 
 MINIMAL_V1 = """\
 schema_version: 1

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from hpc_cf.config import SPACK_ENVS_DIR
 from hpc_cf.environment import (
     BuildcacheCoverage,
     BuildcachePolicy,
@@ -27,15 +28,14 @@ from hpc_cf.environment import (
     load_environment_spec,
     parse_environment_spec,
 )
+from hpc_cf.spack_ops import SpackOps
 from hpc_cf.spack_plan import (
     BuildcachePlan,
     SpackEnvironmentPlan,
     build_spack_environment_plan,
     plan_context,
 )
-from hpc_cf.spack_ops import SpackOps
 from hpc_cf.template import build_context, render_template, select_template
-from hpc_cf.config import SPACK_ENVS_DIR
 
 # template_vars key → CustomRepo attribute that must match when dual-written.
 _DUAL_WRITE_FIELDS: tuple[tuple[str, str], ...] = (

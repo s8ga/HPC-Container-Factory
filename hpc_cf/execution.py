@@ -18,11 +18,12 @@ import shutil
 import subprocess
 import time
 import uuid
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Protocol
+from typing import Any, Protocol
 
 from hpc_cf.atomic_io import atomic_write_json
 

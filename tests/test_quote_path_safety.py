@@ -29,7 +29,6 @@ from hpc_cf.spack_plan import build_spack_environment_plan, plan_context
 from hpc_cf.template import render_template, resolve_build_input
 from hpc_cf.validation import collect_manual_packages
 
-
 # ── shell_quote helper ────────────────────────────────────────────────────
 
 

@@ -18,10 +18,11 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, ClassVar
+from typing import Any, ClassVar
 
 try:
     import yaml
@@ -819,8 +820,10 @@ def collect_render_sanity(
     from hpc_cf.template import (
         ResolvedBuildInput,
         build_context,
-        render_template as render,
         resolve_build_input,
+    )
+    from hpc_cf.template import (
+        render_template as render,
     )
 
     layout = layout or ProjectLayout.default()

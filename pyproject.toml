@@ -1,0 +1,14 @@
+[tool.ruff]
+# Strict-but-honest rule set: the default E4/E7/E9/F baseline plus import
+# sorting (I), bugbear (B), pyupgrade (UP), and the W leftovers. E501 is
+# deliberately ignored — this repo's comment-heavy style runs long lines,
+# and churning 162 lines for a width rule buys nothing.
+line-length = 100
+extend-exclude = ["legacy", "artifacts", "venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hpc_cf"]

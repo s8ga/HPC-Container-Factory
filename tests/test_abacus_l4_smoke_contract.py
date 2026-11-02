@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 from hpc_cf.execution import ProjectLayout, SharedBuildcacheStore
-
 from tests.test_integration_abacus_l4 import (
     ENV_NAME,
     FLAT_AUTOTEST_PROBE,

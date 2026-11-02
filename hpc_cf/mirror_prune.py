@@ -43,9 +43,10 @@ before ``spack mirror create`` runs.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 SOURCE_CACHE_SUBPATH = Path("_source-cache")
 GIT_CACHE_SUBPATH = SOURCE_CACHE_SUBPATH / "git"

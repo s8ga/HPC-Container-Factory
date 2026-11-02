@@ -17,9 +17,11 @@ from hpc_cf.config import (
     APPTAINER_INSTALL_SCRIPT_SHA256,
     APPTAINER_INSTALL_SCRIPT_URL,
     APPTAINER_LOCAL_PREFIX,
-    PROJECT_ROOT as _CONFIG_PROJECT_ROOT,
     SCRIPTS_DIR,
     TOOLS_DIR,
+)
+from hpc_cf.config import (
+    PROJECT_ROOT as _CONFIG_PROJECT_ROOT,
 )
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.template import (

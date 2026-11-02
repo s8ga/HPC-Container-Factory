@@ -597,7 +597,7 @@ class BuildcacheService:
                     exc=docker_build_error,
                     provenance=provenance,
                 )
-                raise docker_build_error
+                raise docker_build_error from docker_build_error
 
             logger.warning(
                 "Producer docker-build reported failure but image %s exists; "
