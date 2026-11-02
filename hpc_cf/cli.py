@@ -465,6 +465,18 @@ def build_parser() -> argparse.ArgumentParser:
         "assets",
         help="Prepare bootstrap/mirror assets and mirror worker container",
     )
+    assets_parser.add_argument(
+        "task",
+        nargs="?",
+        default=None,
+        choices=["run", "status", "prune"],
+        help=(
+            "Task verb. run: the (default) pipeline; status: report; "
+            "prune: standalone mirror prune — dry-run report against the "
+            "persisted fetch-spec sidecar, never the full pipeline. "
+            "Omit for the legacy boolean-flag surface."
+        ),
+    )
     add_assets_options(assets_parser)
 
     env_parser = subparsers.add_parser(

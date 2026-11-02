@@ -386,6 +386,7 @@ def run_mirror_prune(
     apply_plan: bool,
     fresh_after: float,
     layout: ProjectLayout | None = None,
+    reuse_sidecar: bool = False,
 ) -> None:
     """Prune the mirror's git cache down to this run's lock membership.
 
@@ -397,6 +398,12 @@ def run_mirror_prune(
     (pure) → apply (unless dry run). An empty or unparseable sidecar is a
     hard refusal: identity unknown means keep, but a silently-broken
     export must not disable pruning unnoticed.
+
+    ``reuse_sidecar=True`` (standalone ``assets prune``): skip the export
+    and plan against the persisted ``.hpc_cf/fetch-specs.json`` from the
+    run that created the mirror; pass ``fresh_after=inf`` so nothing
+    counts as this-run and the branch-floating class falls back to the
+    documented single-survivor rule.
     """
     layout = layout or ProjectLayout.default()
     mirror_host = layout.spack_mirror_dir
@@ -405,14 +412,22 @@ def run_mirror_prune(
         f"{layout.container_mirror_dir()}/.hpc_cf/{FETCH_SPECS_FILENAME}"
     )
 
-    _, ops = _make_spack_ops(env_name, ctr, layout=layout)
     store = SharedMirrorStore(layout)
     with store.exclusive_write():
-        ops.export_fetch_specs(sidecar_container)
-        if not sidecar_host.is_file() or sidecar_host.stat().st_size == 0:
-            raise RuntimeError(
-                f"fetch-spec sidecar missing after export: {sidecar_host}"
-            )
+        if reuse_sidecar:
+            if not sidecar_host.is_file() or sidecar_host.stat().st_size == 0:
+                raise RuntimeError(
+                    f"no persisted fetch-spec sidecar to reuse: {sidecar_host} "
+                    "(run `assets run` first; prune identity comes from the "
+                    "run that created the mirror)"
+                )
+        else:
+            _, ops = _make_spack_ops(env_name, ctr, layout=layout)
+            ops.export_fetch_specs(sidecar_container)
+            if not sidecar_host.is_file() or sidecar_host.stat().st_size == 0:
+                raise RuntimeError(
+                    f"fetch-spec sidecar missing after export: {sidecar_host}"
+                )
         try:
             specs = json.loads(sidecar_host.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -532,6 +547,46 @@ def run_assets(
         return
 
     ctr = _make_container(request, layout)
+
+    # ── task verbs (assets run|status|prune) ──
+    # Prune stands alone by design: looking at the dry-run report must not
+    # trigger the hours-long mirror pipeline (the legacy 17-flag surface
+    # made exactly that mistake — round-2 audit 2.8).
+    if request.task == "prune":
+        if not request.env:
+            raise ValueError("--env is required for prune")
+        stage_flags = any(
+            [
+                request.prepare_bootstrap,
+                request.download_mirror,
+                request.verify_mirror,
+                request.create_container,
+                request.status,
+                request.allow_concretize,
+            ]
+        )
+        if stage_flags:
+            raise ValueError(
+                "assets prune takes no stage flags — prune is standalone "
+                "(identity: the persisted .hpc_cf/fetch-specs.json); use "
+                "`assets run` for the pipeline"
+            )
+        run_mirror_prune(
+            ctr,
+            request.env,
+            apply_plan=request.prune_apply,
+            fresh_after=float("inf"),
+            layout=layout,
+            reuse_sidecar=True,
+        )
+        return
+
+    if request.task == "status":
+        if not request.env:
+            raise ValueError("--env is required for status")
+        run_status(ctr, request.env, layout=layout)
+        return
+
     image_ready = False
 
     def ensure_image_once() -> None:

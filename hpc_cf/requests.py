@@ -18,6 +18,8 @@ from hpc_cf.validation import ValidationProfile
 class AssetsRequest:
     """Typed assets workflow input (no argparse types)."""
 
+    # Task verb (assets run|status|prune); empty = legacy flag surface.
+    task: str = ""
     env: str | None = None
     podman_cmd: str = "podman"
     podman_opt: tuple[str, ...] = ()
@@ -139,6 +141,7 @@ def pin_request_from_args(args: Any) -> PinSetRequest:
 def assets_request_from_args(args: Any) -> AssetsRequest:
     """Map a parsed CLI namespace onto :class:`AssetsRequest`."""
     return AssetsRequest(
+        task=getattr(args, "task", None) or "",
         env=getattr(args, "env", None),
         podman_cmd=getattr(args, "podman_cmd", "podman") or "podman",
         podman_opt=tuple(getattr(args, "podman_opt", None) or ()),
