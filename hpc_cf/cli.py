@@ -467,6 +467,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_assets_options(assets_parser)
 
+    env_parser = subparsers.add_parser(
+        "env",
+        help="Per-environment lifecycle commands",
+    )
+    env_actions = env_parser.add_subparsers(dest="env_action", required=True)
+    env_set_version_parser = env_actions.add_parser(
+        "set-version",
+        help="Bump the app version token across env.yaml/spack.yaml/"
+        "Dockerfile.j2/*.def.j2 atomically",
+    )
+    env_set_version_parser.add_argument(
+        "--env",
+        dest="env",
+        required=True,
+        metavar="NAME",
+        help="Environment under spack-envs/",
+    )
+    env_set_version_parser.add_argument(
+        "--from",
+        dest="from_version",
+        required=True,
+        metavar="VERSION",
+        help="Current version token (e.g. 2026.2)",
+    )
+    env_set_version_parser.add_argument(
+        "--to",
+        dest="to_version",
+        required=True,
+        metavar="VERSION",
+        help="New version token (e.g. 2026.3)",
+    )
+    env_set_version_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the replacement plan without writing",
+    )
+    env_set_version_parser.add_argument(
+        "--delete-lock",
+        action="store_true",
+        help="Delete the (now stale) spack.lock; regen via regen-lock.yml",
+    )
+
     pack_apptainer_parser = subparsers.add_parser(
         "pack-apptainer",
         help="Pack local apptainer into a makeself self-extracting archive",
@@ -799,6 +841,12 @@ def run_new_cli(argv: list[str]) -> int:
         from hpc_cf.requests import pin_request_from_args
 
         return run_pin_set(pin_request_from_args(args))
+
+    if args.command == "env":
+        from hpc_cf.env_set_version import run_env_set_version
+        from hpc_cf.requests import env_set_version_request_from_args
+
+        return run_env_set_version(env_set_version_request_from_args(args))
 
     if args.command == "gc":
         from hpc_cf.storage_gc import run_storage_gc

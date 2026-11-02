@@ -103,6 +103,28 @@ class PinSetRequest:
     dry_run: bool = False
 
 
+@dataclass(frozen=True)
+class EnvSetVersionRequest:
+    """Typed input for ``env set-version`` (atomic version bump)."""
+
+    env: str = ""
+    old_version: str = ""
+    new_version: str = ""
+    dry_run: bool = False
+    delete_lock: bool = False
+
+
+def env_set_version_request_from_args(args: Any) -> EnvSetVersionRequest:
+    """Map a parsed CLI namespace onto :class:`EnvSetVersionRequest`."""
+    return EnvSetVersionRequest(
+        env=getattr(args, "env", "") or "",
+        old_version=getattr(args, "from_version", "") or "",
+        new_version=getattr(args, "to_version", "") or "",
+        dry_run=bool(getattr(args, "dry_run", False)),
+        delete_lock=bool(getattr(args, "delete_lock", False)),
+    )
+
+
 def pin_request_from_args(args: Any) -> PinSetRequest:
     """Map a parsed CLI namespace onto :class:`PinSetRequest`."""
     return PinSetRequest(
