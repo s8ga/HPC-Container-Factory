@@ -521,6 +521,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete the (now stale) spack.lock; regen via regen-lock.yml",
     )
 
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Read-only overview: buildcache, mirror, per-env lock state",
+    )
+    status_parser.add_argument(
+        "--env",
+        dest="env",
+        default=None,
+        metavar="NAME",
+        help="Restrict the environment table to one env",
+    )
+
     pack_apptainer_parser = subparsers.add_parser(
         "pack-apptainer",
         help="Pack local apptainer into a makeself self-extracting archive",
@@ -859,6 +871,11 @@ def run_new_cli(argv: list[str]) -> int:
         from hpc_cf.requests import env_set_version_request_from_args
 
         return run_env_set_version(env_set_version_request_from_args(args))
+
+    if args.command == "status":
+        from hpc_cf.status import run_status_command
+
+        return run_status_command(env=getattr(args, "env", None))
 
     if args.command == "gc":
         from hpc_cf.storage_gc import run_storage_gc
