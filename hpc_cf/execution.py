@@ -594,6 +594,7 @@ class SharedBuildcacheStore:
             "signing_policy": record.signing_policy,
             "check_returncode": record.check_returncode,
             "checked_spec_count": record.checked_spec_count,
+            "check_kind": record.check_kind,
             "coverage": "non_external",
             "external_specs_excluded": True,
             "timestamp": datetime.now(timezone.utc).isoformat(),

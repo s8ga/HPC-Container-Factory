@@ -100,15 +100,14 @@ def test_parse_buildcache_config_and_roundtrip() -> None:
     assert spec.spack.buildcache.mode is BuildcacheMode.LOCAL
     assert spec.spack.buildcache.url is None
     assert spec.spack.buildcache.exclude == ("vasp", "intel-oneapi-mkl")
+    # oci-only keys are omitted (not null) in local mode so the strict
+    # parser accepts its own as_dict output.
     assert spec.as_dict()["spack"]["buildcache"] == {
         "enabled": True,
         "padded_length": 128,
         "policy": "auto",
         "coverage": "non_external",
         "mode": "local",
-        "url": None,
-        "username_var": None,
-        "password_var": None,
         "exclude": ["vasp", "intel-oneapi-mkl"],
     }
 
@@ -480,3 +479,34 @@ def test_shipped_envs_declare_schema_version_1() -> None:
         assert loaded.source_path is not None
         text = loaded.source_path.read_text(encoding="utf-8")
         assert "schema_version: 1" in text, env_dir.name
+
+
+def test_as_dict_roundtrips_manual_package_spec() -> None:
+    """as_dict must serialize ManualPackage.spec — VASP 6.6.1 declares it
+    (buildcache exclusion); dropping it silently widened the exclude on
+    round-trip (round-2 audit 2.12c)."""
+    from hpc_cf.environment import ManualPackage, parse_environment_spec
+
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "method": "no_spack",
+            "spack": {"version": "1.2.0", "env_name": "rt"},
+            "script": "echo hi",
+            "manual_packages": [
+                {
+                    "file": "pkgs/vasp.tgz",
+                    "dest": "/opt/pkgs",
+                    "sha256": "b" * 64,
+                    "spec": "vasp",
+                }
+            ],
+        }
+    )
+    assert spec.manual_packages[0] == ManualPackage(
+        file="pkgs/vasp.tgz",
+        dest="/opt/pkgs",
+        sha256="b" * 64,
+        spec="vasp",
+    )
+    assert parse_environment_spec(spec.as_dict()) == spec

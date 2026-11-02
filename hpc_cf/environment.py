@@ -453,6 +453,8 @@ class EnvironmentSpec:
                 entry["dest"] = mp.dest
             if mp.sha256 is not None:
                 entry["sha256"] = mp.sha256
+            if mp.spec is not None:
+                entry["spec"] = mp.spec
             manual.append(entry)
 
         return {
@@ -476,9 +478,12 @@ class EnvironmentSpec:
                     "policy": self.spack.buildcache.policy.value,
                     "coverage": self.spack.buildcache.coverage.value,
                     "mode": self.spack.buildcache.mode.value,
-                    "url": self.spack.buildcache.url,
-                    "username_var": self.spack.buildcache.username_var,
-                    "password_var": self.spack.buildcache.password_var,
+                    # Omit instead of null: the parser rejects the presence
+                    # of url/credential keys outside mode oci, and a
+                    # null-valued key would break as_dict → parse round-trips.
+                    **({"url": self.spack.buildcache.url} if self.spack.buildcache.url is not None else {}),
+                    **({"username_var": self.spack.buildcache.username_var} if self.spack.buildcache.username_var is not None else {}),
+                    **({"password_var": self.spack.buildcache.password_var} if self.spack.buildcache.password_var is not None else {}),
                     "exclude": list(self.spack.buildcache.exclude),
                 },
                 "custom_repos": repos,

@@ -194,3 +194,33 @@ def test_run_logs_and_provenance_live_only_in_sibling_state(tmp_path: Path) -> N
     assert provenance["env"] == "cp2k/demo"
     assert provenance["run_id"] == run.run_id
     assert not layout.spack_buildcache_dir.exists()
+
+
+def test_write_coverage_roundtrips_check_kind(tmp_path) -> None:
+    """write_coverage must serialize check_kind like publish_success_state
+    does — consumers key admission on it (round-2 audit 2.12b)."""
+    import json
+
+    from hpc_cf.execution import (
+        BuildcacheCoverageRecord,
+        ProjectLayout,
+        SharedBuildcacheStore,
+    )
+
+    layout = ProjectLayout(project_root=tmp_path)
+    store = SharedBuildcacheStore(layout)
+    lock = tmp_path / "spack.lock"
+    lock.write_text("{}")
+    record = BuildcacheCoverageRecord(
+        spack_version="1.2.0",
+        builder_image_digest="sha256:" + "a" * 64,
+        environment_provenance={},
+        padded_length=128,
+        signing_policy="unsigned",
+        check_returncode=0,
+        checked_spec_count=3,
+        check_kind="count",
+    )
+    path = store.write_coverage(lock_path=lock, record=record)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["check_kind"] == "count"
