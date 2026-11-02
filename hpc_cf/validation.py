@@ -752,6 +752,11 @@ def collect_render_copy_sources(
         for src in _copy_sources(rest):
             if "://" in src:
                 continue
+            if src.startswith("assets/"):
+                # Workflow-produced (spack tarball, bootstrap cache): the
+                # assets collectors gate these with their own contracts;
+                # a fresh CI checkout legitimately lacks them.
+                continue
             if src.startswith("/") or ".." in PurePosixPath(src).parts:
                 findings.append(
                     ValidationFinding(

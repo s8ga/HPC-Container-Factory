@@ -177,10 +177,28 @@ def test_compare_detects_unpin(tmp_path: Path) -> None:
 # --- validate wiring ----------------------------------------------------------
 
 
+def _hermetic_layout(tmp_path: Path) -> ProjectLayout:
+    """Layout whose assets satisfy the build-input collectors without the
+    dev machine's untracked assets/ tree (a fresh CI checkout has no
+    tarball/bootstrap — found by the first ci-tests run after push)."""
+    layout = ProjectLayout(project_root=tmp_path)
+    layout.assets_dir.mkdir(parents=True, exist_ok=True)
+    (layout.assets_dir / "spack-v1.1.1.tar.gz").write_bytes(b"tarball")
+    from hpc_cf.validation import BootstrapContract
+
+    for relative_path in BootstrapContract.required_relative_paths():
+        path = layout.bootstrap_dir("1.1.1") / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("bootstrap: valid\n", encoding="utf-8")
+    return layout
+
+
 def test_validate_warns_when_manifest_missing(tmp_path: Path) -> None:
     env_root = _write_env(tmp_path)
     _with_lock(env_root)
-    report = validate_environment(env_root, ValidationProfile.BUILD_INPUT)
+    report = validate_environment(
+        env_root, ValidationProfile.BUILD_INPUT, layout=_hermetic_layout(tmp_path)
+    )
     finding = next(
         (f for f in report.findings if f.code == "lock.provenance_unknown"), None
     )
@@ -215,13 +233,18 @@ def test_validate_errors_on_stale_inputs(tmp_path: Path) -> None:
         "      namespace: app\n",
         encoding="utf-8",
     )
-    report = validate_environment(env_root, ValidationProfile.BUILD_INPUT)
+    report = validate_environment(
+        env_root, ValidationProfile.BUILD_INPUT, layout=_hermetic_layout(tmp_path)
+    )
     stale = [f for f in report.findings if f.code == "lock.stale_input"]
     assert stale and stale[0].severity.value == "error"
     assert not report.ok
 
     softened = validate_environment(
-        env_root, ValidationProfile.BUILD_INPUT, allow_reconcretize=True
+        env_root,
+        ValidationProfile.BUILD_INPUT,
+        allow_reconcretize=True,
+        layout=_hermetic_layout(tmp_path),
     )
     stale_soft = [f for f in softened.findings if f.code == "lock.stale_input"]
     assert stale_soft and stale_soft[0].severity.value == "warning"
@@ -233,7 +256,9 @@ def test_validate_errors_on_malformed_manifest(tmp_path: Path) -> None:
     conf = env_root / "spack-env-file"
     _with_lock(env_root)
     (conf / LOCK_MANIFEST_FILENAME).write_text("{nope", encoding="utf-8")
-    report = validate_environment(env_root, ValidationProfile.BUILD_INPUT)
+    report = validate_environment(
+        env_root, ValidationProfile.BUILD_INPUT, layout=_hermetic_layout(tmp_path)
+    )
     assert any(f.code == "lock.manifest_invalid" for f in report.findings)
 
 

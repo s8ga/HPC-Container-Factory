@@ -155,3 +155,13 @@ def test_sources_outside_project_root_are_rejected(tmp_path: Path) -> None:
         "copy.source_outside_root",
     ]
     assert findings[0].severity.value == "error"
+
+
+def test_workflow_produced_assets_are_exempt(tmp_path: Path) -> None:
+    """assets/ COPY sources are produced by the assets workflow and gated
+    by the spack-assets collectors; a fresh CI checkout has no tarballs,
+    so the static render scan must not demand them (found by the first
+    ci-tests run after push: local green, CI red)."""
+    root = _root(tmp_path)
+    rendered = "COPY assets/spack-v1.2.0.tar.gz /tmp/spack.tar.gz\n"
+    assert collect_render_copy_sources(rendered, root) == []
