@@ -415,3 +415,24 @@ D 与 E 可并行;C 的 `env set-version` 依赖 pin.py 机制已稳定,可最�
 注意:探针发现两个接线陷阱并已处理 —— hpc_cf 的 `render_template` 把
 UndefinedError 包成 **RuntimeError**(只捕 TemplateError 接不住);
 渲染不带 layout 才能回落默认仓库 templates 树(tmp 布局的合成环境需要)。
+
+### §8.2 A+/C/E 档执行记录(2026-11-02 续,11 commit,基线 718 → 760 passed)
+
+| commit | 档 | 内容 |
+|---|---|---|
+| `93f5c34` | A+ | `hpc_cf.atomic_io`(唯一 tmp + os.replace)迁移六处侧车/状态写;容器侧 fetch-specs 改 `.tmp`+`mv -f`(2.12d 关闭) |
+| `f444c2f` | A+ | GPU MOTD 无 GPU 崩溃修复(`grep -c`双输出 / kfd 分支)(2.15b) |
+| `ae7c13b` | A+ | 9 个 .def.j2 错贴修正 + vasp 6.6.1 testsuite conf 对齐 force-OpenMP + 静态守卫(2.15d) |
+| `e39e584` | A+ | write_coverage 补 check_kind;as_dict 补 spec 并改为条件省略 oci-only 键(往返测试顺手抓出 null-key 破坏往返的同类 bug)(2.12b/c 关闭) |
+| `cedd590` | C | `env set-version`:token 边界替换 + 重解析 + 守卫 + 整体回滚 + `--delete-lock` 门(2.7) |
+| `ad04e62` | C | `assets run\|status\|prune` 任务化;prune 独立(复用持久化 sidecar,单幸存者规则),stage flag 组合响亮拒绝(2.8) |
+| `95dd732` | C | `hpc_cf status` 只读聚合(buildcache health/coverage/runs + mirror 最新 run + per-env 锁状态)(2.9) |
+| `7c47718` | E | 四段近逐字 job 前导抽 `scripts/ci_job_preamble.sh`(workflow 净 -248 行);dispatch 输入 env: 间接化;契约测试防回归(2.5) |
+| `9f43baa` | D-lite | 三个零调用死符号删除(`build_apptainer`/`build_check_script`/`GitPrunePlan`;audit 的第四候选实为在用,保留) |
+| `e219c52` | F | pyproject.toml:ruff 钉 E,F,W,I,B,UP(E501 有意关,理由写在文件里);25 自动修 + 1 手修(B904) |
+
+**剩余(有意未做)**:D 档大分解(buildcache_workflow.run 422 行拆分、
+buildcache.py/environment.py/cli.py 分层、legacy shims 迁移、
+`find_spack_lock` 统一四处 lock 路径拼法);F 档 mypy(建议 D 之后);
+runtime_cleanup 前移(用户决定先不做);manifest 回填 + rocm 重建(用户置后);
+操作侧(push 需授权、备份分支、legacy/)。
