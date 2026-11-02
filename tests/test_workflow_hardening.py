@@ -115,3 +115,33 @@ def test_dependency_graph_ships_and_prunes_with_the_manifest() -> None:
     text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
     assert 'RELEASE_ASSETS+=("DependencyGraph-' in text
     assert 'test("(BUILD_MANIFEST|DependencyGraph)-")' in text
+
+
+def test_pipeline_preamble_is_deduplicated() -> None:
+    """The four jobs share ONE preamble script; no near-verbatim copies of
+    the apt-sed / fork-identity / venv / vars blocks may creep back
+    (round-2 audit 2.5: 31 edits in two months, four same-day fixes)."""
+    import subprocess
+
+    script = WORKFLOWS_DIR.parent.parent / "scripts" / "ci_job_preamble.sh"
+    assert script.is_file()
+    subprocess.run(["bash", "-n", str(script)], check=True)
+
+    text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
+    jobs = _doc("pipeline-cp2k.yml")["jobs"]
+    for job_id in ("prepare", "binaries", "runtime", "sif"):
+        steps = jobs[job_id]["steps"]
+        preambles = [
+            s for s in steps if "ci_job_preamble.sh" in str(s.get("run", ""))
+        ]
+        assert len(preambles) == 1, f"{job_id}: expected exactly one preamble"
+    # The inline copies are gone: the sed/override/venv/vars bodies now live
+    # only in the script.
+    assert "Point the mirror-builder apt" not in text
+    assert "Materialize fork env" not in text
+    assert "Install python dependencies" not in text
+    assert "Resolve job variables" not in text
+    script_text = script.read_text(encoding="utf-8")
+    # The fork/no-fork branches each call it once; the workflow never does.
+    assert script_text.count("apply-source-override.sh") == 2
+    assert "apply-source-override.sh" not in text
