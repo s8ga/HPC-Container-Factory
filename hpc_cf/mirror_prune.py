@@ -71,9 +71,6 @@ class MirrorPrunePlan:
         return not (self.delete_blobs or self.delete_links or self.archive_delete_blobs)
 
 
-# v1 name kept: the plan type now covers both cache sides.
-GitPrunePlan = MirrorPrunePlan
-
 
 def _url_tail(url: str) -> str:
     """Identity key of a git URL: last two path components, lowercase.

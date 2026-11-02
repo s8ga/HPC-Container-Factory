@@ -316,19 +316,6 @@ def select_engine_with_image(
     )
 
 
-def build_apptainer(*, definition_file: Path, image: str, tag: str) -> None:
-    if check_command_exists("apptainer"):
-        tool = "apptainer"
-    elif check_command_exists("singularity"):
-        tool = "singularity"
-    else:
-        raise RuntimeError("Neither apptainer nor singularity command found in PATH")
-
-    output_image = f"{image}_{tag}.sif"
-    cmd = [tool, "build", "--force", "--fakeroot", output_image, str(definition_file)]
-    run_cmd(cmd)
-
-
 def run_cmd(
     cmd: list[str],
     *,

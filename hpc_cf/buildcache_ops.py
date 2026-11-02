@@ -92,22 +92,6 @@ def build_verify_script(
     )
 
 
-def build_check_script(
-    *,
-    env_name: str,
-    store_path: str,
-    setup_script: str = IMAGE_SPACK_SETUP_SCRIPT,
-    exclude_specs: Sequence[str] = (),
-) -> str:
-    """Compatibility alias for callers using the original helper name."""
-    return build_verify_script(
-        env_name=env_name,
-        store_path=store_path,
-        setup_script=setup_script,
-        exclude_specs=exclude_specs,
-    )
-
-
 def build_publish_script(
     *,
     env_name: str,
