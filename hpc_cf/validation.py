@@ -616,8 +616,10 @@ def collect_lock_input_manifest(
     """Compare spack.lock provenance (lock-manifest.json) with current inputs.
 
     A non-empty lock alone proves nothing about WHICH inputs produced it.
-    The manifest records the spack.yaml sha256 and env.yaml repo pins the
-    concretizer saw; drift means the lock builds a stale dependency graph —
+    The manifest records the spack.yaml sha256 and the repo pins the
+    concretizer saw (env.yaml pins plus resolved floating tips); *spec* must
+    be that same build view, which every build entry passes. Drift means
+    the lock builds a stale dependency graph —
     an error unless ``--allow-reconcretize`` downgrades it, matching the
     missing-lock doctrine. Locks without a manifest (pre-dating the
     sidecar) get a warning until the next assets concretize refreshes it.

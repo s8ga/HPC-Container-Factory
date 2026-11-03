@@ -16,7 +16,12 @@ import pytest
 import yaml
 
 from hpc_cf.assets import run_mirror
-from hpc_cf.environment import parse_environment_spec
+from hpc_cf.environment import (
+    RESOLVED_REPO_PINS_FILENAME,
+    apply_resolved_repo_pins,
+    load_environment_spec,
+    parse_environment_spec,
+)
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.lock_manifest import (
     LOCK_MANIFEST_FILENAME,
@@ -24,6 +29,7 @@ from hpc_cf.lock_manifest import (
     read_lock_manifest,
     write_lock_manifest,
 )
+from hpc_cf.template import resolve_build_input
 from hpc_cf.validation import (
     ValidationProfile,
     validate_environment,
@@ -330,3 +336,95 @@ def test_run_mirror_existing_lock_does_not_rewrite_manifest(
     # A pre-existing lock must not be blessed with current-input hashes:
     # its provenance stays unknown until the next real concretize.
     assert not (env_host / LOCK_MANIFEST_FILENAME).exists()
+
+
+# --- floating repos (resolved-repos.yaml) ------------------------------------
+
+
+def _floating_env(tmp_path: Path) -> tuple[ProjectLayout, Path]:
+    """Master-track shape: a git custom repo WITHOUT a commit (floats)."""
+    layout = _hermetic_layout(tmp_path)
+    env_host = tmp_path / "spack-envs" / "demo" / "spack-env-file"
+    env_host.mkdir(parents=True)
+    (env_host / "spack.yaml").write_text("spack:\n  specs: [pkgconf]\n", encoding="utf-8")
+    (env_host / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.1.1'\n"
+        "  env_name: demo-env\n"
+        "  custom_repos:\n"
+        "    - url: https://example.com/r.git\n"
+        "      branch: main\n"
+        "      sparse_path: spack_repo/app\n"
+        "      namespace: app\n",
+        encoding="utf-8",
+    )
+    return layout, env_host
+
+
+def _concretize_floating(layout: ProjectLayout, env_host: Path, tip: str) -> None:
+    """run_mirror's fresh-concretize path, assets resolving the repo to *tip*."""
+    env_config = load_environment_spec(env_host)
+    ops = MagicMock()
+    ops.env = env_config
+    ops.resolved_repo_pins = {"app": tip}
+
+    def _all(*_a, **_k):
+        (env_host / "spack.lock").write_text(
+            '{"_meta": {"lockfile-version": 6}}', encoding="utf-8"
+        )
+        return {"present": 0, "added": 1, "failed": 0}
+
+    ops.run_all_pipeline.side_effect = _all
+    with (
+        patch("hpc_cf.assets._make_spack_ops", return_value=(env_config, ops)),
+        patch(
+            "hpc_cf.assets.resolve_env_paths",
+            return_value=(env_host, Path("/work/spack-envs/demo/spack-env-file")),
+        ),
+    ):
+        run_mirror(MagicMock(), "demo", layout=layout, allow_concretize=True)
+
+
+def test_floating_repo_lock_is_fresh_on_the_build_path(tmp_path: Path) -> None:
+    """Regression for nightly-cp2k 2026-11-02 (master track): assets wrote the
+    manifest from raw env.yaml (floating repo = no pin) while every build
+    compares the resolved-repos.yaml view (floating repo = resolved tip), so
+    the binaries job died on lock.stale_input "recorded None, current <tip>".
+    """
+    layout, env_host = _floating_env(tmp_path)
+    _concretize_floating(layout, env_host, PIN)
+
+    manifest = read_lock_manifest(env_host)
+    assert manifest is not None
+    assert manifest["custom_repos_pins"] == {"app": PIN}
+
+    # Exactly what build / buildcache build / validate hand to the gate.
+    (env_host.parent / "Dockerfile.j2").write_text("FROM scratch\n", encoding="utf-8")
+    resolved = resolve_build_input("demo", None, layout=layout)
+    report = validate_environment(
+        resolved.environment_dir,
+        ValidationProfile.BUILD_INPUT,
+        env_config=resolved.environment_spec,
+        layout=layout,
+    )
+    stale = [f for f in report.findings if f.code == "lock.stale_input"]
+    assert stale == [], stale[0].message if stale else ""
+
+
+def test_floating_tip_moved_after_concretize_is_stale(tmp_path: Path) -> None:
+    """A later run that rewrites the sidecar with a moved tip leaves the lock
+    behind: the image would clone recipes the concretizer never saw. The
+    manifest records the resolved tip, so the gate catches it."""
+    layout, env_host = _floating_env(tmp_path)
+    _concretize_floating(layout, env_host, PIN)
+    sidecar = env_host / RESOLVED_REPO_PINS_FILENAME
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(PIN, OTHER_PIN), encoding="utf-8"
+    )
+
+    resolved = apply_resolved_repo_pins(load_environment_spec(env_host), env_host)
+    manifest = read_lock_manifest(env_host)
+    assert manifest is not None
+    drift = compare_lock_inputs(manifest, resolved, env_host)
+    assert any(PIN in line and OTHER_PIN in line for line in drift)

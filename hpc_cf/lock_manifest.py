@@ -10,8 +10,10 @@ The manifest follows the factory's two-stage doctrine: assets writes it
 next to a freshly concretized spack.lock, builds/validate compare the
 current inputs against it and fail closed on drift.
 
-``custom_repos_pins`` records only env.yaml-pinned git repos (static pins);
-floating repos are covered by the resolved-repos.yaml sidecar instead.
+``custom_repos_pins`` records the build view of the repo pins: env.yaml
+pins plus floating repos at the tip assets resolved (resolved-repos.yaml
+applied via ``load_resolved_environment_spec``). Writer and readers must
+use that same view; see ``compare_lock_inputs``.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ def compute_spack_yaml_sha256(config_dir: Path) -> str | None:
 
 
 def current_custom_repos_pins(spec: EnvironmentSpec) -> dict[str, str]:
-    """namespace → commit for git custom_repos pinned in env.yaml."""
+    """namespace → commit for git custom_repos that carry a commit
+    (an env.yaml pin, or a resolved tip once the sidecar is applied)."""
     pins: dict[str, str] = {}
     for repo in spec.spack.custom_repos:
         if repo.type == "git" and repo.commit and repo.namespace:
@@ -92,7 +95,10 @@ def compare_lock_inputs(
     """Human-readable drift between the manifest and the current inputs.
 
     Empty list means the lock was concretized against exactly what is on
-    disk now (spack.yaml bytes + env.yaml repo pins).
+    disk now (spack.yaml bytes + repo pins). *spec* must be the build view
+    (``load_resolved_environment_spec`` / ``resolve_build_input``) — the
+    view the manifest was written from; a raw env.yaml spec reports every
+    floating repo as drift.
     """
     drift: list[str] = []
 

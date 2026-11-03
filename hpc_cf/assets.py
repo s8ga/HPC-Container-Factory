@@ -27,6 +27,7 @@ from hpc_cf.environment import (
     EnvironmentSpec,
     SpackConfig,
     load_environment_spec,
+    load_resolved_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout, SharedMirrorStore
 from hpc_cf.lock_manifest import write_lock_manifest
@@ -219,11 +220,14 @@ def run_mirror(
                     "or place a non-empty spack.lock before --download-mirror"
                 )
 
+            # Sidecar first: the manifest must record the build view (a
+            # floating repo at the tip this run resolved), because that is
+            # what every build compares against.
+            _write_resolved_repo_sidecar(ops, host_dir)
             if concretized:
                 # Only a fresh concretize knows its own inputs; blessing a
                 # pre-existing lock with the current files would mask drift.
-                write_lock_manifest(env_config, host_dir)
-            _write_resolved_repo_sidecar(ops, host_dir)
+                write_lock_manifest(load_resolved_environment_spec(host_dir), host_dir)
 
             store.write_manifest(
                 run,

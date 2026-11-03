@@ -1200,6 +1200,18 @@ def apply_resolved_repo_pins(
     return spec
 
 
+def load_resolved_environment_spec(env_dir: Path) -> EnvironmentSpec:
+    """env.yaml with :func:`apply_resolved_repo_pins` applied — the build view.
+
+    The one loader for every party that must agree on what an env's inputs
+    are: image builds (resolve_build_input), the lock-manifest writer
+    (assets) and its readers (validate, status). A writer on raw env.yaml
+    once recorded a floating repo as unpinned while builds compared its
+    resolved tip, so every master-track build failed lock.stale_input.
+    """
+    return apply_resolved_repo_pins(load_environment_spec(env_dir), env_dir)
+
+
 
 def load_environment_spec_from_template(template_path: Path | None) -> EnvironmentSpec | None:
     """Load EnvironmentSpec using a Dockerfile.j2 path's parent as the env dir.

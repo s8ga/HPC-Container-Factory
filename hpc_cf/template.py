@@ -25,9 +25,9 @@ from hpc_cf.env import list_available_envs
 from hpc_cf.environment import (
     BuildMethod,
     EnvironmentSpec,
-    apply_resolved_repo_pins,
     load_environment_spec,
     load_environment_spec_from_template,
+    load_resolved_environment_spec,
 )
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.shell_quote import confine_to_root, shell_quote
@@ -182,13 +182,6 @@ def _shared_method_template(
     return shared if shared.is_file() else None
 
 
-def _try_load_env_spec(env_dir: Path) -> EnvironmentSpec | None:
-    try:
-        return load_environment_spec(env_dir)
-    except FileNotFoundError:
-        return None
-
-
 def _load_spec_applying_repo_pins(env_dir: Path) -> EnvironmentSpec | None:
     """Load the spec, then apply assets-resolved pins for floating repos.
 
@@ -196,10 +189,10 @@ def _load_spec_applying_repo_pins(env_dir: Path) -> EnvironmentSpec | None:
     share, so applying here keeps every consumer (render, image build)
     on the sha recorded in resolved-repos.yaml beside spack.yaml.
     """
-    spec = _try_load_env_spec(env_dir)
-    if spec is None:
+    try:
+        return load_resolved_environment_spec(env_dir)
+    except FileNotFoundError:
         return None
-    return apply_resolved_repo_pins(spec, env_dir)
 
 
 def resolve_build_input(

@@ -14,7 +14,11 @@ import logging
 from pathlib import Path
 
 from hpc_cf.env import list_available_envs
-from hpc_cf.environment import RESOLVED_REPO_PINS_FILENAME, load_environment_spec
+from hpc_cf.environment import (
+    RESOLVED_REPO_PINS_FILENAME,
+    load_environment_spec,
+    load_resolved_environment_spec,
+)
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.lock_manifest import LOCK_MANIFEST_FILENAME, compare_lock_inputs
 
@@ -43,7 +47,8 @@ def _env_lock_state(env_dir: Path) -> str:
         return "lock, provenance unknown"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        spec = load_environment_spec(env_dir)
+        # Same view builds compare against (resolved-repos.yaml applied).
+        spec = load_resolved_environment_spec(env_dir)
         drift = compare_lock_inputs(manifest, spec, conf)
     except (ValueError, OSError):
         return "lock, unreadable manifest"
