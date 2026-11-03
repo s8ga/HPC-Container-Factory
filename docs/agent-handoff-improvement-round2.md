@@ -445,8 +445,14 @@ changed since concretization (recorded None, current f8a708ff…)`。
 
 | commit | 内容 |
 |---|---|
-| `6543aa5` | 根因:assets 用原始 env.yaml 写 lock-manifest(浮动 repo 没有 commit,所以不记录),而所有构建入口用 resolve_build_input 视图比较(先套 resolved-repos.yaml,浮动 repo 带 resolved tip)。`f8485c9` 开始把 manifest 送到消费 job 后,潜伏 bug 变成真失败。修法:`environment.load_resolved_environment_spec` 是写方与所有读方(template、status)共用的唯一加载器;assets 先写 sidecar 再写 manifest。用失败 run 的真实 build-lock artifact 在干净 worktree 验证:旧代码逐字复现报错,新代码通过且 status 为 fresh |
+| `6543aa5` | 根因:assets 用原始 env.yaml 写 lock-manifest(浮动 repo 没有 commit,所以不记录),而所有构建入口用 resolve_build_input 视图比较(先套 resolved-repos.yaml,浮动 repo 带 resolved tip)。写方 `0b995bb`(11-01)与把 manifest 送进消费 job 的 `f8485c9`(11-02)同一次推送上线,当晚首个 nightly 即失败("潜伏"只指本地提交顺序,线上从未有过带 bug 而不出错的阶段)。修法:`environment.load_resolved_environment_spec` 是写方与所有读方(template、status)共用的唯一加载器;assets 先写 sidecar 再写 manifest。用失败 run 的真实 build-lock artifact 在干净 worktree 验证:旧代码逐字复现报错,新代码通过且 status 为 fresh |
 | `8880500` | 审查 runtime/sif job(新代码上从未真实运行)时发现两处 round-2 回归:① `03fcc1b` 的 runtime 清理正则漏了 `-stable-<date>`,stable 镜像不再被清理;② `7c47718` 把 `! grep -q ustc` 挪进脚本中段,`set -e` 不拦取反命令,守卫失效 |
+| `8333ed1` | stable 首次真实运行暴露的既有 bug(源自 10-29 `d51b540`,非 round 1/2 引入):"Latest 只给 FLAGSHIP_ENV"的实现是非旗舰按 API 默认值创建(即成为 Latest)、上传后再 PATCH `make_latest` 为 false。PATCH 返回 200,但 GitHub 不会把 Latest 还给别的 release,标记留在新 release 上(run 41567667246 后 Latest 落在 2025.2)。修法:非旗舰创建时即带 `--latest=false`,删除无效的事后 PATCH;测试直接执行 sif job 里真实的 "Resolve release identity" 脚本,钉住三种创建参数。已存在的 release 不受代码影响,现状由一次性 PATCH(旗舰 release 设 `make_latest=true`)修复 |
+
+**真实运行验证**(推送后):手动 nightly(run 41561284448,master)与 stable
+2025.2-force-avx512(run 41567667246)均第一次就全绿,preamble、lock 门、
+DependencyGraph 上传、`-release` 浮动 tag 都已真实执行。仍未真实运行:fork 构建
+路径;stable 清理新正则已执行但因版本数未超上限(镜像 7、release 5)没有实际删除。
 
 **教训**:round 2 的 CI 改动只经过单元测试和 YAML 解析验证;推送后真实流水线
 只跑到 binaries 第 10 步。b63c269 之后 50 个 commit 里,runtime/sif job 的改动
