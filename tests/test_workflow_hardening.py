@@ -201,3 +201,56 @@ def test_preamble_ustc_guard_passes_a_clean_rewrite(tmp_path) -> None:
     )
     assert reached.exists(), proc.stderr
     assert proc.returncode == 3  # stopped by the stub, not by the guard
+
+
+def _release_create_flags(tmp_path, *, channel: str, env_name: str) -> str:
+    """Run the sif job's real "Resolve release identity" script and return
+    the RELEASE_CREATE_FLAGS it exports for this channel/env."""
+    import os
+    import subprocess
+
+    doc = _doc("pipeline-cp2k.yml")
+    step = next(
+        s for s in doc["jobs"]["sif"]["steps"] if s.get("name") == "Resolve release identity"
+    )
+    script = step["run"].replace("${{ inputs.channel }}", channel)
+    assert "${{" not in script, "unhandled expression in the release-identity step"
+    github_env = tmp_path / f"github_env-{channel}-{env_name}"
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", script],
+        env={
+            **os.environ,
+            "ENV_NAME": env_name,
+            "NIGHTLY_DATE": "20261103",
+            "FLAGSHIP_ENV": doc["env"]["FLAGSHIP_ENV"],
+            "GITHUB_ENV": str(github_env),
+        },
+        check=True,
+    )
+    exported = dict(
+        line.split("=", 1)
+        for line in github_env.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    return exported["RELEASE_CREATE_FLAGS"]
+
+
+def test_only_the_flagship_stable_release_takes_latest(tmp_path) -> None:
+    """Non-flagship stable releases must be CREATED not-latest. Creating with
+    the API default and clearing make_latest afterwards does not work: the
+    PATCH returns 200 but GitHub keeps the badge on the new release (on
+    2026-11-03 a 2025.2 release took it from the flagship 2026.2)."""
+    flagship = _doc("pipeline-cp2k.yml")["env"]["FLAGSHIP_ENV"]
+    sibling = "cp2k_opensource-2025.2-force-avx512"
+    assert flagship != sibling
+
+    assert _release_create_flags(tmp_path, channel="stable", env_name=flagship) == "--latest"
+    assert (
+        _release_create_flags(tmp_path, channel="stable", env_name=sibling)
+        == "--latest=false"
+    )
+    assert _release_create_flags(tmp_path, channel="nightly", env_name=sibling) == "--prerelease"
+
+    text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
+    assert "${RELEASE_CREATE_FLAGS}" in text  # the create call consumes it
+    assert "make_latest=false" not in text, "the post-create clear never worked"

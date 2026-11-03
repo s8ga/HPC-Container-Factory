@@ -730,18 +730,21 @@ jobs:
           NIGHTLY_DATE="${NIGHTLY_DATE:?must be resolved by the preamble}"
           {
             echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-${{ inputs.channel }}-${NIGHTLY_DATE}.sif"
-            # Channel management: stable builds get a permanent per-build
-            # release marked latest (never pruned); nightly/master share one
-            # rolling PRE-release whose SIF assets are pruned to the newest 5.
+            # Channel management: stable builds get a per-build release
+            # (newest 5 per env kept; only the flagship env's is marked
+            # Latest); nightly/master share one rolling PRE-release whose
+            # SIF assets are pruned to the newest 5.
             if [ "${{ inputs.channel }}" = "stable" ]; then
               echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
               if [ "${ENV_NAME}" = "${FLAGSHIP_ENV}" ]; then
                 echo "RELEASE_CREATE_FLAGS=--latest"
               else
-                # Created with the API default make_latest=true, then
-                # explicitly cleared right after upload: non-flagship
-                # envs never hold the repo-wide Latest badge.
-                echo "RELEASE_CREATE_FLAGS="
+                # Created not-latest, so the badge stays with the flagship.
+                # Clearing make_latest after a default (latest) create does
+                # not work: the PATCH returns 200 but GitHub keeps the badge
+                # on the new release (2026-11-03: a 2025.2 publish took it
+                # from 2026.2).
+                echo "RELEASE_CREATE_FLAGS=--latest=false"
               fi
             else
               echo "RELEASE_TAG=nightly-${ENV_NAME}"
@@ -890,15 +893,6 @@ jobs:
           fi
           gh release upload "${RELEASE_TAG}" "${RELEASE_ASSETS[@]}" \
             --repo "$GITHUB_REPOSITORY" --clobber
-          if [ "${{ inputs.channel }}" = "stable" ] && [ -z "${RELEASE_CREATE_FLAGS}" ]; then
-            # PATCH needs the numeric release ID — the API has no
-            # PATCH-by-tag endpoint (a by-tag PATCH 404s and failed the
-            # job after a successful upload; 2026-10-29).
-            RID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq .id)
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RID}" \
-              -f make_latest=false >/dev/null \
-              && echo "Latest badge left with the flagship env (${FLAGSHIP_ENV})"
-          fi
 
       # Reaching this step means every job in the pipeline is green, so the
       # dated runtime image just shipped is end-to-end verified. Float the
