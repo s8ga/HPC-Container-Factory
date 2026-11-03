@@ -640,7 +640,7 @@ jobs:
           REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
           KEEP_TAG="${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
           mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            -q --arg pat "^${ENV_SUFFIX}-(nightly|release)(-[0-9]{8})?$" --arg keep "${KEEP_TAG}" \
+            -q --arg pat "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" --arg keep "${KEEP_TAG}" \
             '.[] | select(any(.metadata.container.tags[]; test($pat))) |
                  select((.metadata.container.tags | index($keep)) == null) | .id')
           if [ "${#OLD[@]}" -eq 0 ]; then
@@ -658,9 +658,11 @@ jobs:
       # stable publishes raced it on 2026-10-29 and pruned each other's
       # dated images (and the -release float) seconds after upload.
       # Exact-match filtered: keep the newest 7 versions tagged
-      # ${ENV_SUFFIX}-(nightly|release)[-YYYYMMDD], never this run's dated
-      # tags. startswith("${ENV_SUFFIX}-") would count -force-avx512
-      # siblings and -fork-* images into this env's budget and prune them.
+      # ${ENV_SUFFIX}-(nightly|stable|release)[-YYYYMMDD] (dated tags carry
+      # the channel name; -nightly / -release are the floats), never this
+      # run's dated tags. startswith("${ENV_SUFFIX}-") would count
+      # -force-avx512 siblings and -fork-* images into this env's budget
+      # and prune them.
       - name: Prune old runtime images (per-env prefix, best-effort)
         continue-on-error: true
         env:
@@ -669,7 +671,7 @@ jobs:
           set -euo pipefail
           REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
           mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            --jq --arg pat "^${ENV_SUFFIX}-(nightly|release)(-[0-9]{8})?$" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
+            --jq --arg pat "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
             '[.[] | select(any(.metadata.container.tags[]; test($pat)))]
              | sort_by(.created_at) | reverse
              | .[7:]

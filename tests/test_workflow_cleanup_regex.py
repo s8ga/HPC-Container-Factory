@@ -69,8 +69,9 @@ def test_mirror_filter_matches_only_own_env_tags() -> None:
 def test_runtime_filter_matches_only_own_channel_tags() -> None:
     pat = _substitute(_extract_patterns()["runtime"], ENV_SUFFIX=SFX_FA)
     assert _matches(pat, f"{SFX_FA}-nightly-20261101")
-    assert _matches(pat, f"{SFX_FA}-release-20261101")
-    assert _matches(pat, f"{SFX_FA}-nightly")  # floating pointer
+    assert _matches(pat, f"{SFX_FA}-stable-20261101")
+    assert _matches(pat, f"{SFX_FA}-nightly")  # latest-attempt float
+    assert _matches(pat, f"{SFX_FA}-release")  # verified float (sif job)
     # this env's fork images are NOT this env's budget
     assert not _matches(pat, f"{SFX_FA}-fork-alice-feat-nightly-20261101")
     assert not _matches(pat, "2026.2-nightly-20261101")
@@ -78,6 +79,22 @@ def test_runtime_filter_matches_only_own_channel_tags() -> None:
     base_pat = _substitute(_extract_patterns()["runtime"], ENV_SUFFIX=SFX_BASE)
     assert _matches(base_pat, f"{SFX_BASE}-nightly-20261101")
     assert not _matches(base_pat, f"{SFX_BASE}-force-avx512-nightly-20261101")
+
+
+def test_runtime_filter_covers_every_caller_channel() -> None:
+    """Dated runtime tags read ${ENV_SUFFIX}-${TAG_PREFIX}-<date> and
+    TAG_PREFIX is the channel name, so each channel a caller passes must
+    match — a filter blind to `-stable-<date>` left stable images unpruned."""
+    workflows = WORKFLOW.parent
+    channels = set()
+    for name in ("nightly-cp2k.yml", "stable-release.yml", "regen-lock.yml"):
+        text = (workflows / name).read_text(encoding="utf-8")
+        channels |= set(re.findall(r"^\s*channel:\s*(\w+)\s*$", text, re.MULTILINE))
+    assert channels == {"nightly", "stable"}, channels
+    assert '${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}' in _text()
+    pat = _substitute(_extract_patterns()["runtime"], ENV_SUFFIX=SFX_FA)
+    for channel in sorted(channels):
+        assert _matches(pat, f"{SFX_FA}-{channel}-20261101"), channel
 
 
 def test_stable_release_filter_is_exact() -> None:

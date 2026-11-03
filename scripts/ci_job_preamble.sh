@@ -39,7 +39,12 @@ FORK_BRANCH="${FORK_BRANCH:-}"
 sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
 sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
   "spack-envs/${BASE_ENV_NAME}/spack-env-file/env.yaml"
-! grep -q "ustc" containers/Dockerfile.mirror-builder
+# Explicit exit: set -e ignores a negated `! grep`, so that form only ever
+# worked as the last line of the old inline step.
+if grep -q "ustc" containers/Dockerfile.mirror-builder; then
+    echo "::error::containers/Dockerfile.mirror-builder still references ustc after the apt rewrite" >&2
+    exit 1
+fi
 
 # ── fork identity + source override ────────────────────────────────────────
 if [[ "$CHANNEL" == "stable" && ( -n "$FORK_URL" || -n "$FORK_BRANCH" ) ]]; then
@@ -93,8 +98,9 @@ NIGHTLY_DATE="${NIGHTLY_DATE_IN:-$(date -u +%Y%m%d)}"
     echo "IMAGE_NAME=${ENV_NAME%%-*}"
     echo "ENV_SUFFIX=${ENV_NAME#*-}"
     echo "IMG_REPO=ghcr.io/${OWNER}/${ENV_NAME%%-*}"
-    # Remote tag prefix follows the channel: nightly floats tags named
-    # -nightly, stable ones named -release.
+    # Remote tag prefix is the channel name: dated runtime tags read
+    # -nightly-<date> / -stable-<date>; -release is the verified float the
+    # sif job moves.
     echo "TAG_PREFIX=${CHANNEL}"
 } >> "${GITHUB_ENV:?}"
 echo "date=${NIGHTLY_DATE}" >> "${GITHUB_OUTPUT:?}"

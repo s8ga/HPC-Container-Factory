@@ -145,3 +145,59 @@ def test_pipeline_preamble_is_deduplicated() -> None:
     # The fork/no-fork branches each call it once; the workflow never does.
     assert script_text.count("apply-source-override.sh") == 2
     assert "apply-source-override.sh" not in text
+
+
+def _run_preamble_until_override(tmp_path, mirror_builder: str):
+    """Run the real preamble in a scratch checkout. The source-override
+    stub records that it was reached and stops the script (exit 3), so no
+    venv or network step ever runs."""
+    import os
+    import subprocess
+
+    (tmp_path / "containers").mkdir()
+    (tmp_path / "containers" / "Dockerfile.mirror-builder").write_text(
+        mirror_builder, encoding="utf-8"
+    )
+    conf = tmp_path / "spack-envs" / "demo" / "spack-env-file"
+    conf.mkdir(parents=True)
+    (conf / "env.yaml").write_text("  pkg_mirror_setup: |\n", encoding="utf-8")
+    stub = tmp_path / "scripts" / "apply-source-override.sh"
+    stub.parent.mkdir()
+    stub.write_text("#!/usr/bin/env bash\ntouch REACHED\nexit 3\n", encoding="utf-8")
+    stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "BASE_ENV_NAME": "demo",
+        "CHANNEL": "nightly",
+        "GITHUB_ENV": str(tmp_path / "github_env"),
+        "GITHUB_OUTPUT": str(tmp_path / "github_output"),
+    }
+    proc = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts" / "ci_job_preamble.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc, tmp_path / "REACHED"
+
+
+def test_preamble_ustc_guard_stops_the_job(tmp_path) -> None:
+    """A ustc reference surviving the apt rewrite must fail the job. A bare
+    `! grep` mid-script is a no-op: set -e ignores negated commands (the
+    guard only worked as the last line of the old inline step)."""
+    proc, reached = _run_preamble_until_override(
+        tmp_path, "RUN echo mirrors.ustc.edu.cn\nRUN echo ustc.example\n"
+    )
+    assert proc.returncode != 0
+    assert not reached.exists(), "guard let the job continue past a ustc leftover"
+    assert "ustc" in proc.stderr
+
+
+def test_preamble_ustc_guard_passes_a_clean_rewrite(tmp_path) -> None:
+    proc, reached = _run_preamble_until_override(
+        tmp_path, "RUN echo mirrors.ustc.edu.cn\n"
+    )
+    assert reached.exists(), proc.stderr
+    assert proc.returncode == 3  # stopped by the stub, not by the guard
