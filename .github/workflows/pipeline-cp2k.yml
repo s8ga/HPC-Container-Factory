@@ -347,27 +347,16 @@ jobs:
       # never this run's. A bare startswith("${ENV_NAME}-") would also
       # count ${ENV_NAME}-force-avx512 / ${ENV_NAME}-fork-* siblings into
       # this env's budget and prune them.
-      - name: Prune old mirror images (per-env prefix, best-effort)
+      - name: Prune old mirror images (per-env tags, best-effort)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          REPO_PATH="/user/packages/container/hpc-cf-inputs/versions"
-          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            --jq --arg pat "^${ENV_NAME}(-[0-9]{8})?$" --arg keep "${ENV_NAME}-${NIGHTLY_DATE}" \
-            '[.[] | select(any(.metadata.container.tags[]; test($pat)))]
-             | sort_by(.created_at) | reverse
-             | .[3:]
-             | map(select((.metadata.container.tags | index($keep)) == null))
-             | .[].id')
-          if [ "${#OLD[@]}" -eq 0 ]; then
-            echo "mirror versions within budget (per-env keep 3)"
-          else
-            for id in "${OLD[@]}"; do
-              gh api -X DELETE "$REPO_PATH/$id" && echo "pruned mirror version $id"
-            done
-          fi
+          scripts/ghcr_prune_versions.sh \
+            "/user/packages/container/hpc-cf-inputs/versions" \
+            "^${ENV_NAME}(-[0-9]{8})?$" \
+            "${ENV_NAME}-${NIGHTLY_DATE}" \
+            3
 
   binaries:
     name: binaries (install + publish buildcache)
@@ -629,27 +618,18 @@ jobs:
           podman inspect --format '{{.Digest}}' "$DATED"
 
       # Fork envs keep EXACTLY one image version: after a green push,
-      # delete every other package version tagged with this env's prefix.
+      # delete every other package version tagged with this env's pattern.
       - name: Enforce single fork image version (fork envs only)
         if: ${{ contains(env.ENV_NAME, '-fork') }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
-          KEEP_TAG="${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}"
-          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            -q --arg pat "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" --arg keep "${KEEP_TAG}" \
-            '.[] | select(any(.metadata.container.tags[]; test($pat))) |
-                 select((.metadata.container.tags | index($keep)) == null) | .id')
-          if [ "${#OLD[@]}" -eq 0 ]; then
-            echo "single fork version already enforced"
-            exit 0
-          fi
-          for id in "${OLD[@]}"; do
-            gh api -X DELETE "$REPO_PATH/$id" && echo "pruned fork version $id"
-          done
+          scripts/ghcr_prune_versions.sh \
+            "/user/packages/container/${IMAGE_NAME}/versions" \
+            "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" \
+            "${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}" \
+            0
 
       # Scoped per env: the IMAGE_NAME package is shared by every env of
       # this image family (all cp2k_opensource-* variants, all
@@ -663,27 +643,16 @@ jobs:
       # run's dated tags. startswith("${ENV_SUFFIX}-") would count
       # -force-avx512 siblings and -fork-* images into this env's budget
       # and prune them.
-      - name: Prune old runtime images (per-env prefix, best-effort)
+      - name: Prune old runtime images (per-env tags, best-effort)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          REPO_PATH="/user/packages/container/${IMAGE_NAME}/versions"
-          mapfile -t OLD < <(gh api --paginate "$REPO_PATH" \
-            --jq --arg pat "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" --arg keep "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
-            '[.[] | select(any(.metadata.container.tags[]; test($pat)))]
-             | sort_by(.created_at) | reverse
-             | .[7:]
-             | map(select((.metadata.container.tags | index($keep)) == null))
-             | .[].id')
-          if [ "${#OLD[@]}" -eq 0 ]; then
-            echo "runtime image versions within budget (per-env keep 7)"
-          else
-            for id in "${OLD[@]}"; do
-              gh api -X DELETE "$REPO_PATH/$id" && echo "pruned runtime image version $id"
-            done
-          fi
+          scripts/ghcr_prune_versions.sh \
+            "/user/packages/container/${IMAGE_NAME}/versions" \
+            "^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$" \
+            "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}" \
+            7
 
   # The distribution endpoint of this pipeline: a downloadable SIF on a
   # rolling public GitHub Release (the runtime SIF is well under the 2GB

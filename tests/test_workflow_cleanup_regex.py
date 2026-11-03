@@ -39,8 +39,13 @@ def _matches(pattern: str, tag: str) -> bool:
 
 def _extract_patterns() -> dict[str, str]:
     text = _text()
-    pats = re.findall(r'--arg pat "([^"]+)"', text)
-    assert len(pats) == 3, f"expected 3 --arg pat filters, got {pats}"
+    calls = re.findall(
+        r"ghcr_prune_versions\.sh \\\n\s+\"([^\"]+)\" \\\n\s+\"([^\"]+)\" "
+        r"\\\n\s+\"([^\"]+)\" \\\n\s+([0-9]+)",
+        text,
+    )
+    assert len(calls) == 3, f"expected 3 ghcr_prune_versions.sh calls, got {calls}"
+    pats = [pattern for _repo, pattern, _keep, _n in calls]
     mirror = [p for p in pats if "${ENV_NAME}" in p]
     runtime = {p for p in pats if "${ENV_SUFFIX}" in p}
     assert len(mirror) == 1 and len(runtime) == 1
