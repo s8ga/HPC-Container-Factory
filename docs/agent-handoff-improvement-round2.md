@@ -436,3 +436,20 @@ buildcache.py/environment.py/cli.py 分层、legacy shims 迁移、
 `find_spack_lock` 统一四处 lock 路径拼法);F 档 mypy(建议 D 之后);
 runtime_cleanup 前移(用户决定先不做);manifest 回填 + rocm 重建(用户置后);
 操作侧(push 需授权、备份分支、legacy/)。
+
+### §8.3 推送后 nightly 回归修复(2026-11-03)
+
+nightly-cp2k 2026-11-02(run 41542691099,自动重试的 attempt 2 同样失败)
+挂在 binaries job 的预检:`lock.stale_input: custom_repos['cp2k_dev'] pin
+changed since concretization (recorded None, current f8a708ff…)`。
+
+| commit | 内容 |
+|---|---|
+| `6543aa5` | 根因:assets 用原始 env.yaml 写 lock-manifest(浮动 repo 没有 commit,所以不记录),而所有构建入口用 resolve_build_input 视图比较(先套 resolved-repos.yaml,浮动 repo 带 resolved tip)。`f8485c9` 开始把 manifest 送到消费 job 后,潜伏 bug 变成真失败。修法:`environment.load_resolved_environment_spec` 是写方与所有读方(template、status)共用的唯一加载器;assets 先写 sidecar 再写 manifest。用失败 run 的真实 build-lock artifact 在干净 worktree 验证:旧代码逐字复现报错,新代码通过且 status 为 fresh |
+| `8880500` | 审查 runtime/sif job(新代码上从未真实运行)时发现两处 round-2 回归:① `03fcc1b` 的 runtime 清理正则漏了 `-stable-<date>`,stable 镜像不再被清理;② `7c47718` 把 `! grep -q ustc` 挪进脚本中段,`set -e` 不拦取反命令,守卫失效 |
+
+**教训**:round 2 的 CI 改动只经过单元测试和 YAML 解析验证;推送后真实流水线
+只跑到 binaries 第 10 步。b63c269 之后 50 个 commit 里,runtime/sif job 的改动
+(preamble、清理正则、DependencyGraph 上传)还没在真实 run 中执行过,下一次
+nightly(或手动 dispatch)才是第一次。§2 里 2.1a 修法给的正则(`nightly|release`)
+同样漏了 stable,以本节为准。
