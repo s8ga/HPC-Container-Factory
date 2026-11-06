@@ -196,7 +196,7 @@ spack:
 
   repos:
     builtin:
-      commit: a12bbd69e94b8fce1969a412755959bb37ecab3d  # BUMP 2026-10-24: deps alignment with upstream master cp2k_deps_p.yaml — deepmdkit 3.2.0 (a12bbd69) + spglib 2.8.0 (dc792964); no cp2k recipe drift in range; full DAG rehash = one deliberate full rebuild
+      commit: 4fcf009e9f80634440c461937f322a9f0510a37b  # BUMP 2026-11-06: upstream master's builtin pin (cp2k_deps_p.yaml @ bc4281965, cp2k #6424) — dftd4 4.3.1 + mctc-lib 0.7.0 + cosma 2.8.5; no cp2k recipe drift in range; full DAG rehash = one deliberate full rebuild
 
   specs:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)
@@ -205,11 +205,12 @@ spack:
     - "dbcsr@2.10.0"
     - "netlib-scalapack@2.2.3"
     - "openblas@0.3.34"
-    # Dependencies (support/v2026.2 cp2k_deps_p.yaml; dla-future disabled for openmpi)
+    # Dependencies (upstream master cp2k_deps_p.yaml; dla-future disabled for openmpi)
     - "adios2@2.12.1"
-    - "cosma@2.8.4"
+    - "cosma@2.8.5"
     - "deepmdkit@3.2.0"
-    - "dftd4@4.2.0"
+    # CMakeLists.txt requires dftd4 >= 4.3.0 and tblite >= 0.8.0 (cp2k #6424).
+    - "dftd4@4.3.1"
     # s8_overrides provides force kernels through 2026.02.002, including the
     # width-1 tail block (nx1) fix backport from bugfix_elpa2_65_65_64.
     - "elpa@2026.02.002"
@@ -228,7 +229,8 @@ spack:
     # 1.0.0 predates libxs_vpack/vunpack used by hfx_compression_methods.F.
     - "libxs@git.930a2c4f5d7d4ee82142302e1a17812557c02dae=main"
     - "libxsmm@2.0.0"
-    - "mctc-lib@0.4.2"
+    # dftd4@4.3.1 needs multicharge@0.6:, which needs mctc-lib@0.7:.
+    - "mctc-lib@0.7.0"
     # Spack package name is mimic_mcl (directory); older CP2K yaml used mimic-mcl.
     - "mimic-mcl@3.0.0"
     - "openpmd-api@0.17.1"
@@ -240,7 +242,7 @@ spack:
     - "spfft@1.1.1"
     - "spglib@2.8.0"
     - "spla@1.6.1"
-    - "tblite@0.7.0"
+    - "tblite@0.8.0"
     - "trexio@2.6.1"
     # CPU stack: +ace/+libfci/+mimic/+spla wired in local package.py; LibGint needs +cuda.
     # NLCG omitted (CP2K not officially supported; empty-enum crash if enabled).
