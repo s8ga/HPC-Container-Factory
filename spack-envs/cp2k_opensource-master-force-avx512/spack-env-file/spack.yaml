@@ -202,7 +202,8 @@ spack:
     # MPI stack (official default is mpich; openmpi path from make_cp2k.sh -mpi openmpi)
     - "openmpi@5.0.10"
     - "libfabric@2.6.0"
-    - "dbcsr@2.10.0"
+    # cp2k #6476 moved dbcsr to its develop tip together with the libxs bump.
+    - "dbcsr@git.8e8c7d469419a587bd4e597c4118557632991d8e=devel"
     - "netlib-scalapack@2.2.3"
     - "openblas@0.3.34"
     # Dependencies (upstream master cp2k_deps_p.yaml; dla-future disabled for openmpi)
@@ -225,10 +226,10 @@ spack:
     - "libvori@220621"
     - "libwignernj@0.8.0"
     - "libxc@7.1.2"
-    # libxs main pinned to the commit upstream master tests (cp2k_deps_p.yaml);
-    # 1.0.0 predates libxs_vpack/vunpack used by hfx_compression_methods.F.
-    - "libxs@git.930a2c4f5d7d4ee82142302e1a17812557c02dae=main"
-    - "libxsmm@2.0.0"
+    # cp2k #6480 uses libxs_vpack_maxbits (besides vpack/vunpack); the pins
+    # below are the set upstream master tests (cp2k_deps_p.yaml, cp2k #6476).
+    - "libxs@git.cc9188afc9422fda96c9fa0199ea89c49fd78995=main"
+    - "libxsmm@git.5fdf801e9c2bf91a929018ade31ebf1c24235f0a=main"
     # dftd4@4.3.1 needs multicharge@0.6:, which needs mctc-lib@0.7:.
     - "mctc-lib@0.7.0"
     # Spack package name is mimic_mcl (directory); older CP2K yaml used mimic-mcl.
