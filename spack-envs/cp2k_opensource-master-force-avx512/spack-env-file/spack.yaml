@@ -203,7 +203,9 @@ spack:
     - "openmpi@5.0.10"
     - "libfabric@2.6.0"
     # cp2k #6476 moved dbcsr to its develop tip together with the libxs bump.
-    - "dbcsr@git.8e8c7d469419a587bd4e597c4118557632991d8e=devel"
+    # The prescribed version after "=" must equal the recipe's declared
+    # version name: version("develop", branch="develop").
+    - "dbcsr@git.8e8c7d469419a587bd4e597c4118557632991d8e=develop"
     - "netlib-scalapack@2.2.3"
     - "openblas@0.3.34"
     # Dependencies (upstream master cp2k_deps_p.yaml; dla-future disabled for openmpi)
