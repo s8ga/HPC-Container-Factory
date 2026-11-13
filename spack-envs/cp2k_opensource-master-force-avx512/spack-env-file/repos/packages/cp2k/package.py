@@ -435,9 +435,10 @@ class Cp2k(MakefilePackage, CMakePackage, CudaPackage, ROCmPackage):
     with when("+libint"):
         depends_on("pkgconfig", type="build", when="@7.0:")
         for lmax in HFX_LMAX_RANGE:
-            # The CP2K dev repo encodes lmax in the libint version.
+            # The CP2K dev repo encodes lmax in the libint version. Follow the
+            # version bump in cp2k's spack repo (cp2k #6514) when it moves.
             depends_on(
-                f"libint@2.13.1-cp2k-lmax-{lmax}+fortran",
+                f"libint@2.14.1-cp2k-lmax-{lmax}+fortran",
                 when=f"@7.0: lmax={lmax}",
             )
 
