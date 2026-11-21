@@ -27,7 +27,7 @@ sif.py          → SIF/apptainer building + packing
 config.py       → Path constants + DEFAULT_SPACK_VERSION
 ```
 
-Data flow: `env.yaml` → `build_context()` → Jinja2 `Dockerfile.j2` → Dockerfile → podman build → OCI image → SIF.
+Data flow: `env.yaml` → `build_context()` → shared Jinja2 `templates/Dockerfile.spack.j2` (or `Dockerfile.nospack.j2`) → 2-stage `builder`/`runtime` Dockerfile → podman build → OCI image → extreme-compressed SIF (`-comp zstd -Xcompression-level 22 -b 1M`).
 
 ## Development Commands
 
@@ -281,7 +281,7 @@ Run L4 ABACUS smoke with
 Run the inventory guard independently with
 `./venv/bin/python scripts/check-dual-write.py` (the same invariants run inside
 `validate --profile config|build-input` and in CI via `ci-tests.yml`, which also
-runs ruff + the full unit suite on every push/PR to v2/main).
+runs ruff + the full unit suite on every push/PR to v2/v3/main).
 
 L3 creates a persistent container per Spack version and uses a minimal pkgconf
 environment; it does not build CP2K. Missing matrix assets are skipped rather
@@ -300,23 +300,28 @@ Environment inventory is discovered via `EnvironmentSpec` / `list_available_envs
 For non-Spack containers (simple binary packages), set `method: no_spack` in env.yaml.
 Uses shared `templates/Dockerfile.nospack.j2` (multi-stage: builder runs user script, runtime copies artifacts).
 
-## Spack Version Compatibility
+## Spack Version & v3 Platform Baseline
 
-Current `DEFAULT_SPACK_VERSION = "1.1.1"`. Spack v1.2.0 is already selected by
-the ABACUS and CP2K 2026.2 environments; other environments keep their pinned
-1.1.0 or 1.1.1 versions.
+Current `DEFAULT_SPACK_VERSION = "1.2.2"`. The v3 baseline targets
+`cp2k_opensource-master-force-avx512` on pinned Fedora 45 GA
+(`quay.io/fedora/fedora-minimal:45`, local default `ustc` mirror, CI `official`),
+`spack.toolchain` (`gcc16` / `gcc15` / `clang`), `SPACK_PYTHON=/usr/bin/python3.13`,
+shared 2-stage `templates/Dockerfile.spack.j2` with `scripts/spack_dag_query.py`
+and OCI inline finalize, `--lock-only` / `--no-mirror`, host OCI Distribution v2
+precheck (`buildcache check-oci [--write-state]`), direct `docker-archive://` SIF
+packaging (`--disable-cache`, `--smoke-cmd`), and the 3-job CI pipeline (`prepare` ->
+`binaries` -> `package`).
 
-**v1.2.0 highlights relevant to hpc_cf**:
+**v1.2.x highlights relevant to hpc_cf**:
 - New parallel installer (TUI auto-detects non-TTY → text mode in Docker build)
 - Concretization caching enabled by default — speeds up repeated solves
 - **SBOM status (measured, not assumed)**: spack 1.2.0 writes SPDX SBOMs
   only for packages IT installs into the bootstrap store
   (`~/.spack/bootstrap/store/.../.spack/sbom/spdx-2.3.json`); the main
-  install store gets none (verified in the 2026.2F runtime image). The
-  factory's machine-readable reproducibility record is instead
-  `BUILD_MANIFEST.txt` (`spack find -d`) + `DependencyGraph.dot`, shipped
-  as release assets by the nightly sif job.
-- Package API v2.5 — our custom packages use v2.2, fully backward compatible
+  install store gets none. The factory's machine-readable reproducibility record
+  is instead `BUILD_MANIFEST.txt` (`spack find -d`) + `DependencyGraph.dot`,
+  shipped as release assets by the nightly package job.
+- Package API v2.5 — custom packages remain backward compatible
 - `spack isolate --self` — future candidate to simplify `SPACK_USER_CONFIG_PATH` setup
 
 **Verified safe**: `--fail-fast`, `-j`, `spack bootstrap mirror --binary-packages`, `spack repo update builtin`
@@ -326,4 +331,4 @@ Do not infer an environment's Spack version from `DEFAULT_SPACK_VERSION`; read
 
 ## Branch Strategy
 
-Active work is on the `v2` branch. Commits are atomic per change item.
+Active work is on the `v3` branch (leaving `v2` untouched). Commits are atomic per change item.

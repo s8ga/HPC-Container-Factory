@@ -44,12 +44,10 @@ def _extract_patterns() -> dict[str, str]:
         r"\\\n\s+\"([^\"]+)\" \\\n\s+([0-9]+)",
         text,
     )
-    assert len(calls) == 3, f"expected 3 ghcr_prune_versions.sh calls, got {calls}"
-    pats = [pattern for _repo, pattern, _keep, _n in calls]
-    mirror = [p for p in pats if "${ENV_NAME}" in p]
-    runtime = {p for p in pats if "${ENV_SUFFIX}" in p}
-    assert len(mirror) == 1 and len(runtime) == 1
-    return {"mirror": mirror[0], "runtime": runtime.pop()}
+    assert len(calls) == 2, f"expected 2 ghcr_prune_versions.sh calls, got {calls}"
+    runtime = {pattern for _repo, pattern, _keep, _n in calls if "${ENV_SUFFIX}" in pattern}
+    assert len(runtime) == 1
+    return {"runtime": runtime.pop()}
 
 
 def test_workflow_yaml_parses() -> None:
@@ -59,16 +57,6 @@ def test_workflow_yaml_parses() -> None:
 def test_no_prefix_startswith_filters_remain() -> None:
     assert "startswith($p)" not in _text()
     assert 'startswith(\\"stable-' not in _text()
-
-
-def test_mirror_filter_matches_only_own_env_tags() -> None:
-    pat = _substitute(_extract_patterns()["mirror"], ENV_NAME=ENV)
-    assert _matches(pat, f"{ENV}-20261101")
-    assert _matches(pat, f"{ENV}-20251031")
-    assert _matches(pat, ENV)  # crane float tag
-    assert not _matches(pat, f"{ENV}-force-avx512-20261101")
-    assert not _matches(pat, f"{ENV}-fork-alice-feat-20261101")
-    assert not _matches(pat, "cp2k_opensource-2026.2-20261101")
 
 
 def test_runtime_filter_matches_only_own_channel_tags() -> None:

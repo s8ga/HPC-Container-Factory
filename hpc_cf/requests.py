@@ -85,6 +85,7 @@ class BuildcacheRequest:
     network_host: bool = False
     use_mirror: bool = True
     concurrency: int = 16
+    write_state: bool = False
     build_args: tuple[str, ...] = ()
     build_opts: tuple[str, ...] = ()
     output_format: str = "text"
@@ -210,6 +211,7 @@ def buildcache_request_from_args(args: Any) -> BuildcacheRequest:
         network_host=bool(getattr(args, "network_host", False)),
         use_mirror=bool(getattr(args, "use_mirror", True)),
         concurrency=int(getattr(args, "concurrency", 16) or 16),
+        write_state=bool(getattr(args, "write_state", False)),
         build_args=tuple(getattr(args, "build_arg", None) or ()),
         build_opts=tuple(getattr(args, "build_opt", None) or ()),
         output_format=getattr(args, "format", "text"),

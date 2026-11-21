@@ -45,16 +45,16 @@ def test_ci_tests_is_read_only() -> None:
 
 
 def test_pipeline_jobs_downgrade_from_the_write_ceiling() -> None:
-    """Only sif needs contents:write; GHCR-pushing jobs carry exactly
+    """Only package needs contents:write; GHCR-pushing jobs carry exactly
     contents:read + packages:write."""
     jobs = _doc("pipeline-cp2k.yml")["jobs"]
-    for job_id in ("prepare", "binaries", "runtime"):
+    for job_id in ("prepare", "binaries"):
         assert jobs[job_id]["permissions"] == {
             "contents": "read",
             "packages": "write",
         }, job_id
-    sif = jobs["sif"]["permissions"]
-    assert sif["contents"] == "write"
+    package_perms = jobs["package"]["permissions"]
+    assert package_perms["contents"] == "write"
 
 
 def test_stable_release_grants_packages_only_at_the_call_site() -> None:
@@ -129,7 +129,7 @@ def test_pipeline_preamble_is_deduplicated() -> None:
 
     text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
     jobs = _doc("pipeline-cp2k.yml")["jobs"]
-    for job_id in ("prepare", "binaries", "runtime", "sif"):
+    for job_id in ("prepare", "binaries", "package"):
         steps = jobs[job_id]["steps"]
         preambles = [
             s for s in steps if "ci_job_preamble.sh" in str(s.get("run", ""))
@@ -211,7 +211,7 @@ def _release_create_flags(tmp_path, *, channel: str, env_name: str) -> str:
 
     doc = _doc("pipeline-cp2k.yml")
     step = next(
-        s for s in doc["jobs"]["sif"]["steps"] if s.get("name") == "Resolve release identity"
+        s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Resolve release identity"
     )
     script = step["run"].replace("${{ inputs.channel }}", channel)
     assert "${{" not in script, "unhandled expression in the release-identity step"
@@ -254,3 +254,24 @@ def test_only_the_flagship_stable_release_takes_latest(tmp_path) -> None:
     text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
     assert "${RELEASE_CREATE_FLAGS}" in text  # the create call consumes it
     assert "make_latest=false" not in text, "the post-create clear never worked"
+
+
+def test_v3_pipeline_contract() -> None:
+    """v3 pipeline runs 3 streamlined jobs without hpc-cf-inputs or crane."""
+    doc = _doc("pipeline-cp2k.yml")
+    assert list(doc["jobs"].keys()) == ["prepare", "binaries", "package"]
+    text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
+    for required in (
+        "check-oci",
+        "--write-state",
+        "--no-mirror",
+        "--pkg-mirror official",
+        "--smoke-cmd",
+        "tools/apptainer",
+    ):
+        assert required in text, required
+    active_lines = "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+    for forbidden in ("hpc-cf-inputs", "crane"):
+        assert forbidden not in active_lines, forbidden

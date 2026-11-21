@@ -461,6 +461,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
     )
+    check_oci_parser.add_argument(
+        "--write-state",
+        action="store_true",
+        help="When 0 specs are missing, record OCI coverage/health state for downstream --buildcache only builds",
+    )
 
     pin_parser = subparsers.add_parser(
         "pin",

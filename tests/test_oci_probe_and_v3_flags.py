@@ -380,3 +380,93 @@ def test_buildcache_build_no_mirror_skips_source_mirror_gate(tmp_path: Path) -> 
     assert rc == 0
     gate_mock.assert_not_called()
     assert gen_kwargs["use_mirror"] is False
+
+
+def test_buildcache_check_oci_write_state_enables_only_coverage(tmp_path: Path) -> None:
+    from hpc_cf.buildcache import (
+        BuildcacheMode,
+        collect_environment_provenance,
+        coverage_path_for_lock,
+        require_coverage,
+    )
+    from hpc_cf.execution import SharedBuildcacheStore
+
+    args = build_parser().parse_args(
+        ["buildcache", "check-oci", "--env", "demo", "--write-state"]
+    )
+    req = buildcache_request_from_args(args)
+    assert req.write_state is True
+
+    layout = ProjectLayout(project_root=tmp_path)
+    conf = layout.spack_envs_dir / "demo" / "spack-env-file"
+    conf.mkdir(parents=True)
+    lock = conf / "spack.lock"
+    lock.write_text('{"concrete_specs": {"h": {"name": "x", "version": "1"}}}', encoding="utf-8")
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.2",
+                "env_name": "e",
+                "buildcache": {
+                    "enabled": True,
+                    "mode": "oci",
+                    "url": "oci://ghcr.io/s8ga/cache",
+                },
+            },
+        }
+    )
+    resolved = SimpleNamespace(environment_dir=layout.spack_envs_dir / "demo", environment_spec=spec)
+
+    # Incomplete probe (missing > 0) must NOT record healthy coverage state.
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.oci_probe.probe_oci_lock",
+            return_value=SimpleNamespace(
+                mirror_url="oci://ghcr.io/s8ga/cache",
+                total=2,
+                present=1,
+                missing=1,
+                to_dict=lambda: {"total": 2, "present": 1, "missing": 1},
+            ),
+        ),
+    ):
+        rc_miss = BuildcacheService(layout).run(
+            BuildcacheRequest(action="check-oci", env="demo", write_state=True)
+        )
+    assert rc_miss == 2
+    store = SharedBuildcacheStore(layout)
+    assert not coverage_path_for_lock(layout, lock).exists()
+
+    # Complete probe (missing == 0) writes count coverage + healthy state so
+    # `--buildcache only` passes without running `binaries`.
+    with (
+        patch("hpc_cf.template.resolve_build_input", return_value=resolved),
+        patch(
+            "hpc_cf.oci_probe.probe_oci_lock",
+            return_value=SimpleNamespace(
+                mirror_url="oci://ghcr.io/s8ga/cache",
+                total=2,
+                present=2,
+                missing=0,
+                to_dict=lambda: {"total": 2, "present": 2, "missing": 0},
+            ),
+        ),
+    ):
+        rc_ok = BuildcacheService(layout).run(
+            BuildcacheRequest(action="check-oci", env="demo", write_state=True)
+        )
+    assert rc_ok == 0
+    assert store.read_health()["healthy"] is True
+    require_coverage(
+        layout,
+        lock,
+        spack_version="1.2.2",
+        builder_image=None,
+        padded_length=spec.spack.buildcache.padded_length,
+        environment_provenance=collect_environment_provenance(
+            lock, layout.spack_envs_dir / "demo"
+        ),
+        backend_mode=BuildcacheMode.OCI,
+    )

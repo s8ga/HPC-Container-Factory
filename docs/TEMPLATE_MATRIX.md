@@ -8,14 +8,14 @@
 
 | 环境 (`--app-version`) | method | 模板 | 共享 partials | render/contract |
 |---|---|---|---|---|
-| `cp2k_opensource-master-force-avx512` | spack | per-env `Dockerfile.j2` | 使用 | 支持（浮动轨道，无提交 lock） |
+| `cp2k_opensource-master-force-avx512` | spack | shared `templates/Dockerfile.spack.j2` | 使用 | 支持（浮动轨道，无提交 lock） |
 
 这里的“支持”只表示模板可由现行发现与渲染契约处理，不代表 OCI/SIF 构建、
 应用测试、性能或特定硬件验证均已完成。具体仓库测试范围应查看对应发布说明。
 
 ## 共享 Jinja partials
 
-位于 `templates/partials/`，由 per-env `Dockerfile.j2` include：
+位于 `templates/` 与 `templates/partials/`，由 `templates/Dockerfile.spack.j2` 统一驱动：
 
 | Partial | 用途 |
 |---|---|

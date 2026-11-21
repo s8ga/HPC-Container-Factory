@@ -182,17 +182,17 @@ def test_fetch_failure_fails_loudly(tmp_path: Path) -> None:
     assert _deleted(tmp_path) == []
 
 
-def test_workflow_calls_the_script_three_times() -> None:
-    """The three prune steps (mirror keep-3, fork keep-1, runtime keep-7)
+def test_workflow_calls_the_script_twice_for_runtime() -> None:
+    """The two runtime prune steps (staging failure keep-0, success keep-7)
     all delegate to the shared script — no hand-rolled gh api queries left
-    in the workflow."""
+    in the workflow (hpc-cf-inputs mirror image is retired in v3)."""
     text = WORKFLOW.read_text(encoding="utf-8")
     calls = [
         line
         for line in text.splitlines()
         if "ghcr_prune_versions.sh" in line and "run:" not in line
     ]
-    assert len(calls) == 3, f"expected 3 script calls, found {len(calls)}"
+    assert len(calls) == 2, f"expected 2 script calls, found {len(calls)}"
     # The jq-flag footgun cannot come back: the version queries (with
     # their patterns) live only in the script, and --arg is never passed
     # to gh api.
@@ -216,15 +216,13 @@ def test_prune_budgets_are_pinned() -> None:
         r"\\\n\s+\"([^\"]+)\" \\\n\s+([0-9]+)",
         text,
     )
-    assert len(calls) == 3, calls
+    assert len(calls) == 2, calls
     by_repo = {}
     for repo, pattern, keep_tag, keep_n in calls:
         by_repo.setdefault(repo.split("/")[4], []).append((pattern, keep_tag, int(keep_n)))
-    assert by_repo["hpc-cf-inputs"] == [
-        ("^${ENV_NAME}(-[0-9]{8})?$", "${ENV_NAME}-${NIGHTLY_DATE}", 3)
-    ]
+    assert "hpc-cf-inputs" not in by_repo
     runtime = sorted(by_repo["${IMAGE_NAME}"], key=lambda c: c[2])
     assert runtime == [
-        ("^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$", "${ENV_SUFFIX}-nightly-${NIGHTLY_DATE}", 0),
+        ("^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$", "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}", 0),
         ("^${ENV_SUFFIX}-(nightly|stable|release)(-[0-9]{8})?$", "${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}", 7),
     ]

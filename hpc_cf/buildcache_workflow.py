@@ -250,7 +250,11 @@ class BuildcacheService:
         """Fast host-side OCI Distribution v2 probe for all spack.lock tags."""
         import json
 
-        from hpc_cf.buildcache import manual_package_exclude_specs
+        from hpc_cf.buildcache import (
+            collect_environment_provenance,
+            manual_package_exclude_specs,
+            publish_success_state,
+        )
         from hpc_cf.oci_probe import probe_oci_lock
         from hpc_cf.template import resolve_build_input
         from hpc_cf.workflows import resolve_buildcache_backend
@@ -297,6 +301,32 @@ class BuildcacheService:
             password=password,
             concurrency=request.concurrency,
         )
+        if request.write_state and report.missing == 0:
+            store = SharedBuildcacheStore(self.layout)
+            environment_provenance = collect_environment_provenance(lock_path, env_dir)
+            with store.publisher_lock():
+                store.ensure_store_root()
+                run = store.begin_run(request.env)
+                publish_success_state(
+                    store,
+                    run=run,
+                    lock_path=lock_path,
+                    record=BuildcacheCoverageRecord(
+                        spack_version=spec.spack.version,
+                        builder_image_digest="oci-probe",
+                        environment_provenance=environment_provenance,
+                        padded_length=spec.spack.buildcache.padded_length,
+                        signing_policy="unsigned",
+                        check_returncode=0,
+                        checked_spec_count=report.total,
+                        check_kind="count",
+                    ),
+                    provenance={
+                        "env": request.env,
+                        "oci_probe": True,
+                        "mirror_url": backend.url,
+                    },
+                )
         if request.output_format == "json":
             print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
         else:

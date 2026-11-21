@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
-# Shared job preamble for pipeline-cp2k.yml (prepare/binaries/runtime/sif).
+# Shared job preamble for pipeline-cp2k.yml (prepare/binaries/package).
 #
-# The four jobs used to carry near-verbatim copies of this block — 31
-# edits in two months, four same-day fixes from editing one copy and
-# missing the others (round-2 audit 2.5). One script now; jobs call it
-# as their first step with `id: vars` (the `date` output is a job
-# output there).
+# The jobs share ONE script as their first step with `id: vars`.
 #
 # Inputs (environment; never interpolated into the script body):
 #   BASE_ENV_NAME   dispatch env (inputs.env_name with its default applied)
 #   CHANNEL         inputs.channel (nightly|stable)
 #   FORK_URL        inputs.fork_url ('' for upstream)
 #   FORK_BRANCH     inputs.fork_branch
-#   NIGHTLY_DATE_IN optional externally-resolved date (sif takes the
-#                   date from needs.runtime.outputs.date so every job in
-#                   a run stamps the same day; default: today UTC)
+#   NIGHTLY_DATE_IN optional externally-resolved date (default: today UTC)
 #
 # Emits to GITHUB_ENV:
-#   ENV_NAME SPACK_VER NIGHTLY_DATE OWNER INPUTS_REPO OCI_MIRROR
+#   ENV_NAME SPACK_VER NIGHTLY_DATE OWNER OCI_MIRROR
 #   IMAGE_NAME ENV_SUFFIX IMG_REPO TAG_PREFIX
 # Emits to GITHUB_OUTPUT:
 #   date
@@ -31,18 +25,16 @@ df -h / || true
 FORK_URL="${FORK_URL:-}"
 FORK_BRANCH="${FORK_BRANCH:-}"
 
-# ── apt: point the mirror-builder at deb.debian.org ────────────────────────
+# ── pkg mirror: point Fedora mirror-builder at official metalink on US CI ───
 # The USTC mirror is tuned for local builds; from GitHub's US runners it is
-# a cross-pacific flake source (two nightly deaths). Patch the env-agnostic
-# mirror-builder image and the env's runtime re-sed back to the official
-# sources. Local builds are unaffected (ephemeral checkout only).
-sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' containers/Dockerfile.mirror-builder
+# a cross-pacific flake source. Switch ARG PKG_MIRROR=official and clear the
+# env-level pkg_mirror_setup. Local builds stay untouched (ephemeral checkout).
+sed -i 's/mirrors.ustc.edu.cn/official/g' containers/Dockerfile.mirror-builder
 sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
   "spack-envs/${BASE_ENV_NAME}/spack-env-file/env.yaml"
-# Explicit exit: set -e ignores a negated `! grep`, so that form only ever
-# worked as the last line of the old inline step.
+# Explicit exit: set -e ignores a negated `! grep`.
 if grep -q "ustc" containers/Dockerfile.mirror-builder; then
-    echo "::error::containers/Dockerfile.mirror-builder still references ustc after the apt rewrite" >&2
+    echo "::error::containers/Dockerfile.mirror-builder still references ustc after the mirror rewrite" >&2
     exit 1
 fi
 
@@ -93,7 +85,6 @@ NIGHTLY_DATE="${NIGHTLY_DATE_IN:-$(date -u +%Y%m%d)}"
     echo "SPACK_VER=${SPACK_VER}"
     echo "NIGHTLY_DATE=${NIGHTLY_DATE}"
     echo "OWNER=${OWNER}"
-    echo "INPUTS_REPO=ghcr.io/${OWNER}/hpc-cf-inputs"
     echo "OCI_MIRROR=oci://ghcr.io/${OWNER}/hpc-cf-buildcache"
     echo "IMAGE_NAME=${ENV_NAME%%-*}"
     echo "ENV_SUFFIX=${ENV_NAME#*-}"
