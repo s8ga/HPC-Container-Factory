@@ -85,7 +85,7 @@ hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共�
 
 | `--app-version` | Spack | 自动镜像名 |
 |------|------|-----------|
-| `cp2k_opensource-master-force-avx512` | 1.2.0 | `cp2k_opensource:master-force-avx512` |
+| `cp2k_opensource-master-force-avx512` | 1.2.2 | `cp2k_opensource:master-force-avx512` |
 
 运行 `python -m hpc_cf dockerfile --app-version` 可获取实时发现结果。
 

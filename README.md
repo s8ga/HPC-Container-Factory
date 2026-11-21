@@ -18,7 +18,7 @@
 
 | 环境 | 说明 | Spack | 自动镜像名 |
 |------|------|-------|------------|
-| `cp2k_opensource-master-force-avx512` | CP2K master 浮动轨道 + 强制 AVX512 kernel | 1.2.0 | `cp2k_opensource:master-force-avx512` |
+| `cp2k_opensource-master-force-avx512` | CP2K master 浮动轨道 + 强制 AVX512 kernel | 1.2.2 | `cp2k_opensource:master-force-avx512` |
 
 ```bash
 python -m hpc_cf dockerfile --app-version
