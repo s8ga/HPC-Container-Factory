@@ -147,7 +147,10 @@ def require_verified_source_mirror(
             payload.get("status") == "success"
             and isinstance(stats, dict)
             and stats.get("failed") == 0
-            and (manifest.parent / "mirror-verify.log").is_file()
+            and (
+                (manifest.parent / "mirror-verify.log").is_file()
+                or (manifest.parent / "mirror-create.log").is_file()
+            )
         ):
             return manifest
         raise RuntimeError(

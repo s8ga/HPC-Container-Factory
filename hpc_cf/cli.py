@@ -210,6 +210,11 @@ def add_assets_options(parser: argparse.ArgumentParser) -> None:
         help="Verify source mirror for --env",
     )
     parser.add_argument(
+        "--lock-only",
+        action="store_true",
+        help="Prepare bootstrap and concretize spack.lock without downloading/verifying source mirror",
+    )
+    parser.add_argument(
         "--status",
         action="store_true",
         help="Show mirror/bootstrap status for --env",
@@ -402,6 +407,13 @@ def build_parser() -> argparse.ArgumentParser:
             "--secret id=ID,env=ENVVAR (repeatable)"
         ),
     )
+    build_action_parser.add_argument(
+        "--no-mirror",
+        dest="use_mirror",
+        action="store_false",
+        default=True,
+        help="Skip verified local source-mirror gate and bind mount (OCI direct fetch mode)",
+    )
     resume_parser = buildcache_actions.add_parser(
         "resume",
         help="Resume the latest validated unhealthy producer publication",
@@ -420,6 +432,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser = buildcache_actions.add_parser("status")
     status_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+    )
+    check_oci_parser = buildcache_actions.add_parser(
+        "check-oci",
+        help="Fast host-side OCI Distribution v2 HEAD check for every spack.lock tag",
+    )
+    check_oci_parser.add_argument("--env", required=True)
+    check_oci_parser.add_argument(
+        "--buildcache-mode",
+        type=BuildcacheMode.parse,
+        choices=list(BuildcacheMode),
+        default=None,
+    )
+    check_oci_parser.add_argument("--buildcache-url", default=None)
+    check_oci_parser.add_argument("--buildcache-username-var", default=None)
+    check_oci_parser.add_argument("--buildcache-password-var", default=None)
+    check_oci_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=16,
+        help="Concurrent HEAD requests against the OCI registry (default: 16)",
+    )
+    check_oci_parser.add_argument(
         "--format",
         choices=["text", "json"],
         default="text",

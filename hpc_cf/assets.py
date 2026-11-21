@@ -229,6 +229,14 @@ def run_mirror(
                 # pre-existing lock with the current files would mask drift.
                 write_lock_manifest(load_resolved_environment_spec(host_dir), host_dir)
 
+            # Single-pass verify: ops.run_*_pipeline already asserted failed == 0
+            # from mirror-create.log; check host-side symlinks before marking success.
+            _verify_host_side(
+                mirror_dir_host=layout.spack_mirror_dir,
+                spack_version=env_config.spack.version,
+                layout=layout,
+            )
+
             store.write_manifest(
                 run,
                 env_name=env_name,
@@ -256,6 +264,39 @@ def run_mirror(
 
     logger.info("Source mirror generated (run %s)", run.run_id)
     return stats
+
+
+def run_lock(
+    ctr: Container,
+    env_name: str,
+    *,
+    layout: ProjectLayout | None = None,
+    allow_concretize: bool = False,
+) -> Path:
+    """Concretize ``spack.lock`` and record sidecar manifests without mirroring."""
+    layout = layout or ProjectLayout.default()
+    host_dir, container_dir = resolve_env_paths(env_name, layout=layout)
+
+    if not (host_dir / "spack.yaml").exists():
+        raise FileNotFoundError(f"spack.yaml not found: {host_dir}/spack.yaml")
+
+    lock_path = host_dir / "spack.lock"
+    has_lock = is_nonempty_spack_lock(lock_path)
+    if not allow_concretize:
+        if has_lock:
+            logger.info("Existing non-empty spack.lock kept: %s", lock_path)
+            return lock_path
+        raise FileNotFoundError(
+            f"spack.lock not found or empty under {host_dir}; "
+            "run with --lock-only --allow-concretize to produce a lock"
+        )
+
+    _, ops = _make_spack_ops(env_name, ctr, layout=layout)
+    ops.run_concretize_pipeline(host_dir, str(container_dir))
+    _write_resolved_repo_sidecar(ops, host_dir)
+    write_lock_manifest(load_resolved_environment_spec(host_dir), host_dir)
+    logger.info("Lock generated (no mirror download): %s", lock_path)
+    return lock_path
 
 
 def run_verify(
@@ -564,6 +605,7 @@ def run_assets(
                 request.prepare_bootstrap,
                 request.download_mirror,
                 request.verify_mirror,
+                request.lock_only,
                 request.create_container,
                 request.status,
                 request.allow_concretize,
@@ -605,6 +647,7 @@ def run_assets(
             request.prepare_bootstrap,
             request.download_mirror,
             request.verify_mirror,
+            request.lock_only,
             request.create_container,
             request.status,
         ]
@@ -637,6 +680,7 @@ def run_assets(
 
         # fresh_after anchors the branch-floating prune class to blobs
         # fetched by THIS run (restored seed content carries epoch-0 mtimes).
+        # run_mirror enforces failed == 0 + host broken-symlink checks in one pass.
         mirror_started = time.time()
         run_mirror(
             ctr,
@@ -644,9 +688,6 @@ def run_assets(
             layout=layout,
             allow_concretize=request.allow_concretize,
         )
-
-        if not request.skip_verify:
-            run_verify(ctr, request.env, layout=layout)
 
         if request.prune_mirror:
             run_mirror_prune(
@@ -698,3 +739,23 @@ def run_assets(
             raise ValueError("--env is required with --verify-mirror")
         ensure_image_once()
         run_verify(ctr, request.env, layout=layout)
+
+    if request.lock_only:
+        if not request.env:
+            raise ValueError("--env is required with --lock-only")
+        ensure_image_once()
+        if not request.skip_create_container:
+            ctr.create()
+        spack_ver = spack_version_for_env(request.env, layout=layout)
+        run_bootstrap(
+            ctr,
+            spack_version=spack_ver,
+            force=request.force_bootstrap,
+            layout=layout,
+        )
+        run_lock(
+            ctr,
+            request.env,
+            layout=layout,
+            allow_concretize=request.allow_concretize,
+        )

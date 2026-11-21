@@ -246,6 +246,67 @@ class BuildcacheService:
             )
             raise
 
+    def _check_oci(self, request: BuildcacheRequest) -> int:
+        """Fast host-side OCI Distribution v2 probe for all spack.lock tags."""
+        import json
+
+        from hpc_cf.buildcache import manual_package_exclude_specs
+        from hpc_cf.oci_probe import probe_oci_lock
+        from hpc_cf.template import resolve_build_input
+        from hpc_cf.workflows import resolve_buildcache_backend
+
+        if not request.env:
+            raise ValueError("buildcache check-oci requires --env")
+        resolved = resolve_build_input(request.env, None, layout=self.layout)
+        spec = resolved.environment_spec
+        if spec is None:
+            raise RuntimeError(f"Env {request.env!r} has no env.yaml")
+        env_dir = resolved.environment_dir
+        lock_path = env_dir / "spack.lock"
+        if not lock_path.is_file():
+            lock_path = env_dir / "spack-env-file" / "spack.lock"
+        if not lock_path.is_file() or lock_path.stat().st_size == 0:
+            raise RuntimeError(f"spack.lock missing or empty under {env_dir}")
+
+        mode_override = request.buildcache_mode
+        if mode_override is None and request.buildcache_url:
+            mode_override = BuildcacheMode.OCI
+        backend = resolve_buildcache_backend(
+            spec,
+            mode_override=mode_override,
+            url_override=request.buildcache_url,
+            username_var_override=request.buildcache_username_var,
+            password_var_override=request.buildcache_password_var,
+        )
+        if backend.mode is not BuildcacheMode.OCI or not backend.url:
+            raise RuntimeError(
+                "buildcache check-oci requires mode 'oci' and an oci:// or "
+                "oci+http:// buildcache URL"
+            )
+        username = (
+            os.environ.get(backend.username_var) if backend.username_var else None
+        )
+        password = (
+            os.environ.get(backend.password_var) if backend.password_var else None
+        )
+        report = probe_oci_lock(
+            lock_path=lock_path,
+            mirror_url=backend.url,
+            exclude_specs=manual_package_exclude_specs(spec),
+            username=username,
+            password=password,
+            concurrency=request.concurrency,
+        )
+        if request.output_format == "json":
+            print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"OCI buildcache probe ({report.mirror_url}): "
+                f"{report.present}/{report.total} present, "
+                f"{report.missing} missing"
+            )
+        return 0 if report.missing == 0 else 2
+
     def run(self, request: BuildcacheRequest) -> int:
         import hashlib
         import json
@@ -271,16 +332,18 @@ class BuildcacheService:
         )
 
         store = SharedBuildcacheStore(self.layout)
-        if request.action not in {"build", "verify", "resume", "status"}:
+        if request.action not in {"build", "verify", "resume", "status", "check-oci"}:
             raise ValueError(
                 f"Unsupported buildcache action {request.action!r}; "
-                "use build, verify, resume, or status"
+                "use build, verify, resume, status, or check-oci"
             )
         if request.output_format not in {"text", "json"}:
             raise ValueError(
                 f"Unsupported buildcache output format {request.output_format!r}; "
                 "use text or json"
             )
+        if request.action == "check-oci":
+            return self._check_oci(request)
         if request.action == "status":
             try:
                 health = store.read_health()
@@ -521,22 +584,26 @@ class BuildcacheService:
             )
             return 0
 
+        from contextlib import nullcontext
+
         run = store.begin_run(request.env)
-        require_verified_source_mirror(
-            self.layout,
-            env_name=request.env,
-            lock_path=lock_path,
-            spack_version=spec.spack.version,
-        )
+        if request.use_mirror:
+            require_verified_source_mirror(
+                self.layout,
+                env_name=request.env,
+                lock_path=lock_path,
+                spack_version=spec.spack.version,
+            )
         # Producer install uses auto so already-published hashes can be
-        # extracted; miss falls back to the verified source mirror. Keep
-        # buildcache_producer so padded_length is still applied for push.
+        # extracted; miss falls back to the verified source mirror (or upstream
+        # when --no-mirror is passed). Keep buildcache_producer so padded_length
+        # is still applied for push.
         store.ensure_store_root()
         dockerfile = generate_dockerfile(
             template=None,
             app_version=request.env,
             output=self.layout.project_root / "Dockerfile",
-            use_mirror=True,
+            use_mirror=request.use_mirror,
             build_only=True,
             layout=self.layout,
             allow_reconcretize=False,
@@ -555,16 +622,16 @@ class BuildcacheService:
         # Producer builds always disable layer cache so soft-fail installs
         # cannot reuse a stale builder stage. CLI --build-opt appends.
         producer_build_opts = ["--no-cache", *list(request.build_opts)]
+        mirror_lock = (
+            SharedMirrorStore(self.layout).shared_read()
+            if request.use_mirror
+            else nullcontext()
+        )
         try:
-            # The producer Dockerfile bind-mounts the verified source
-            # mirror read-only; hold the mirror LOCK_SH for the whole
-            # build (same doctrine as the normal build path) so a
-            # concurrent assets --prune-mirror-apply cannot delete
-            # archives mid-install while this run only holds
-            # buildcache.lock.
-            with store.consumer_lock(), SharedMirrorStore(
-                self.layout
-            ).shared_read():
+            # When using the verified local source mirror, hold mirror LOCK_SH
+            # for the whole build so a concurrent assets --prune-mirror-apply
+            # cannot delete archives mid-install.
+            with store.consumer_lock(), mirror_lock:
                 build_docker_stage(
                     dockerfile=dockerfile,
                     image_ref=temporary_image_ref,
