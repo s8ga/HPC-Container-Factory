@@ -71,7 +71,7 @@ def test_build_sif_reuses_tar_when_image_id_matches(tmp_path: Path) -> None:
             return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="demo",
@@ -114,7 +114,7 @@ def test_build_sif_reexports_when_image_id_mismatches(tmp_path: Path) -> None:
             return_value=("podman", current_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="demo",
@@ -156,7 +156,7 @@ def test_build_sif_reexports_when_sidecar_missing(tmp_path: Path) -> None:
             return_value=("podman", current_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="demo",

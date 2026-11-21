@@ -916,29 +916,6 @@ def collect_render_sanity(
                     rendered, layout.project_root, path=str(tpl)
                 )
             )
-
-    # SIF definitions render with the same context plus the exported tar
-    # name (sif.py contract); docker_tar_filename is a per-run value, so a
-    # stable stub exercises everything the template can check.
-    def_context = dict(context)
-    def_context["docker_tar_filename"] = "image.tar"
-    for def_tpl in sorted(env_dir.glob("*.def.j2")):
-        try:
-            render(def_tpl, def_context)
-        except (TemplateError, RuntimeError) as exc:
-            findings.append(
-                ValidationFinding(
-                    code="template.render",
-                    severity=ValidationSeverity.ERROR,
-                    message=f"definition template render failed: {exc}",
-                    path=str(def_tpl),
-                    fix_hint=(
-                        "Fix undefined Jinja variables or syntax in the "
-                        "*.def.j2 (context: default_image_tag, "
-                        "docker_tar_filename, ...)."
-                    ),
-                )
-            )
     return findings
 
 

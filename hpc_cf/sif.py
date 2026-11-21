@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime
+import tempfile
 from pathlib import Path
 
 from hpc_cf.atomic_io import atomic_write_text
@@ -24,11 +24,6 @@ from hpc_cf.config import (
     PROJECT_ROOT as _CONFIG_PROJECT_ROOT,
 )
 from hpc_cf.execution import ProjectLayout
-from hpc_cf.template import (
-    render_template,
-    resolve_output_image_tag,
-    select_template,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -236,15 +231,28 @@ def _human_size(n_bytes: int) -> str:
     return f"{n_bytes:.0f} TB"
 
 
-def _find_def_template(
-    app_version: str,
+SHM_MIN_BYTES = 4 * 1024**3
+
+
+def _select_sif_staging_dir(
+    image_size_bytes: int,
     *,
-    layout: ProjectLayout | None = None,
+    shm_root: Path = Path("/dev/shm"),
 ) -> Path | None:
-    """Look for a *.def.j2 in the spack-envs/<app_version>/ directory."""
-    env_dir = (layout or _layout()).spack_envs_dir / app_version
-    candidates = sorted(env_dir.glob("*.def.j2"))
-    return candidates[0] if candidates else None
+    """Return a writable ``/dev/shm`` temp dir when RAM free space suffices."""
+    if not shm_root.is_dir() or not os.access(shm_root, os.W_OK):
+        return None
+    required = max(
+        int(2.5 * max(image_size_bytes, 0)) + 2 * 1024**3,
+        SHM_MIN_BYTES,
+    )
+    try:
+        free = shutil.disk_usage(shm_root).free
+    except OSError:
+        return None
+    if free < required:
+        return None
+    return Path(tempfile.mkdtemp(prefix="hpc-cf-sif-", dir=str(shm_root)))
 
 
 # ── Build helpers ────────────────────────────────────────────────────────
@@ -287,6 +295,26 @@ def inspect_local_image_id(
         return None
     image_id = result.stdout.strip()
     return image_id or None
+
+
+def inspect_local_image_size(
+    engine: str,
+    image_ref: str,
+    *,
+    cwd: Path | None = None,
+) -> int:
+    """Return local OCI image size in bytes, or 0 if unavailable."""
+    try:
+        result = subprocess.run(
+            [engine, "image", "inspect", "--format", "{{.Size}}", image_ref],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return max(0, int(result.stdout.strip()))
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return 0
 
 
 def select_engine_with_image(
@@ -457,76 +485,24 @@ def build_sif(
     output: Path | None = None,
     app_version: str | None = None,
     mksquashfs_args: str = "-comp zstd -Xcompression-level 22 -b 1M",
+    smoke_cmd: str | None = None,
     yes: bool = False,
     layout: ProjectLayout | None = None,
 ) -> None:
-    """Build a SIF image from an existing Docker/Podman OCI image."""
+    """Build a SIF image directly from an OCI image via ``docker-archive://``."""
+    del app_version  # Accepted for CLI/API compat; runtime env bakes SINGULARITY_SHELL.
     apptainer = ensure_apptainer(auto_confirm=yes)
     root = layout or _layout()
     artifacts_dir = root.artifacts_dir
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     project_root = root.project_root
 
-    # Step 1: Export OCI image to tar
     oci_ref = f"{docker_image}:{docker_tag}"
-    # Use only the last segment of the image name for filenames
-    # e.g. "localhost/cp2k-opensource" → "cp2k-opensource"
     flat_image = _safe_filename_component(docker_image.rsplit("/", 1)[-1])
     safe_tag = _safe_filename_component(docker_tag)
     tar_name = f"{flat_image}_{safe_tag}.tar"
-    tar_path = _require_under(
-        artifacts_dir / tar_name, artifacts_dir, what="OCI tar"
-    )
 
-    engine, image_id = select_engine_with_image(oci_ref, cwd=project_root)
-    logger.info("Using %s image Id %s for %s", engine, image_id, oci_ref)
-
-    recorded_id = _read_oci_tar_image_id(tar_path) if tar_path.exists() else None
-    if tar_path.exists() and recorded_id == image_id:
-        logger.info(
-            "Reusing existing OCI tar (image Id match): %s", tar_path
-        )
-    else:
-        if tar_path.exists():
-            logger.info(
-                "OCI tar stale or missing Id sidecar "
-                "(recorded=%s, current=%s); re-exporting",
-                recorded_id,
-                image_id,
-            )
-            tar_path.unlink(missing_ok=True)
-            _oci_tar_id_sidecar(tar_path).unlink(missing_ok=True)
-        logger.info("Exporting %s via %s ...", oci_ref, engine)
-        run_cmd([engine, "save", "-o", str(tar_path), oci_ref], layout=root)
-        _write_oci_tar_image_id(tar_path, image_id)
-
-    tar_size = _human_size(tar_path.stat().st_size)
-    logger.info("OCI tar: %s (%s)", tar_path, tar_size)
-
-    # Step 2: Render definition file
-    def_template = (
-        _find_def_template(app_version, layout=root) if app_version else None
-    )
-
-    timestamp = datetime.now().isoformat()
-    resolved_template = None
-    if app_version:
-        try:
-            resolved_template = select_template(app_version, None, layout=root)
-        except FileNotFoundError:
-            pass
-    default_image_name, default_image_tag = resolve_output_image_tag(resolved_template)
-
-    def_context = {
-        "docker_tar_filename": tar_name,
-        "default_image_name": default_image_name,
-        "default_image_tag": default_image_tag,
-        "timestamp": timestamp,
-    }
-
-    # Resolve relative --output against process cwd *before* apptainer runs
-    # with cwd=artifacts/ (otherwise post-build Path.stat looks in the wrong place).
-    # Explicit outputs must stay under the project root; default SIF under artifacts/.
+    # Resolve SIF output under project_root BEFORE exporting or creating temp dirs.
     if output is not None:
         sif_name = _require_under(
             _resolve_output_path(output), project_root, what="SIF output"
@@ -539,31 +515,75 @@ def build_sif(
             what="SIF output",
         )
 
-    if def_template:
-        logger.info("Rendering def template: %s", def_template)
-        def_content = render_template(def_template, def_context, layout=root)
+    engine, image_id = select_engine_with_image(oci_ref, cwd=project_root)
+    logger.info("Using %s image Id %s for %s", engine, image_id, oci_ref)
+    image_size = inspect_local_image_size(engine, oci_ref, cwd=project_root)
+    shm_staging = _select_sif_staging_dir(image_size)
 
-        def_file = _require_under(
-            artifacts_dir / f"{flat_image}_{safe_tag}.def",
-            artifacts_dir,
-            what="definition file",
-        )
-        atomic_write_text(def_file, def_content)
-        logger.info("Definition file written: %s", def_file)
+    try:
+        if shm_staging is not None:
+            shm_tmpdir = shm_staging / "tmp"
+            shm_tmpdir.mkdir(parents=True, exist_ok=True)
+            tar_path = shm_staging / tar_name
+            logger.info("Staging OCI tar and APPTAINER_TMPDIR in /dev/shm: %s", shm_staging)
+            run_cmd([engine, "save", "-o", str(tar_path), oci_ref], layout=root)
+            tar_size = _human_size(tar_path.stat().st_size)
+            logger.info("OCI tar (/dev/shm): %s (%s)", tar_path, tar_size)
+            cmd = [
+                apptainer, "build", "--force", "--disable-cache",
+                "--mksquashfs-args", mksquashfs_args,
+                str(sif_name), f"docker-archive://{tar_path}",
+            ]
+            run_env = {
+                **os.environ,
+                "APPTAINER_TMPDIR": str(shm_tmpdir),
+                "SINGULARITY_TMPDIR": str(shm_tmpdir),
+            }
+            run_cmd(cmd, cwd=shm_staging, env=run_env, layout=root)
+        else:
+            tar_path = _require_under(
+                artifacts_dir / tar_name, artifacts_dir, what="OCI tar"
+            )
+            recorded_id = _read_oci_tar_image_id(tar_path) if tar_path.exists() else None
+            if tar_path.exists() and recorded_id == image_id:
+                logger.info(
+                    "Reusing existing OCI tar (image Id match): %s", tar_path
+                )
+            else:
+                if tar_path.exists():
+                    logger.info(
+                        "OCI tar stale or missing Id sidecar "
+                        "(recorded=%s, current=%s); re-exporting",
+                        recorded_id,
+                        image_id,
+                    )
+                    tar_path.unlink(missing_ok=True)
+                    _oci_tar_id_sidecar(tar_path).unlink(missing_ok=True)
+                logger.info("Exporting %s via %s ...", oci_ref, engine)
+                run_cmd([engine, "save", "-o", str(tar_path), oci_ref], layout=root)
+                _write_oci_tar_image_id(tar_path, image_id)
 
-        cmd = [apptainer, "build", "--force",
-               "--mksquashfs-args", mksquashfs_args,
-               str(sif_name), str(def_file)]
-        run_cmd(cmd, cwd=artifacts_dir, layout=root)
-    else:
-        logger.info("No def template found; building SIF directly from docker-archive")
-        cmd = [apptainer, "build", "--force",
-               "--mksquashfs-args", mksquashfs_args,
-               str(sif_name), f"docker-archive://{tar_name}"]
-        run_cmd(cmd, cwd=artifacts_dir, layout=root)
+            tar_size = _human_size(tar_path.stat().st_size)
+            logger.info("OCI tar: %s (%s)", tar_path, tar_size)
+            cmd = [
+                apptainer, "build", "--force", "--disable-cache",
+                "--mksquashfs-args", mksquashfs_args,
+                str(sif_name), f"docker-archive://{tar_name}",
+            ]
+            run_cmd(cmd, cwd=artifacts_dir, layout=root)
+    finally:
+        if shm_staging is not None and shm_staging.exists():
+            shutil.rmtree(shm_staging, ignore_errors=True)
 
     sif_size = _human_size(sif_name.stat().st_size)
     logger.info("✅ SIF built: %s (%s)", sif_name, sif_size)
+
+    if smoke_cmd:
+        logger.info("Running SIF smoke check: %s", smoke_cmd)
+        run_cmd(
+            [apptainer, "exec", str(sif_name), "bash", "-lc", smoke_cmd],
+            layout=root,
+        )
 
 
 def pack_apptainer(

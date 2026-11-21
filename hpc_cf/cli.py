@@ -591,6 +591,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="mksquashfs compression arguments (default: '-comp zstd -Xcompression-level 22 -b 1M')",
     )
     build_sif_parser.add_argument(
+        "--smoke-cmd",
+        default=None,
+        help="Optional bash command executed via `apptainer exec <sif>` after building",
+    )
+    build_sif_parser.add_argument(
         "--install-apptainer-only",
         action="store_true",
         help="Only install apptainer, do not build SIF",
@@ -762,6 +767,7 @@ def run_new_cli(argv: list[str]) -> int:
             output=args.output,
             app_version=getattr(args, "app_version", None),
             mksquashfs_args=args.mksquashfs_args,
+            smoke_cmd=getattr(args, "smoke_cmd", None),
             yes=getattr(args, "yes", False),
         )
         logger.info("Done")

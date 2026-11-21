@@ -159,7 +159,7 @@ def test_build_sif_sanitizes_docker_tag_under_artifacts(
             return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="demo",
@@ -202,7 +202,7 @@ def test_build_sif_rejects_output_outside_project_root(
             return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd"),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
         pytest.raises(ValueError, match="escapes allowed root"),
     ):
         sif_mod.build_sif(

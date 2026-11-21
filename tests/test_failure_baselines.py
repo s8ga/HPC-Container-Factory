@@ -473,7 +473,7 @@ def test_build_sif_resolves_relative_output_before_stat(
             return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="demo",
@@ -523,7 +523,7 @@ def test_build_sif_mock_contract_uses_archive_and_requested_options(
             return_value=("podman", image_id),
         ),
         patch.object(sif_mod, "run_cmd", side_effect=fake_run),
-        patch.object(sif_mod, "_find_def_template", return_value=None),
+        patch.object(sif_mod, "_select_sif_staging_dir", return_value=None),
     ):
         sif_mod.build_sif(
             docker_image="registry.example/demo",
@@ -540,6 +540,7 @@ def test_build_sif_mock_contract_uses_archive_and_requested_options(
                 "/usr/bin/apptainer",
                 "build",
                 "--force",
+                "--disable-cache",
                 "--mksquashfs-args",
                 "-comp gzip",
                 str(output),
