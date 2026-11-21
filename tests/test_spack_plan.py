@@ -353,8 +353,8 @@ def test_all_spack_envs_assets_plan_uses_declared_repos(env_dir: Path) -> None:
     assert plan.assets.update_builtin is spec.spack.assets.update_builtin
 
 
-def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
-    env_dir = SPACK_ENVS_DIR / "cp2k_opensource-2026.2-force-avx512"
+def test_cp2k_master_registers_avx512_repo_for_assets_and_image() -> None:
+    env_dir = SPACK_ENVS_DIR / "cp2k_opensource-master-force-avx512"
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
     assets_ns = [r.namespace for r in plan.assets.repos]
@@ -369,193 +369,59 @@ def test_cp2k_2026_2_registers_avx512_repo_for_assets_and_image() -> None:
     assert plan.image.scope_flag() == "env:cp2k-env"
 
 
-@pytest.mark.parametrize(
-    "env_name",
-    [
-        "cp2k_opensource-2025.2",
-        "cp2k_opensource-2025.2-force-avx512",
-        "cp2k_opensource-2026.1-force-avx512",
-        "cp2k_opensource-2026.2-force-avx512",
-    ],
-)
-def test_opensource_cp2k_pins_repo_commits(env_name: str) -> None:
-    """Repo pins stay consistent across custom_repos/plan/template_vars/Dockerfile.
-
-    Pins are deliberately NOT hardcoded here: bumping a pin in env.yaml
-    must not require editing the test. The upstream cp2k pin keeps its
-    dual-write template var (still var-driven staging); the s8ga pin is
-    plan-driven (spack_staging_clones) and must appear in the render with
-    NO template_vars mirror left behind.
-    """
-    env_dir = SPACK_ENVS_DIR / env_name
+def test_cp2k_master_staging_pins_render() -> None:
+    """Floating cp2k_dev uses fallback anchor; pinned s8ga uses plan-driven clone."""
+    env_dir = SPACK_ENVS_DIR / "cp2k_opensource-master-force-avx512"
     spec = load_environment_spec(env_dir)
     rendered = _render_env_dockerfile(env_dir)
-    cp2k_repo = _cp2k_git_repo(spec)
-    assert cp2k_repo is not None
-    cp2k_sha = cp2k_repo.commit
-    assert re.fullmatch(r"[0-9a-f]{40}", cp2k_sha)
-    assert spec.template_vars["cp2k_dev_repo_commit"] == cp2k_sha
-    assert f'git checkout "{cp2k_sha}"' in rendered
-    # Commit pin must still exercise {{ cp2k_branch }} (not comment-only).
-    branch = spec.template_vars["cp2k_branch"]
-    assert "git merge-base --is-ancestor HEAD" in rendered
-    assert f"origin/{branch}" in rendered
-
     s8ga_repos = [
         repo
         for repo in spec.spack.custom_repos
         if repo.type == "git" and "s8ga" in (repo.url or "").lower()
     ]
-    if not s8ga_repos:
-        return
+    assert s8ga_repos
     pins = {repo.commit for repo in s8ga_repos if repo.commit}
     assert len(pins) == 1, "monorepo entries must share one pin"
     s8ga_pin = next(iter(pins))
     assert re.fullmatch(r"[0-9a-f]{40}", s8ga_pin)
-    assert all(repo.commit == s8ga_pin for repo in s8ga_repos)
-    # Plan-driven staging: the pin renders from plan data, unquoted via
-    # shell_quote, and no template_vars mirror may remain.
     assert f"git checkout {s8ga_pin}" in rendered
     assert "s8ga_repo_commit" not in spec.template_vars
 
 
-def test_vasp_image_skips_builtin_update() -> None:
-    for name in ("vasp_mkl-6.6.0-avx2", "vasp_mkl-6.6.0-avx512"):
-        spec = load_environment_spec(SPACK_ENVS_DIR / name)
-        plan = build_spack_environment_plan(spec)
-        assert plan.image.update_builtin is False
-        assert plan.assets.update_builtin is True
-        assert plan.image.repo_scope is RepoScope.SITE
-
-
-def test_rocm_render_and_plan_keep_gpu_contract() -> None:
-    env_dir = SPACK_ENVS_DIR / "cp2k_rocm-2026.1-gfx942"
-    spec = load_environment_spec(env_dir)
-    plan = build_spack_environment_plan(spec)
-    rendered = _render_env_dockerfile(env_dir)
-
-    assert spec.spack.version == "1.1.0"
-    assert plan.env_name == "cp2k-env"
-    assert [repo.namespace for repo in plan.image.repos] == [
-        "cp2k_dev_repo",
-        "cp2k-env",
-    ]
-    assert 'ARG AMDGPU_TARGETS="gfx942"' in rendered
-    assert "ROCM_PATH=" in rendered
-    assert "spack -e cp2k-env install" in rendered
-    assert "/opt/rocm-export/lib" in rendered
-
-
-def test_abacus_render_and_plan_keep_s8ga_repo_contract() -> None:
-    env_dir = SPACK_ENVS_DIR / "abacus_opensource-3.9.0.27-force-avx512"
-    spec = load_environment_spec(env_dir)
-    plan = build_spack_environment_plan(spec)
-    rendered = _render_env_dockerfile(env_dir)
-    # Pin is read from the spec, not hardcoded: the monorepo commit is
-    # shared by both custom_repos entries and renders via the plan-driven
-    # staging partial — no template_vars mirror remains.
-    pins = {repo.commit for repo in spec.spack.custom_repos if repo.commit}
-    assert len(pins) == 1
-    pin = next(iter(pins))
-    assert re.fullmatch(r"[0-9a-f]{40}", pin)
-
-    assert spec.spack.version == "1.2.0"
-    assert plan.env_name == "abacus-env"
-    assert [repo.namespace for repo in plan.assets.repos] == ["abacus", "s8_overrides"]
-    assert [repo.namespace for repo in plan.image.repos] == ["abacus", "s8_overrides"]
-    assert all(repo.commit == pin for repo in spec.spack.custom_repos)
-    assert "s8ga_repo_commit" not in spec.template_vars
-    assert "spack env create abacus-env" in rendered
-    assert "AS builder-installed" in rendered
-    assert "FROM builder-installed AS builder" in rendered
-    assert f"git checkout {pin}" in rendered
-    assert "/opt/s8ga-spack-packages/spack_repo/abacus" in rendered
-    assert "/opt/s8ga-spack-packages/spack_repo/s8_overrides" in rendered
-    assert "/opt/spack-env-file/repos/" not in rendered
-    assert "abacus_run_integration_tests.sh" in rendered
-
-
-@pytest.mark.parametrize(
-    "env_name",
-    [
-        "abacus_opensource-3.9.0.27-force-avx512",
-        "abacus_opensource-3.10.1-force-avx512",
-    ],
-)
-def test_abacus_dockerfile_wires_spack_image_repos_partial(env_name: str) -> None:
-    """ABACUS pilot: image repos come from plan partial, not handwritten dual add."""
-    env_dir = SPACK_ENVS_DIR / env_name
-    src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
-    assert "{% include 'partials/spack_image_repos.j2' %}" in src
-    # Sparse clone may still use template_vars paths; repo add must not.
-    assert '/opt/s8ga-spack-packages/{{ s8ga_abacus_repo_path }}' not in src
-    assert '/opt/s8ga-spack-packages/{{ s8ga_overrides_repo_path }}' not in src
-
-    spec = load_environment_spec(env_dir)
-    plan = build_spack_environment_plan(spec)
-    rendered = _render_env_dockerfile(env_dir)
-
-    assert plan.env_name == "abacus-env"
-    assert plan.image.scope_flag() == "env:abacus-env"
-    assert [r.image_path for r in plan.image.repos] == [
-        "/opt/s8ga-spack-packages/spack_repo/abacus",
-        "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
-    ]
-
-    abacus_add = (
-        "spack -e abacus-env repo add --scope env:abacus-env "
-        "/opt/s8ga-spack-packages/spack_repo/abacus"
+def test_image_skips_builtin_update_when_configured() -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {
+                "version": "1.2.0",
+                "env_name": "vasp-env",
+                "assets": {"update_builtin": True, "repo_scope": "env"},
+                "image": {"update_builtin": False, "repo_scope": "site"},
+                "custom_repos": [{"path": "repos", "namespace": "vasp-env"}],
+            },
+        }
     )
-    overrides_add = (
-        "spack -e abacus-env repo add --scope env:abacus-env "
-        "/opt/s8ga-spack-packages/spack_repo/s8_overrides"
-    )
-    assert abacus_add in rendered
-    assert overrides_add in rendered
-    assert rendered.count(abacus_add) == 1
-    assert rendered.count(overrides_add) == 1
-    assert rendered.index(abacus_add) < rendered.index(overrides_add)
-    # Sparse clone staging remains in the per-env template.
-    assert "git sparse-checkout set" in rendered
-    assert "s8ga-spack-packages" in rendered
+    plan = build_spack_environment_plan(spec)
+    assert plan.image.update_builtin is False
+    assert plan.assets.update_builtin is True
+    assert plan.image.repo_scope is RepoScope.SITE
 
 
-@pytest.mark.parametrize(
-    ("env_name", "expected_image_paths"),
-    [
-        (
-            "cp2k_opensource-2026.1-force-avx512",
-            [
-                "/opt/spack-repo/spack_repo/cp2k_dev_repo",
-                "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
-                "/opt/spack-env-file/repos_cp2k_dev",
-                "/opt/spack-env-file/repos",
-            ],
-        ),
-        (
-            "cp2k_opensource-2026.2-force-avx512",
-            [
-                "/opt/spack-repo/spack_repo/cp2k_dev",
-                "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
-                "/opt/spack-env-file/repos",
-            ],
-        ),
-    ],
-)
-def test_cp2k_force_avx512_dockerfile_wires_spack_image_repos_partial(
-    env_name: str,
-    expected_image_paths: list[str],
-) -> None:
-    """CP2K force-avx512: image repos + staging clones from plan partials."""
-    env_dir = SPACK_ENVS_DIR / env_name
+def test_cp2k_master_dockerfile_wires_spack_image_repos_partial() -> None:
+    """CP2K master force-avx512: image repos + staging clones from plan partials."""
+    env_dir = SPACK_ENVS_DIR / "cp2k_opensource-master-force-avx512"
     src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
     assert "{% include 'partials/spack_image_repos.j2' %}" in src
     assert "{% include 'partials/spack_staging_clones.j2' %}" in src
-    # Plan-driven staging retired the template_vars mirrors entirely.
     assert "repo add --scope {{ spack_repo_scope }}" not in src
-    assert "{{ cp2k_dev_repo_path }}" in src  # staging cp remains
+    assert "{{ cp2k_dev_repo_path }}" in src
     assert "force_avx512_repo" not in src
 
+    expected_image_paths = [
+        "/opt/spack-repo/spack_repo/cp2k_dev",
+        "/opt/s8ga-spack-packages/spack_repo/s8_overrides",
+        "/opt/spack-env-file/repos",
+    ]
     spec = load_environment_spec(env_dir)
     plan = build_spack_environment_plan(spec)
     rendered = _render_env_dockerfile(env_dir)
@@ -583,13 +449,11 @@ def test_cp2k_force_avx512_dockerfile_wires_spack_image_repos_partial(
                 matches.append(cand)
             start = cand + 1
         assert len(matches) == 1, (
-            f"{env_name}: expected one bounded repo add for {path!r}, "
-            f"found {len(matches)}"
+            f"expected one bounded repo add for {path!r}, found {len(matches)}"
         )
         assert matches[0] > last
         last = matches[0]
 
-    # Sparse clone + cp2k_dev staging remain in the per-env template.
     assert "git sparse-checkout set" in rendered
     assert "s8ga-spack-packages" in rendered
     assert "cp -a /opt/cp2k/" in rendered

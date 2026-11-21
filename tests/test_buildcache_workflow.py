@@ -22,7 +22,7 @@ from hpc_cf.execution import (
 from hpc_cf.template import build_context, render_template
 
 ROOT = Path(__file__).resolve().parent.parent
-PILOT = "cp2k_opensource-2025.2"
+PILOT = "cp2k_opensource-master-force-avx512"
 PILOT_TEMPLATE = ROOT / "spack-envs" / PILOT / "Dockerfile.j2"
 
 

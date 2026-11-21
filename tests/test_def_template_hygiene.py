@@ -45,9 +45,6 @@ def test_def_titles_match_their_family() -> None:
     """Cheap cross-check: an ROCm env must not be titled "Opensource
     AVX-512", an MKL env must not be titled "Opensource"."""
     checks = {
-        "cp2k_rocm-2026.1-gfx942": ("ROCm", ("Opensource", "AVX-512")),
-        "cp2k_mkl-2025.2-experimental": ("MKL", ("Opensource",)),
-        "cp2k_opensource-2026.1-force-avx512": ("2026.1", ("2025.2", "2026.2")),
         "cp2k_opensource-master-force-avx512": ("master", ("2025.2", "2026.2")),
     }
     for env, (must, forbidden) in checks.items():

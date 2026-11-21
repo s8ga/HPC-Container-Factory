@@ -61,10 +61,16 @@ def test_opensource_rendered_install_bans_use_buildcache_never(
         )
 
 
-@pytest.mark.parametrize(
-    "env_name",
-    ["cp2k_mkl-2025.2-experimental", "cp2k_rocm-2026.1-gfx942"],
-)
+MKL_ROCM_ENVS = [
+    d.name
+    for d in sorted(SPACK_ENVS.iterdir())
+    if d.is_dir()
+    and (d.name.startswith("cp2k_mkl-") or d.name.startswith("cp2k_rocm-"))
+    and (d / "Dockerfile.j2").is_file()
+]
+
+
+@pytest.mark.parametrize("env_name", MKL_ROCM_ENVS)
 def test_mkl_rocm_libint_install_is_foreground_and_capped(env_name: str) -> None:
     """The background `libint &` + sleep trick raced two spack installs on
     one env lock (double -j $(nproc), background exit code lost, no wait).

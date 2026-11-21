@@ -85,19 +85,7 @@ hpc_cf/spack_ops.py                    Spack 操作函数库（所有环境共�
 
 | `--app-version` | Spack | 自动镜像名 |
 |------|------|-----------|
-| `abacus_opensource-3.9.0.27-force-avx512` | 1.2.0 | `abacus_opensource:3.9.0.27-force-avx512` |
-| `abacus_opensource-3.10.1-force-avx512` | 1.2.0 | `abacus_opensource:3.10.1-force-avx512` |
-| `cp2k_mkl-2025.2-experimental` | 1.1.0 | `cp2k_mkl:2025.2-experimental` |
-| `cp2k_opensource-2025.2` | 1.2.0 | `cp2k_opensource:2025.2` |
-| `cp2k_opensource-2025.2-force-avx512` | 1.2.0 | `cp2k_opensource:2025.2-force-avx512` |
-| `cp2k_opensource-2026.1-force-avx512` | 1.2.0 | `cp2k_opensource:2026.1-force-avx512` |
-| `cp2k_opensource-2026.2-force-avx512` | 1.2.0 | `cp2k_opensource:2026.2-force-avx512` |
 | `cp2k_opensource-master-force-avx512` | 1.2.0 | `cp2k_opensource:master-force-avx512` |
-| `cp2k_rocm-2026.1-gfx942` | 1.1.0 | `cp2k_rocm:2026.1-gfx942` |
-| `vasp_mkl-6.6.0-avx2` | 1.1.1 | `vasp_mkl:6.6.0-avx2` |
-| `vasp_mkl-6.6.0-avx512` | 1.1.1 | `vasp_mkl:6.6.0-avx512` |
-| `vasp_mkl-6.6.1-avx2` | 1.2.0 | `vasp_mkl:6.6.1-avx2` |
-| `vasp_mkl-6.6.1-avx512` | 1.2.0 | `vasp_mkl:6.6.1-avx512` |
 
 运行 `python -m hpc_cf dockerfile --app-version` 可获取实时发现结果。
 

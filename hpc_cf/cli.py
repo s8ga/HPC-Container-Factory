@@ -254,13 +254,13 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python -m hpc_cf validate --app-version cp2k_opensource-2026.1-force-avx512\n"
-            "  python -m hpc_cf dockerfile --app-version cp2k_rocm-2026.1-gfx942\n"
-            "  python -m hpc_cf build --app-version cp2k_rocm-2026.1-gfx942\n"
-            "  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942\n"
+            "  python -m hpc_cf validate --app-version cp2k_opensource-master-force-avx512\n"
+            "  python -m hpc_cf dockerfile --app-version cp2k_opensource-master-force-avx512\n"
+            "  python -m hpc_cf build --app-version cp2k_opensource-master-force-avx512\n"
+            "  python -m hpc_cf assets --env cp2k_opensource-master-force-avx512\n"
             "  python -m hpc_cf assets --create-container\n"
-            "  python -m hpc_cf assets --env cp2k_rocm-2026.1-gfx942 --download-mirror\n"
-            "  python -m hpc_cf build-sif --app-version cp2k_opensource-2026.1-force-avx512\n"
+            "  python -m hpc_cf assets --env cp2k_opensource-master-force-avx512 --download-mirror\n"
+            "  python -m hpc_cf build-sif --app-version cp2k_opensource-master-force-avx512\n"
             "  python -m hpc_cf build-sif --install-apptainer-only\n"
             "  python -m hpc_cf pack-apptainer\n"
         ),

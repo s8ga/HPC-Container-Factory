@@ -92,7 +92,7 @@ def test_build_context_emits_all_reserved_keys() -> None:
     A spack render covers every reserved key except the no_spack payload
     (script / runtime_*); those three are checked against a no_spack env.
     """
-    pilot = "cp2k_opensource-2026.2-force-avx512"
+    pilot = "cp2k_opensource-master-force-avx512"
     tpl = select_template(pilot)
     spack_ctx = build_context(
         use_mirror=True,
