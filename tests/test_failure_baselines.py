@@ -550,18 +550,15 @@ def test_build_sif_mock_contract_uses_archive_and_requested_options(
     ]
 
 
-def test_build_docker_like_builds_builder_before_final(
+def test_build_docker_like_builds_final_single_pass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Builder stage must be tagged before the final image build.
-
-    Runtime-stage failures should leave ``:tag-builder`` available for debug.
-    """
+    """2-stage build runs one single-pass build for final image:tag."""
     from hpc_cf import sif as sif_mod
 
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM debian:trixie AS builder\nFROM builder AS runtime\nFROM runtime AS final\n",
+        "FROM fedora:45 AS builder\nFROM builder AS runtime\n",
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -584,38 +581,30 @@ def test_build_docker_like_builds_builder_before_final(
             network_host=True,
         )
 
-    assert len(calls) == 2
-    builder_cmd, final_cmd = calls
-    assert builder_cmd[:2] == ["podman", "build"]
-    assert "--target" in builder_cmd
-    assert builder_cmd[builder_cmd.index("--target") + 1] == "builder"
-    assert "-t" in builder_cmd
-    assert builder_cmd[builder_cmd.index("-t") + 1] == "cp2k_opensource:2026.1-builder"
+    assert len(calls) == 1
+    final_cmd = calls[0]
+    assert final_cmd[:2] == ["podman", "build"]
     assert "--target" not in final_cmd
     assert final_cmd[final_cmd.index("-t") + 1] == "cp2k_opensource:2026.1"
 
 
-def test_build_docker_like_keeps_builder_tag_if_final_fails(
+def test_build_docker_like_propagates_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Final-stage failure must not prevent the builder target build from running."""
+    """Engine build failures must propagate directly from build_docker_like."""
     from hpc_cf import sif as sif_mod
 
     dockerfile = tmp_path / "Dockerfile"
-    dockerfile.write_text("FROM debian:trixie AS builder\n", encoding="utf-8")
+    dockerfile.write_text("FROM fedora:45 AS builder\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-
-    calls: list[list[str]] = []
-
-    def fake_run_cmd(cmd: list[str], **kwargs: object) -> MagicMock:
-        calls.append(list(cmd))
-        if "--target" not in cmd:
-            raise subprocess.CalledProcessError(1, cmd)
-        return MagicMock(returncode=0)
 
     with (
         patch.object(sif_mod, "check_command_exists", return_value=True),
-        patch.object(sif_mod, "run_cmd", side_effect=fake_run_cmd),
+        patch.object(
+            sif_mod,
+            "run_cmd",
+            side_effect=subprocess.CalledProcessError(1, ["podman", "build"]),
+        ),
         pytest.raises(subprocess.CalledProcessError),
     ):
         sif_mod.build_docker_like(
@@ -625,8 +614,3 @@ def test_build_docker_like_keeps_builder_tag_if_final_fails(
             engine="podman",
             network_host=False,
         )
-
-    assert len(calls) == 2
-    assert "--target" in calls[0]
-    assert calls[0][calls[0].index("-t") + 1] == "demo:t-builder"
-    assert "--target" not in calls[1]

@@ -47,10 +47,10 @@ def test_build_docker_like_defaults_force_rm_and_respects_override(tmp_path: Pat
             build_opts=["--force-rm=false"],
         )
 
-    for cmd in calls[:3]:
-        assert cmd[:3] == ["podman", "build", "--force-rm"]
-    assert calls[3].count("--force-rm") == 0
-    assert "--force-rm=false" in calls[3]
+    assert len(calls) == 2
+    assert calls[0][:3] == ["podman", "build", "--force-rm"]
+    assert calls[1].count("--force-rm") == 0
+    assert "--force-rm=false" in calls[1]
 
 
 def test_parse_buildah_containers_and_checkpoint_tags() -> None:

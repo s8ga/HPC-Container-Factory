@@ -1,3 +1,4 @@
-{# Discover compilers and external packages from the builder image. #}
-RUN spack compiler find && \
+{# Discover compilers (honoring spack.toolchain) and external packages. #}
+RUN export CC="{{ fedora_cc | default('gcc') }}" CXX="{{ fedora_cxx | default('g++') }}" FC="{{ fedora_fc | default('gfortran') }}" && \
+    spack compiler find && \
     spack external find

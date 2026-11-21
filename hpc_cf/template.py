@@ -420,6 +420,14 @@ def build_context(
     else:
         spec = load_environment_spec_from_template(template_path)
         env_dir = template_path.parent if template_path else Path(".")
+        if spec is None and app_version:
+            candidate_env = _layout(layout).spack_envs_dir / app_version
+            if candidate_env.is_dir():
+                try:
+                    spec = load_resolved_environment_spec(candidate_env)
+                    env_dir = candidate_env
+                except (FileNotFoundError, ValueError):
+                    pass
         render_path = template_path
         compatibility = spec is None and template_path is not None
         if compatibility:

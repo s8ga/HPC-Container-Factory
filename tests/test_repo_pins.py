@@ -313,8 +313,12 @@ def test_fork_source_url_override_shape_passes_guard() -> None:
         if repo.namespace == "cp2k_dev":
             repo.url = fork
     spec.template_vars["cp2k_source_repo_url"] = fork
+    from hpc_cf.repo_pins import resolve_dockerfile_template
+
+    tpl = resolve_dockerfile_template(env_dir, spec=spec, project_root=PROJECT_ROOT)
+    assert tpl is not None
     dockerfile = expand_partial_includes(
-        (env_dir / "Dockerfile.j2").read_text(encoding="utf-8"),
+        tpl.read_text(encoding="utf-8"),
         PROJECT_ROOT,
     )
     errors = check_env_repo_pins(

@@ -1,0 +1,50 @@
+{# Fedora 45 GA builder RPM repo freeze/mirror + Spack compile dependencies. #}
+{# Template vars: pkg_mirror (default mirrors.ustc.edu.cn; empty/official keeps upstream), #}
+{#                fedora_toolchain_pkgs (from spack.toolchain profile). #}
+RUN sed -i 's|^enabled=1|enabled=0|g' \
+        /usr/share/dnf5/repos.d/*updates*.repo /etc/yum.repos.d/*updates*.repo \
+        /usr/share/dnf5/repos.d/*openh264*.repo /etc/yum.repos.d/*openh264*.repo 2>/dev/null || true && \
+{% if pkg_mirror and pkg_mirror != 'official' %}
+    sed -i -e 's|^metalink=|#metalink=|g' \
+           -e 's|^#baseurl=https\?://download\.example/pub/fedora/linux|baseurl=https://{{ pkg_mirror }}/fedora|g' \
+           -e 's|^baseurl=https\?://download\.fedoraproject\.org/pub/fedora/linux|baseurl=https://{{ pkg_mirror }}/fedora|g' \
+           /usr/share/dnf5/repos.d/fedora*.repo /etc/yum.repos.d/fedora*.repo 2>/dev/null || true && \
+{% endif %}
+    dnf5 install -y --allowerasing --setopt=install_weak_deps=0 --disablerepo='updates*,fedora-cisco-openh264' \
+        bash \
+        binutils \
+        bzip2 \
+        ca-certificates \
+        cmake \
+        curl \
+        diffutils \
+        environment-modules \
+        file \
+        findutils \
+        gawk \
+        git \
+        gzip \
+        hostname \
+        libtool \
+        m4 \
+        make \
+        ninja-build \
+        openssh-clients \
+        patch \
+        patchelf \
+        perl \
+        pkgconf-pkg-config \
+        procps-ng \
+        python3 \
+        python3-pyyaml \
+        tar \
+        unzip \
+        which \
+        xxd \
+        xz \
+        zstd \
+        autoconf \
+        automake \
+        {{ fedora_toolchain_pkgs | default("gcc gcc-c++ gcc-gfortran") }} \
+    && dnf5 clean all && rm -rf /var/cache/libdnf5 /var/cache/dnf /var/cache/yum \
+    && mkdir -p /opt

@@ -81,7 +81,7 @@ USER hpc
 
 # MOTD + entrypoint (reuse shared scripts)
 COPY --chmod=755 scripts/hpc-motd.sh /usr/local/bin/hpc-motd.sh
-COPY --chmod=755 scripts/cp2k-entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]
 

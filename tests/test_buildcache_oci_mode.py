@@ -21,12 +21,12 @@ from hpc_cf.environment import (
 )
 from hpc_cf.requests import build_request_from_args
 from hpc_cf.spack_plan import build_spack_environment_plan, plan_context
-from hpc_cf.template import build_context, render_template
+from hpc_cf.template import build_context, render_template, select_template
 from hpc_cf.workflows import resolve_buildcache_backend
 
 ROOT = Path(__file__).resolve().parent.parent
 PILOT = "cp2k_opensource-master-force-avx512"
-PILOT_TEMPLATE = ROOT / "spack-envs" / PILOT / "Dockerfile.j2"
+PILOT_TEMPLATE = select_template(PILOT)
 OCI_URL = "oci://ghcr.io/example/hpc-cf-buildcache"
 
 
@@ -281,6 +281,10 @@ def test_oci_producer_render_keeps_soft_fail_and_counts() -> None:
     assert "HPC_CF_INSTALL_RC=" in install
     assert "HPC_CF_INSTALLED_SPEC_COUNT=" in install
     assert "HPC_CF_PARTIAL_INSTALL=1" in install
+    assert "/usr/local/bin/spack_dag_query.py" in install
+    assert "/opt/hpc-cf-oci-publish.json" in install
+    assert "buildcache update-index binary-cache || true" in install
+    assert "rm -rf /opt/spack/* /tmp/spack-build/*" in install
     # Producer-only autopush: a killed install keeps every completed
     # package in the registry, so retries converge strictly.
     assert "mirror add --scope env:cp2k-env --unsigned binary-cache \\\n        --autopush" in install
@@ -292,9 +296,7 @@ def test_all_env_local_renders_have_zero_oci_traces() -> None:
 
     checked = 0
     for env_name in list_available_envs(layout=None):
-        template = ROOT / "spack-envs" / env_name / "Dockerfile.j2"
-        if not template.is_file():
-            continue
+        template = select_template(env_name)
         if "spack_buildcache_install" not in template.read_text(encoding="utf-8"):
             continue
         rendered = _render_for_env(env_name)
@@ -307,7 +309,7 @@ def test_all_env_local_renders_have_zero_oci_traces() -> None:
 
 
 def _render_for_env(env_name: str) -> str:
-    template = ROOT / "spack-envs" / env_name / "Dockerfile.j2"
+    template = select_template(env_name)
     context = build_context(
         use_mirror=True,
         build_only=False,
@@ -532,6 +534,65 @@ def test_publish_oci_requires_explicit_count(tmp_path, monkeypatch) -> None:
             layout=ProjectLayout(project_root=tmp_path),
             mirror_url=OCI_URL,
         )
+
+
+def test_publish_oci_reads_inline_summary_complete_and_fail_closed(
+    tmp_path, monkeypatch
+) -> None:
+    import json
+
+    import hpc_cf.buildcache as bc
+
+    monkeypatch.setattr(
+        bc,
+        "run_in_installed_image",
+        lambda **kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=json.dumps(
+                {
+                    "checked_count": 42,
+                    "installed_count": 42,
+                    "planned_count": 42,
+                    "complete": True,
+                }
+            ),
+        ),
+    )
+    _, count = publish_oci(
+        engine="podman",
+        image_ref="img",
+        env_name="e",
+        layout=ProjectLayout(project_root=tmp_path),
+        mirror_url=OCI_URL,
+    )
+    assert count == 42
+
+    monkeypatch.setattr(
+        bc,
+        "run_in_installed_image",
+        lambda **kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=json.dumps(
+                {
+                    "checked_count": 42,
+                    "installed_count": 10,
+                    "planned_count": 42,
+                    "complete": False,
+                }
+            ),
+        ),
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        publish_oci(
+            engine="podman",
+            image_ref="img",
+            env_name="e",
+            layout=ProjectLayout(project_root=tmp_path),
+            mirror_url=OCI_URL,
+        )
+    assert "HPC_CF_OCI_INCOMPLETE_COVERAGE=1" in str(exc_info.value.output)
 
 
 def _oci_spec() -> SimpleNamespace:
@@ -926,7 +987,7 @@ def test_build_secrets_rendered_on_every_stage(tmp_path, monkeypatch) -> None:
         build_opts=["--no-cache"],
         build_secrets=["buildcache-creds=GHCR_CREDS"],
     )
-    assert len(commands) == 3  # installed, builder, final
+    assert len(commands) == 1  # single-pass runtime build
     for cmd in commands:
         assert "--network" in cmd and "host" in cmd
         assert "id=buildcache-creds,env=GHCR_CREDS" in cmd

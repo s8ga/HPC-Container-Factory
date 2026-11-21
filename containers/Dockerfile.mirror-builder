@@ -19,17 +19,20 @@ ENV LANG=C.UTF-8 \
 
 ARG PKG_MIRROR=mirrors.ustc.edu.cn
 
-# Freeze to Fedora GA repos (disable updates* so concretization toolchain never drifts)
-# and rewrite metalink/baseurl when a local PKG_MIRROR host is configured.
+# Freeze to Fedora GA repos (disable updates* and openh264 so concretization
+# toolchain never drifts or hits third-party CDNs) and rewrite metalink/baseurl
+# when a local PKG_MIRROR host is configured.
 # Note: fedora-minimal:45 stores repo definitions under /usr/share/dnf5/repos.d/.
-RUN sed -i 's|^enabled=1|enabled=0|g' /usr/share/dnf5/repos.d/*updates*.repo /etc/yum.repos.d/*updates*.repo 2>/dev/null || true && \
+RUN sed -i 's|^enabled=1|enabled=0|g' \
+        /usr/share/dnf5/repos.d/*updates*.repo /etc/yum.repos.d/*updates*.repo \
+        /usr/share/dnf5/repos.d/*openh264*.repo /etc/yum.repos.d/*openh264*.repo 2>/dev/null || true && \
     if [ -n "${PKG_MIRROR}" ] && [ "${PKG_MIRROR}" != "official" ]; then \
         sed -i -e 's|^metalink=|#metalink=|g' \
                -e "s|^#baseurl=https\?://download\.example/pub/fedora/linux|baseurl=https://${PKG_MIRROR}/fedora|g" \
                -e "s|^baseurl=https\?://download\.fedoraproject\.org/pub/fedora/linux|baseurl=https://${PKG_MIRROR}/fedora|g" \
                /usr/share/dnf5/repos.d/fedora*.repo /etc/yum.repos.d/fedora*.repo 2>/dev/null || true; \
     fi && \
-    dnf5 install -y --setopt=install_weak_deps=0 --disablerepo='updates*' \
+    dnf5 install -y --setopt=install_weak_deps=0 --disablerepo='updates*,fedora-cisco-openh264' \
         python3 \
         python3-pyyaml \
         ca-certificates \

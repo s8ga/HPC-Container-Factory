@@ -408,9 +408,10 @@ def test_image_skips_builtin_update_when_configured() -> None:
 
 
 def test_cp2k_master_dockerfile_wires_spack_image_repos_partial() -> None:
-    """CP2K master force-avx512: image repos + staging clones from plan partials."""
+    """CP2K master force-avx512: image repos + staging clones from shared template."""
     env_dir = SPACK_ENVS_DIR / "cp2k_opensource-master-force-avx512"
-    src = (env_dir / "Dockerfile.j2").read_text(encoding="utf-8")
+    tpl = select_template(env_dir.name)
+    src = tpl.read_text(encoding="utf-8")
     assert "{% include 'partials/spack_image_repos.j2' %}" in src
     assert "{% include 'partials/spack_staging_clones.j2' %}" in src
     assert "repo add --scope {{ spack_repo_scope }}" not in src

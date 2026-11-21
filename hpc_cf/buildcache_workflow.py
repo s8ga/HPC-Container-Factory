@@ -553,7 +553,7 @@ class BuildcacheService:
             image, tag, run.run_id
         )
         # Producer builds always disable layer cache so soft-fail installs
-        # cannot reuse a stale builder-installed stage. CLI --build-opt appends.
+        # cannot reuse a stale builder stage. CLI --build-opt appends.
         producer_build_opts = ["--no-cache", *list(request.build_opts)]
         try:
             # The producer Dockerfile bind-mounts the verified source
@@ -568,7 +568,7 @@ class BuildcacheService:
                 build_docker_stage(
                     dockerfile=dockerfile,
                     image_ref=temporary_image_ref,
-                    target="builder-installed",
+                    target="builder",
                     engine=request.engine,
                     network_host=request.network_host,
                     build_args=list(request.build_args),

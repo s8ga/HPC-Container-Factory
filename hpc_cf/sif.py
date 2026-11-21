@@ -398,37 +398,6 @@ def build_docker_like(
     secret_flags = _secret_flags(build_secrets)
     force_rm = _force_rm_flags(build_opts)
 
-    def _stage_command(target: str, output_tag: str) -> list[str]:
-        command = [
-            engine, "build", *force_rm, "--target", target,
-            "-f", str(dockerfile), "-t", output_tag,
-        ]
-        if network_host:
-            command += ["--network", "host"]
-        command += secret_flags
-        for arg in build_args or []:
-            command += ["--build-arg", arg]
-        for opt in build_opts or []:
-            command += shlex.split(opt)
-        command.append(".")
-        return command
-
-    # Preserve both checkpoints: installed is publishable before gc/view/strip,
-    # while builder keeps its historical post-install debugging semantics.
-    supports_installed = (
-        dockerfile.is_file()
-        and "AS builder-installed" in dockerfile.read_text(encoding="utf-8")
-    )
-    if supports_installed:
-        installed_tag = f"{image}:{tag}-installed"
-        logger.info("Building installed stage: %s", installed_tag)
-        run_cmd(_stage_command("builder-installed", installed_tag))
-
-    builder_tag = f"{image}:{tag}-builder"
-    logger.info("Building builder stage: %s", builder_tag)
-    run_cmd(_stage_command("builder", builder_tag))
-
-    # Continue to final image; builder layers come from cache.
     final_tag = f"{image}:{tag}"
     logger.info("Building final image: %s", final_tag)
     cmd = [engine, "build", *force_rm, "-f", str(dockerfile), "-t", final_tag]

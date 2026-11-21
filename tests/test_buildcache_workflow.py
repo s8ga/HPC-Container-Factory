@@ -13,17 +13,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from hpc_cf.env import list_available_envs
 from hpc_cf.environment import BuildcacheMode
 from hpc_cf.execution import (
     BuildcacheCoverageRecord,
     ProjectLayout,
     SharedBuildcacheStore,
 )
-from hpc_cf.template import build_context, render_template
+from hpc_cf.template import build_context, render_template, select_template
 
 ROOT = Path(__file__).resolve().parent.parent
 PILOT = "cp2k_opensource-master-force-avx512"
-PILOT_TEMPLATE = ROOT / "spack-envs" / PILOT / "Dockerfile.j2"
+PILOT_TEMPLATE = select_template(PILOT)
 
 
 def _lock_sha(lock_path: Path) -> str:
@@ -42,18 +43,16 @@ def _render(policy: str, *, producer: bool = False) -> str:
     return render_template(PILOT_TEMPLATE, context)
 
 
-def test_pilot_has_installed_builder_and_final_stages() -> None:
-    rendered = _render("auto", producer=True)
-    assert "AS builder-installed" in rendered
-    assert "FROM builder-installed AS builder" in rendered
-    assert "FROM runtime AS final" in rendered
-    assert rendered.index("AS builder-installed") < rendered.index(
-        "FROM builder-installed AS builder"
-    )
-    assert rendered.index("FROM builder-installed AS builder") < rendered.index(
-        " gc -y"
-    )
+def test_pilot_has_builder_and_runtime_stages() -> None:
+    rendered = _render("auto", producer=False)
+    assert "AS builder" in rendered
+    assert "AS runtime" in rendered
+    assert "AS builder-installed" not in rendered
+    assert "FROM runtime AS final" not in rendered
+    assert rendered.index("AS builder") < rendered.index("AS runtime")
+    assert rendered.index("AS builder") < rendered.index(" gc -y") < rendered.index("AS runtime")
     assert "COPY --from=builder " in rendered
+    assert 'SINGULARITY_SHELL="/usr/local/bin/hpc-shell-wrapper.sh"' in rendered
 
 
 def test_auto_consumer_mounts_both_read_only_stores_and_can_fallback() -> None:
@@ -105,22 +104,20 @@ def test_producer_auto_install_reuses_buildcache_with_padding() -> None:
 def test_cp2k_buildcache_install_caps_libint_parallelism() -> None:
     """Opensource CP2K BC path installs libint first with -j capped at 12."""
     opensource = sorted(
-        p
-        for p in (ROOT / "spack-envs").iterdir()
-        if p.is_dir()
-        and p.name.startswith("cp2k_opensource-")
-        and (p / "Dockerfile.j2").is_file()
+        env_name
+        for env_name in list_available_envs()
+        if env_name.startswith("cp2k_opensource-")
     )
-    assert opensource, "expected cp2k_opensource-* Dockerfiles"
-    for env_dir in opensource:
-        template = env_dir / "Dockerfile.j2"
+    assert opensource, "expected cp2k_opensource-* envs"
+    for env_name in opensource:
+        template = select_template(env_name)
         for policy, producer in (("auto", False), ("auto", True), ("only", False)):
             rendered = render_template(
                 template,
                 build_context(
                     use_mirror=True,
                     build_only=False,
-                    app_version=env_dir.name,
+                    app_version=env_name,
                     template_path=template,
                     buildcache_policy=policy,
                     buildcache_producer=producer,
@@ -132,7 +129,7 @@ def test_cp2k_buildcache_install_caps_libint_parallelism() -> None:
                 if f"--use-buildcache {policy}" in block
             )
             assert 'if [ "${libint_jobs}" -gt 12 ]; then libint_jobs=12; fi' in install, (
-                env_dir.name
+                env_name
             )
             assert "Installing libint with -j ${libint_jobs} (memory-capped)" in install
             assert " -p 20 libint" in install
@@ -410,16 +407,15 @@ def test_publisher_container_uses_configured_hpc_timeout(tmp_path: Path) -> None
     assert run.call_args.kwargs["timeout"] == 43200
 
 
-def test_build_docker_like_builds_all_three_tags_and_preserves_builder_semantics(
+def test_build_docker_like_runs_single_pass_final_build(
     tmp_path: Path,
 ) -> None:
     from hpc_cf.sif import build_docker_like
 
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM base AS builder-installed\n"
-        "FROM builder-installed AS builder\n"
-        "FROM builder AS final\n",
+        "FROM fedora:45 AS builder\n"
+        "FROM fedora:45 AS runtime\n",
         encoding="utf-8",
     )
     commands: list[list[str]] = []
@@ -435,13 +431,9 @@ def test_build_docker_like_builds_all_three_tags_and_preserves_builder_semantics
             network_host=True,
         )
 
-    assert [cmd[cmd.index("--target") + 1] for cmd in commands[:2]] == [
-        "builder-installed",
-        "builder",
-    ]
-    assert "cp2k:2025.2-installed" in commands[0]
-    assert "cp2k:2025.2-builder" in commands[1]
-    assert "cp2k:2025.2" in commands[2]
+    assert len(commands) == 1
+    assert "--target" not in commands[0]
+    assert "cp2k:2025.2" in commands[0]
 
 
 def test_build_cli_preserves_unspecified_policy_and_rejects_explicit_only() -> None:

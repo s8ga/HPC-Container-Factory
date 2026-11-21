@@ -1,0 +1,26 @@
+{# Pure shell fragment for Stage 1 consumer finalize (gc, view, manifest, ident, strip, cleanup). #}
+{# Safe inside bash -o pipefail -c '...' (no single quotes, no # comments). #}
+    spack -e {{ spack_env_name }} gc -y; \
+    spack -e {{ spack_env_name }} env view enable /opt/spack-view; \
+    { echo "=== {{ build_manifest_title | default(env_dir_name ~ ' Build Manifest') }} ==="; \
+      echo "View: $(du -sh /opt/spack-view/ | cut -f1)"; \
+      echo "Install tree: $(du -sh /opt/spack/ | cut -f1)"; \
+      echo ""; spack -e {{ spack_env_name }} find -d; \
+      echo ""; echo "=== Resolved specs (spack spec) ==="; \
+      spack -e {{ spack_env_name }} spec; } > /opt/spack-view/BUILD_MANIFEST.txt; \
+    spack -e {{ spack_env_name }} graph --color --dot > /opt/spack-view/DependencyGraph.dot; \
+{% if cp2k_branch is defined %}
+    _ident_branch=$(grep -m1 -o "version(\"master\", branch=\"[^\"]*\"" /opt/spack-env-file/repos/packages/cp2k/package.py 2>/dev/null | sed "s/.*branch=\"\([^\"]*\)\".*/\1/" || true); \
+    spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py container-ident --lock /opt/spack-env-file/spack.lock --spec cp2k --branch "${_ident_branch:-{{ cp2k_branch }}}" --fallback "{{ container_ident | default(default_image_name ~ ':' ~ default_image_tag) }}" --output /opt/hpc-container-ident; \
+{% else %}
+    printf "%s" "{{ container_ident | default(default_image_name ~ ':' ~ default_image_tag) }}" > /opt/hpc-container-ident; \
+{% endif %}
+    echo "baked ident: $(cat /opt/hpc-container-ident)"; \
+    echo "=== Stripping debug symbols ==="; \
+    find /opt/spack -type f \( -name "*.so" -o -name "*.so.*" \) \
+        -exec strip --strip-unneeded {} \; 2>/dev/null || true; \
+    find /opt/spack -path "*/bin/*" -type f -print0 2>/dev/null \
+        | xargs -0 -r file 2>/dev/null \
+        | grep "ELF.*executable" | cut -d: -f1 \
+        | xargs -r strip --strip-all 2>/dev/null || true; \
+    {% include 'partials/runtime_cleanup_body.j2' %}

@@ -533,12 +533,12 @@ def collect_buildcache_stage(
     spec: EnvironmentSpec,
     env_dir: Path,
 ) -> list[ValidationFinding]:
-    """buildcache producer contract: enabled envs need the 4-stage template.
+    """buildcache producer contract: enabled envs need a ``builder`` stage.
 
-    ``buildcache build`` drives podman with ``--target builder-installed``
-    and consumer renders expect the buildcache install partials; an enabled
-    env on a 3-stage template dies at the podman step AND poisons the
-    shared health state (round-2 audit 2.1c). Gate the template up front.
+    ``buildcache build`` drives podman with ``--target builder`` and consumer
+    renders expect the buildcache install partials; an enabled env without a
+    ``builder`` stage fails at the podman step AND poisons the shared health
+    state. Gate the template up front.
     """
     if not (spec.method.runs_spack_validations and spec.spack.buildcache.enabled):
         return []
@@ -548,24 +548,22 @@ def collect_buildcache_stage(
         # stage-specific to check without a template.
         return []
     text = dockerfile.read_text(encoding="utf-8")
-    if "AS builder-installed" in text:
+    if "AS builder" in text or "AS builder-installed" in text:
         return []
     return [
         ValidationFinding(
             code="buildcache.dockerfile_missing_stage",
             severity=ValidationSeverity.ERROR,
             message=(
-                "spack.buildcache.enabled is true but Dockerfile.j2 has no "
-                "`AS builder-installed` stage — buildcache build would fail "
-                "at podman --target and mark the shared cache unhealthy"
+                "spack.buildcache.enabled is true but Dockerfile template has no "
+                "`AS builder` stage — buildcache build would fail at podman "
+                "--target and mark the shared cache unhealthy"
             ),
             path=str(dockerfile),
             fix_hint=(
-                "Either migrate the template to the 4-stage producer shape "
-                "(builder-installed + spack_buildcache_config.j2 + "
-                "spack_buildcache_install.j2, see "
-                "cp2k_opensource-2026.2-force-avx512) or set "
-                "spack.buildcache.enabled: false."
+                "Either use the shared 2-stage templates/Dockerfile.spack.j2 "
+                "(AS builder + spack_buildcache_config.j2 + "
+                "spack_buildcache_install.j2) or set spack.buildcache.enabled: false."
             ),
         )
     ]

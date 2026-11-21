@@ -37,7 +37,7 @@ _should_show_motd() {
 }
 
 if _should_show_motd "${1:-}"; then
-    /usr/local/bin/hpc-motd.sh 2>/dev/null || true
+    "${HPC_MOTD_SCRIPT:-/usr/local/bin/hpc-motd.sh}" 2>/dev/null || true
 fi
 
 # ── Hand off to the container's main process ─────────────────────────────

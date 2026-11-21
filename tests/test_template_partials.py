@@ -90,48 +90,17 @@ def test_choice_loader_includes_global_partial(tmp_path: Path) -> None:
     assert "SPACK_ROOT=/opt/spack-exe" in out
 
 
-def test_env_dockerfiles_include_shared_partials() -> None:
-    """Every spack per-env Dockerfile must pull in the shared Spack partials."""
-    dockerfiles = sorted(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
-    assert len(dockerfiles) >= 1
-    for path in dockerfiles:
-        env_name = path.parent.name
-        text = path.read_text(encoding="utf-8")
-        # Direct include or via debian builder prelude.
-        has_install = (
-            "{% include 'partials/spack_install.j2' %}" in text
-            or "{% include 'partials/spack_builder_prelude_debian.j2' %}" in text
-        )
-        assert has_install, env_name
-        assert "{% include 'partials/spack_env_create.j2' %}" in text, env_name
-        assert (
-            "{% include 'partials/spack_view_enable.j2' %}" in text
-            or "{% include 'partials/spack_post_install.j2' %}" in text
-        ), env_name
-        # ROCm keeps a custom runtime cleanup (gcc-13 / ROCm LLVM).
-        if "rocm" not in env_name:
-            assert "{% include 'partials/runtime_cleanup.j2' %}" in text, env_name
-        # No hardcoded env-create names left in the template source.
-        assert not re.search(
-            r"spack env create (cp2k-env|vasp-env|abacus-env)\b", text
-        ), env_name
-        # Env create must come from the shared partial (no inline duplicate).
-        assert "spack env create {{" not in text, env_name
-
-
-def test_duplicate_template_lines_reduced_at_least_40_percent() -> None:
-    """Per-env Dockerfile line count should drop ≥40% vs pre-dedupe baseline."""
-    env_lines = sum(
-        len(p.read_text(encoding="utf-8").splitlines())
-        for p in SPACK_ENVS_DIR.glob("*/Dockerfile.j2")
-    )
-    env_files = list(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
-    budget = PRE_DEDUPE_ENV_DOCKERFILE_LINES * (
-        len(env_files) / PRE_DEDUPE_BASELINE_ENV_COUNT
-    )
-    assert env_lines <= budget * 0.60, (
-        f"per-env lines {env_lines} not ≤ 60% of scaled baseline {budget:.0f}"
-    )
+def test_shared_spack_dockerfile_includes_shared_partials() -> None:
+    """Shared templates/Dockerfile.spack.j2 drives all method=spack envs."""
+    assert list(SPACK_ENVS_DIR.glob("*/Dockerfile.j2")) == []
+    shared = TEMPLATES_DIR / "Dockerfile.spack.j2"
+    assert shared.is_file()
+    text = shared.read_text(encoding="utf-8")
+    assert "{% include 'partials/spack_builder_prelude_fedora.j2' %}" in text
+    assert "{% include 'partials/spack_env_create.j2' %}" in text
+    assert "{% include 'partials/spack_consumer_finalize_body.j2' %}" in text
+    assert not re.search(r"spack env create (cp2k-env|vasp-env|abacus-env)\b", text)
+    assert "spack env create {{" not in text
 
 
 def test_pilot_render_keeps_newline_between_partials() -> None:
@@ -149,11 +118,12 @@ def test_pilot_render_keeps_newline_between_partials() -> None:
 
 
 def test_all_spack_env_renders_set_c_utf8_locale() -> None:
-    """Every shipped spack Dockerfile must set C.UTF-8 in builder and runtime."""
-    dockerfiles = sorted(SPACK_ENVS_DIR.glob("*/Dockerfile.j2"))
-    assert len(dockerfiles) >= 1
-    for path in dockerfiles:
-        env_name = path.parent.name
+    """Every shipped spack env render must set C.UTF-8 in builder and runtime."""
+    from hpc_cf.env import list_available_envs
+
+    envs = list_available_envs()
+    assert len(envs) >= 1
+    for env_name in envs:
         tpl = select_template(env_name)
         ctx = build_context(
             use_mirror=True,
@@ -179,9 +149,11 @@ def test_pilot_render_preserves_spack_semantics() -> None:
     assert "local-mirror file:///opt/spack-mirror" in rendered
     assert "repo update builtin" in rendered
     assert "env view enable /opt/spack-view" in rendered
-    assert "Runtime cleanup: removing development-only content" in rendered
+    assert "Cleanup complete" in rendered
+    assert "hpc-shell-wrapper.sh" in rendered
+    assert "--chown=hpc:hpc" not in rendered
 
-    # Application-specific features stay in the per-env template.
+    # Application-specific features driven by env vars/plan.
     assert "s8ga-spack-packages" in rendered
     assert "tools/regtesting" in rendered
     assert "cp2k-motd.sh" in rendered or "hpc-motd.sh" in rendered
@@ -215,62 +187,50 @@ def test_build_context_defaults_apt_mirror() -> None:
     assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR
 
 
-def test_pilot_render_uses_default_apt_mirror() -> None:
+def test_pilot_render_uses_default_pkg_mirror() -> None:
     rendered = _render_pilot(use_mirror=True, build_only=False)
-    assert "deb.debian.org|mirrors.ustc.edu.cn" in rendered
-    assert "security.debian.org|mirrors.ustc.edu.cn/debian-security" in rendered
+    assert "baseurl=https://mirrors.ustc.edu.cn/fedora" in rendered
+    assert "/usr/share/dnf5/repos.d/fedora*.repo" in rendered
+    assert "--disablerepo='updates*,fedora-cisco-openh264'" in rendered
 
 
-def _render_apt_partial(
-    tmp_path: Path, name: str, *, apt_mirror: str
+def _render_rpm_partial(
+    tmp_path: Path, name: str, *, pkg_mirror: str
 ) -> str:
-    """Render a single APT partial via ChoiceLoader (tmp wrapper + global partials)."""
+    """Render a Fedora RPM partial via ChoiceLoader (tmp wrapper + global partials)."""
     stub = tmp_path / "Dockerfile.j2"
     stub.write_text(f"{{% include 'partials/{name}' %}}\n", encoding="utf-8")
     return render_template(
         stub,
-        {"apt_mirror": apt_mirror, "runtime_extra_apt_pkgs": []},
+        {"pkg_mirror": pkg_mirror, "fedora_toolchain_pkgs": "gcc gcc-c++ gcc-gfortran"},
     )
 
 
-@pytest.mark.parametrize(
-    "partial",
-    ("builder_apt_debian.j2", "runtime_apt_debian.j2"),
-)
-def test_apt_partial_default_ustc_mirror(tmp_path: Path, partial: str) -> None:
-    out = _render_apt_partial(tmp_path, partial, apt_mirror=DEFAULT_APT_MIRROR)
-    assert "deb.debian.org|mirrors.ustc.edu.cn" in out
-    assert "security.debian.org|mirrors.ustc.edu.cn/debian-security" in out
-
-
-@pytest.mark.parametrize(
-    "partial",
-    ("builder_apt_debian.j2", "runtime_apt_debian.j2"),
-)
-def test_apt_partial_custom_mirror(tmp_path: Path, partial: str) -> None:
-    out = _render_apt_partial(
-        tmp_path, partial, apt_mirror="mirrors.example.com"
+def test_rpm_partial_default_ustc_mirror(tmp_path: Path) -> None:
+    out = _render_rpm_partial(
+        tmp_path, "builder_rpm_fedora.j2", pkg_mirror=DEFAULT_APT_MIRROR
     )
-    assert "deb.debian.org|mirrors.example.com" in out
+    assert "baseurl=https://mirrors.ustc.edu.cn/fedora" in out
+    assert "/usr/share/dnf5/repos.d/*updates*.repo" in out
+
+
+def test_rpm_partial_custom_mirror(tmp_path: Path) -> None:
+    out = _render_rpm_partial(
+        tmp_path, "builder_rpm_fedora.j2", pkg_mirror="mirrors.example.com"
+    )
+    assert "baseurl=https://mirrors.example.com/fedora" in out
     assert "mirrors.ustc.edu.cn" not in out
 
 
-@pytest.mark.parametrize(
-    "partial,skip_value",
-    [
-        ("builder_apt_debian.j2", ""),
-        ("builder_apt_debian.j2", "official"),
-        ("runtime_apt_debian.j2", ""),
-        ("runtime_apt_debian.j2", "official"),
-    ],
-)
-def test_apt_partial_empty_or_official_skips_sed(
-    tmp_path: Path, partial: str, skip_value: str
+@pytest.mark.parametrize("skip_value", ("", "official"))
+def test_rpm_partial_empty_or_official_skips_mirror_rewrite(
+    tmp_path: Path, skip_value: str
 ) -> None:
-    out = _render_apt_partial(tmp_path, partial, apt_mirror=skip_value)
-    assert "sed -i" not in out
-    assert "deb.debian.org" not in out
-    assert "apt-get update" in out
+    out = _render_rpm_partial(
+        tmp_path, "builder_rpm_fedora.j2", pkg_mirror=skip_value
+    )
+    assert "baseurl=https://" not in out
+    assert "dnf5 install" in out
 
 
 UPSTREAM_CP2K = "https://github.com/cp2k/cp2k.git"

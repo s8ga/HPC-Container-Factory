@@ -15,26 +15,18 @@ from hpc_cf.template import (
     _extract_available_versions,
     build_context,
     render_template,
+    select_template,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SPACK_ENVS = PROJECT_ROOT / "spack-envs"
 
-# Parametrize over every env that actually ships a Dockerfile.j2.
-ENV_NAMES = [
-    d.name
-    for d in sorted(SPACK_ENVS.iterdir())
-    if d.is_dir() and (d / "Dockerfile.j2").exists()
-]
-
-# Fall back to the discovery function if present; ensure we always test something.
-if not ENV_NAMES:
-    ENV_NAMES = _extract_available_versions()
+ENV_NAMES = _extract_available_versions()
 
 
 @pytest.mark.parametrize("env_name", ENV_NAMES)
 def test_env_renders_without_error(env_name: str) -> None:
-    tpl = SPACK_ENVS / env_name / "Dockerfile.j2"
+    tpl = select_template(env_name)
     ctx = build_context(
         use_mirror=True,
         build_only=False,
@@ -51,7 +43,7 @@ def test_env_renders_without_error(env_name: str) -> None:
 @pytest.mark.parametrize("env_name", ENV_NAMES)
 def test_env_renders_build_only(env_name: str) -> None:
     """--build-only path must also render cleanly (runtime stage skipped)."""
-    tpl = SPACK_ENVS / env_name / "Dockerfile.j2"
+    tpl = select_template(env_name)
     ctx = build_context(
         use_mirror=False,
         build_only=True,

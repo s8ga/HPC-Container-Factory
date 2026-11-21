@@ -694,19 +694,28 @@ def publish_oci(
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
     exclude_specs: Sequence[str] = (),
 ) -> tuple[subprocess.CompletedProcess[str], int]:
-    """OCI-mirror publisher: registry push with a count-based coverage gate.
+    """OCI-mirror publisher: read inline publish summary or run push script.
 
-    Completeness is asserted by the pushed-vs-planned count emitted by
-    :func:`build_publish_script_oci`; the full-lock check command cannot be
-    used against oci mirrors (known-broken upstream — see
-    artifacts/oci-registry-lab/notes.md). The local store is not mounted.
+    2-stage OCI producer builds push inline during ``builder``, write
+    ``/opt/hpc-cf-oci-publish.json``, and wipe ``/opt/spack/*`` before
+    layer commit. When that summary file exists in *image_ref*, fail closed if
+    ``complete`` is false; otherwise return the checked spec count without
+    needing ``/opt/spack`` on disk. Legacy images without the summary fall
+    back to :func:`build_publish_script_oci`.
     """
-    script = build_publish_script_oci(
+    fallback_script = build_publish_script_oci(
         env_name=env_name,
         mirror_url=mirror_url,
         username_var=username_var,
         password_var=password_var,
         exclude_specs=exclude_specs,
+    )
+    script = (
+        "if [ -f /opt/hpc-cf-oci-publish.json ]; then\n"
+        "    cat /opt/hpc-cf-oci-publish.json\n"
+        "    exit 0\n"
+        "fi\n"
+        f"{fallback_script}"
     )
     result = run_in_installed_image(
         engine=engine,
@@ -719,6 +728,34 @@ def publish_oci(
         mount_buildcache=False,
         userns_keep_id=False,
     )
+    stdout = (result.stdout or "").strip()
+    if stdout.startswith("{"):
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "oci publisher produced invalid /opt/hpc-cf-oci-publish.json"
+            ) from exc
+        if not isinstance(payload, dict) or "checked_count" not in payload:
+            raise RuntimeError(
+                "oci publisher /opt/hpc-cf-oci-publish.json missing checked_count"
+            )
+        checked_count = int(payload["checked_count"])
+        installed_count = int(payload.get("installed_count", 0))
+        if not payload.get("complete", False):
+            detail = (
+                "HPC_CF_BUILDCACHE_STEP=oci-count-check\n"
+                "HPC_CF_OCI_INCOMPLETE_COVERAGE=1\n"
+                f"oci coverage incomplete: pushed {installed_count} "
+                f"of {checked_count} non-external concrete specs\n"
+            )
+            raise subprocess.CalledProcessError(
+                returncode=1,
+                cmd=[engine, "run", image_ref],
+                output=detail,
+            )
+        return result, checked_count
+
     match = _COUNT_RE.search(result.stdout or "")
     if match is None:
         raise RuntimeError(

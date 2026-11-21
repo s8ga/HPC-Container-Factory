@@ -1,29 +1,12 @@
 {# Install from the OCI registry binary cache (consumer or producer).
-   OCI-mode counterpart of spack_buildcache_install_local.j2: no filesystem
-   buildcache bind mount — the mirror is registered from spack.buildcache.url.
-   Credentials (username_var/password_var) are environment-variable NAMES read
-   at build time from the buildcache-creds build secret, so no credential
-   value lands in any image layer. Auto policy still bind-mounts the source
-   mirror read-only for fallback.
+   OCI producer pushes installed specs inline (on top of --autopush), updates
+   the index best-effort, writes /opt/hpc-cf-oci-publish.json, and deletes
+   /opt/spack/* /tmp/spack-build/* in the same RUN to avoid multi-GB layer
+   commits. Consumers do NOT run _hpc_cf_missing loops or autopush.
 
-   The producer registers the mirror with --autopush so every installed
-   package reaches the registry immediately: a killed install (operation
-   timeout) keeps all completed binaries, making retries strictly
-   convergent. Re-pushes are byte-identical (the producer install tree is
-   the canonical padded root) and deduplicated by the registry. Consumers
-   must NOT autopush — their install tree is a relocated short root, and
-   pushing it would overwrite producer binaries under the same spec tag.
-
-   Behavior pinned by TestOciBuildcachePoC (evidence:
-   artifacts/oci-registry-lab/notes.md): strict-only install pulls and
-   relocates from padded paths; auto treats an oci miss as recoverable and
-   falls back to the source mirror. Never emit `--use-buildcache never` for
-   libint here either (test_cp2k_libint_buildcache_ban).
-
-   Never emit bash array-length expansions that contain a hash character in
-   this Dockerfile fragment: the Dockerfile lexer treats hash as a line
-   comment even inside shell quotes. #}
-RUN{% if spack_buildcache_policy == 'auto' %}
+   Never emit bash array-length expansions or single quotes inside bash -c '...'. #}
+RUN \
+{% if spack_buildcache_policy == 'auto' and (use_mirror | default(true)) %}
     --mount=type=bind,source=assets/spack-mirror,target=/opt/spack-mirror,readonly \
 {% endif %}
 {% if spack_buildcache_username_var %}
@@ -62,31 +45,22 @@ RUN{% if spack_buildcache_policy == 'auto' %}
         -j "$(nproc)" -p 20; \
     _hpc_cf_install_rc=$?; \
 {% endif %}
-    mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
-        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
-    if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
-        echo "Installing concrete specs skipped by binary reuse"; \
-        spack -e {{ spack_env_name }} install --only-concrete \
-            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
-            -j "$(nproc)" -p 20 "${_hpc_cf_missing[@]}"; \
-        _hpc_cf_missing_rc=$?; \
-        if [ "${_hpc_cf_missing_rc}" -ne 0 ]; then _hpc_cf_install_rc="${_hpc_cf_missing_rc}"; fi; \
-    fi; \
     set -e; \
-    mapfile -t _hpc_cf_installed < <(spack -e {{ spack_env_name }} python -c \
-        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and s.installed))"); \
-    _hpc_cf_installed_count=$(spack -e {{ spack_env_name }} python -c \
-        "import spack.environment as ev; e=ev.active_environment(); print(sum(1 for s in e.all_specs() if (not s.external) and s.installed))"); \
+    mapfile -t _hpc_cf_installed < <(spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py installed-hashes{% for x in spack_buildcache_exclude_specs | default([]) %} --exclude "{{ x }}"{% endfor %}); \
+    _hpc_cf_installed_count=$(spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py installed-hashes --count{% for x in spack_buildcache_exclude_specs | default([]) %} --exclude "{{ x }}"{% endfor %}); \
     echo "HPC_CF_INSTALL_RC=${_hpc_cf_install_rc}"; \
     echo "HPC_CF_INSTALLED_SPEC_COUNT=${_hpc_cf_installed_count}"; \
     if [ -z "${_hpc_cf_installed[0]:-}" ]; then \
         echo "Producer install left no non-external concrete specs on disk" >&2; \
         exit 1; \
     fi; \
+    spack -e {{ spack_env_name }} buildcache push --unsigned --fail-fast binary-cache "${_hpc_cf_installed[@]}"; \
+    spack -e {{ spack_env_name }} buildcache update-index binary-cache || true; \
+    spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py summary{% for x in spack_buildcache_exclude_specs | default([]) %} --exclude "{{ x }}"{% endfor %} --install-rc "${_hpc_cf_install_rc}" --output /opt/hpc-cf-oci-publish.json; \
+    rm -rf /opt/spack/* /tmp/spack-build/*; \
     if [ "${_hpc_cf_install_rc}" -ne 0 ]; then \
         echo "HPC_CF_PARTIAL_INSTALL=1"; \
-        echo "Producer install incomplete; keeping image for partial buildcache push"; \
-        exit 0; \
+        echo "Producer install incomplete; metadata written for partial buildcache reporting"; \
     fi'
 {% else %}
 {% if libint_parallel_cap is defined and libint_parallel_cap %}
@@ -103,12 +77,9 @@ RUN{% if spack_buildcache_policy == 'auto' %}
         --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
         -j "$(nproc)" -p 20; \
 {% endif %}
-    mapfile -t _hpc_cf_missing < <(spack -e {{ spack_env_name }} python -c \
-        "import spack.environment as ev; e=ev.active_environment(); print(chr(10).join(\"/\"+s.dag_hash() for s in e.all_specs() if (not s.external) and (not s.installed)))"); \
-    if [ -n "${_hpc_cf_missing[0]:-}" ]; then \
-        echo "Installing concrete specs skipped by binary reuse"; \
-        spack -e {{ spack_env_name }} install --only-concrete \
-            --use-buildcache {{ spack_buildcache_policy }} --fail-fast \
-            -j "$(nproc)" -p 20 "${_hpc_cf_missing[@]}"; \
-    fi'
+{% if spack_inline_consumer_finalize | default(false) %}
+{% include 'partials/spack_consumer_finalize_body.j2' %}'
+{% else %}
+    true'
+{% endif %}
 {% endif %}

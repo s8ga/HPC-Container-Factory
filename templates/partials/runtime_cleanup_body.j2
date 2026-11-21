@@ -1,0 +1,19 @@
+{# Pure shell fragment (no RUN prefix, no single quotes, no # comments) so it can be embedded inside Stage 1 consumer finalize bash -c '...' or standalone runtime_cleanup.j2. #}
+echo "=== Cleanup: removing headers, Python tests, docs, metadata, cmake/pkgconfig, static libs ==="; \
+    find /opt/spack/linux-* -type d -name include -exec rm -rf {} + 2>/dev/null || true; \
+    rm -rf /opt/spack-view/include; \
+    find /opt/spack -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true; \
+    for pydir in /opt/spack/linux-*/python-*/lib/python*/; do \
+        rm -rf "${pydir}test" "${pydir}idlelib" "${pydir}turtledemo" "${pydir}tkinter" 2>/dev/null || true; \
+    done; \
+    find /opt/spack -type d -path "*/site-packages/*" \( -name tests -o -name test \) \
+        -prune -exec rm -rf {} + 2>/dev/null || true; \
+    find /opt/spack -type d -name doc -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true; \
+    find /opt/spack -type d -name man -path "*/share/*" -exec rm -rf {} + 2>/dev/null || true; \
+    rm -rf /opt/spack-view/share/doc /opt/spack-view/share/man; \
+    find /opt/spack -type d -name .spack -exec rm -rf {} + 2>/dev/null || true; \
+    find /opt/spack -type d -name cmake -path "*/lib/*" -exec rm -rf {} + 2>/dev/null || true; \
+    find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true; \
+    rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig; \
+    find /opt -name "*.a" -delete 2>/dev/null || true; \
+    echo "=== Cleanup complete ==="
