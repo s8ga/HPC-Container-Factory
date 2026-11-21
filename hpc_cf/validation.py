@@ -40,7 +40,11 @@ from hpc_cf.lock_manifest import (
     compare_lock_inputs,
     read_lock_manifest,
 )
-from hpc_cf.repo_pins import check_env_repo_pins, expand_partial_includes
+from hpc_cf.repo_pins import (
+    check_env_repo_pins,
+    expand_partial_includes,
+    resolve_dockerfile_template,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -416,8 +420,18 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
     are skipped entirely so VASP/ABACUS do not run CP2K-centric checks.
     """
     findings: list[ValidationFinding] = []
-    dockerfile = env_dir / "Dockerfile.j2"
-    if not dockerfile.exists():
+    spec: EnvironmentSpec | None = None
+    tv: dict[str, Any] = {}
+    env_yaml_path: Path | None = None
+    try:
+        spec = load_environment_spec(env_dir)
+        env_yaml_path = spec.source_path
+        tv = spec.template_vars
+    except (FileNotFoundError, ValueError):
+        pass
+
+    dockerfile = resolve_dockerfile_template(env_dir, spec=spec)
+    if dockerfile is None or not dockerfile.exists():
         return findings
     text = dockerfile.read_text(encoding="utf-8")
     uses_var = "{{ cp2k_branch }}" in text
@@ -427,15 +441,6 @@ def collect_branch_consistency(env_dir: Path) -> list[ValidationFinding]:
         for line in joined.splitlines()
         if "git clone" in line and "cp2k" in line and "-b " in line
     ]
-
-    tv: dict[str, Any] = {}
-    env_yaml_path: Path | None = None
-    try:
-        spec = load_environment_spec(env_dir)
-        env_yaml_path = spec.source_path
-        tv = spec.template_vars
-    except (FileNotFoundError, ValueError):
-        pass
 
     if not uses_var and not clone_lines and "cp2k_branch" not in tv:
         return findings
@@ -482,20 +487,30 @@ def collect_repo_pin_consistency(
     ``hpc_cf.repo_pins``): app-shaped CP2K/s8ga contracts plus key-name-
     agnostic pin-unity / repo-commit-var / staging-path / var-wiring checks.
     """
-    dockerfile = env_dir / "Dockerfile.j2"
-    dockerfile_text = (
-        dockerfile.read_text(encoding="utf-8") if dockerfile.is_file() else ""
-    )
-    # Source-level checks look through {% include 'partials/...' %} so
-    # partial-hosted clone/registration logic still counts as var usage.
     project_root = (
         env_dir.parent.parent
         if env_dir.parent.name == "spack-envs"
         else ProjectLayout.default().project_root
     )
+    dockerfile = resolve_dockerfile_template(
+        env_dir,
+        spec=spec,
+        project_root=(
+            env_dir.parent.parent if env_dir.parent.name == "spack-envs" else None
+        ),
+    )
+    dockerfile_text = (
+        dockerfile.read_text(encoding="utf-8")
+        if dockerfile is not None and dockerfile.is_file()
+        else ""
+    )
+    # Source-level checks look through {% include 'partials/...' %} so
+    # partial-hosted clone/registration logic still counts as var usage.
     dockerfile_text = expand_partial_includes(dockerfile_text, project_root)
     errors = check_env_repo_pins(env_dir.name, spec, dockerfile_text)
-    path = str(dockerfile if dockerfile.is_file() else env_dir)
+    path = str(
+        dockerfile if dockerfile is not None and dockerfile.is_file() else env_dir
+    )
     return [
         ValidationFinding(
             code="repo_pins.inconsistent",
@@ -527,8 +542,8 @@ def collect_buildcache_stage(
     """
     if not (spec.method.runs_spack_validations and spec.spack.buildcache.enabled):
         return []
-    dockerfile = env_dir / "Dockerfile.j2"
-    if not dockerfile.is_file():
+    dockerfile = resolve_dockerfile_template(env_dir, spec=spec)
+    if dockerfile is None or not dockerfile.is_file():
         # Missing-template diagnostics belong to the render probe; nothing
         # stage-specific to check without a template.
         return []

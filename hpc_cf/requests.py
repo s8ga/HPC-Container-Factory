@@ -60,9 +60,9 @@ class BuildRequest:
     build_opts: tuple[str, ...] = ()
     render_only: bool = False
     allow_reconcretize: bool = False
-    # Debian apt mirror override for Dockerfile rendering; "official" uses
-    # deb.debian.org directly (US-hosted CI should not cross the pacific
-    # for apt). None = env.yaml template_vars value.
+    # OS package mirror override for Dockerfile rendering; "official" uses
+    # upstream repos directly. None = env.yaml template_vars value.
+    pkg_mirror: str | None = None
     apt_mirror: str | None = None
     buildcache: BuildcachePolicy | None = None
     buildcache_mode: BuildcacheMode | None = None
@@ -90,6 +90,7 @@ class BuildcacheRequest:
     buildcache_url: str | None = None
     buildcache_username_var: str | None = None
     buildcache_password_var: str | None = None
+    pkg_mirror: str | None = None
     apt_mirror: str | None = None
     build_secret: tuple[str, ...] = ()
 
@@ -184,6 +185,7 @@ def build_request_from_args(
         build_opts=tuple(getattr(args, "build_opt", None) or ()),
         render_only=render_only,
         allow_reconcretize=bool(getattr(args, "allow_reconcretize", False)),
+        pkg_mirror=getattr(args, "pkg_mirror", None) or getattr(args, "apt_mirror", None),
         apt_mirror=getattr(args, "apt_mirror", None),
         buildcache=getattr(args, "buildcache", None),
         buildcache_mode=getattr(args, "buildcache_mode", None),
@@ -212,6 +214,7 @@ def buildcache_request_from_args(args: Any) -> BuildcacheRequest:
         buildcache_url=getattr(args, "buildcache_url", None),
         buildcache_username_var=getattr(args, "buildcache_username_var", None),
         buildcache_password_var=getattr(args, "buildcache_password_var", None),
+        pkg_mirror=getattr(args, "pkg_mirror", None) or getattr(args, "apt_mirror", None),
         apt_mirror=getattr(args, "apt_mirror", None),
         build_secret=tuple(getattr(args, "build_secret", None) or ()),
     )

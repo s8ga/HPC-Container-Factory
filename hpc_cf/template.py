@@ -20,7 +20,12 @@ try:
 except ImportError as exc:
     raise ImportError(f"Required package not installed: {exc}. Install: pip install jinja2") from exc
 
-from hpc_cf.config import DEFAULT_APT_MIRROR, DEFAULT_SPACK_VERSION
+from hpc_cf.config import (
+    DEFAULT_FEDORA_IMAGE,
+    DEFAULT_FEDORA_RELEASE,
+    DEFAULT_PKG_MIRROR,
+    DEFAULT_SPACK_VERSION,
+)
 from hpc_cf.env import list_available_envs
 from hpc_cf.environment import (
     BuildMethod,
@@ -28,6 +33,7 @@ from hpc_cf.environment import (
     load_environment_spec,
     load_environment_spec_from_template,
     load_resolved_environment_spec,
+    toolchain_profile,
 )
 from hpc_cf.execution import ProjectLayout
 from hpc_cf.shell_quote import confine_to_root, shell_quote
@@ -393,6 +399,7 @@ def build_context(
     buildcache_url: str | None = None,
     buildcache_username_var: str | None = None,
     buildcache_password_var: str | None = None,
+    pkg_mirror_override: str | None = None,
     apt_mirror_override: str | None = None,
 ) -> dict:
     """Assemble the Jinja2 rendering context from env.yaml and CLI flags.
@@ -425,8 +432,8 @@ def build_context(
     method = spec.method if spec is not None else BuildMethod.SPACK
     images = spec.images if spec is not None else None
 
-    builder_base_image = images.builder if images else "debian:trixie"
-    runtime_base_image = images.runtime if images else "debian:trixie-slim"
+    builder_base_image = images.builder if images else DEFAULT_FEDORA_IMAGE
+    runtime_base_image = images.runtime if images else DEFAULT_FEDORA_IMAGE
     default_image_name, default_image_tag = resolve_output_image_tag(
         render_path,
         environment_dir=env_dir,
@@ -437,6 +444,8 @@ def build_context(
     spack_version = (
         spec.spack.version if spec is not None else DEFAULT_SPACK_VERSION
     )
+    spack_toolchain = spec.spack.toolchain if spec is not None else "gcc16"
+    profile = toolchain_profile(spack_toolchain)
     manual_packages = (
         [mp.__dict__ for mp in spec.manual_packages] if spec is not None else []
     )
@@ -456,7 +465,14 @@ def build_context(
         "build_only": build_only,
         "default_image_name": default_image_name,
         "default_image_tag": default_image_tag,
+        "container_ident": f"{default_image_name}:{default_image_tag}",
         "spack_version": spack_version,
+        "spack_toolchain": profile.name,
+        "fedora_toolchain_pkgs": " ".join(profile.dnf_pkgs),
+        "fedora_cc": profile.cc,
+        "fedora_cxx": profile.cxx,
+        "fedora_fc": profile.fc,
+        "fedora_release": DEFAULT_FEDORA_RELEASE,
         "env_dir_name": env_dir_name,
         "manual_packages": manual_packages,
         "compatibility_mode": compatibility,
@@ -507,14 +523,21 @@ def build_context(
             list(spec.runtime.extra_pkgs) if spec is not None else []
         )
 
-    # APT mirror for Debian templates; unset → USTC. Empty/"official" skip
-    # the sed. The CLI override wins over env.yaml (US-hosted CI passes
-    # "official": a cross-pacific mirror is a liability there, not an
-    # accelerator).
-    if apt_mirror_override:
-        context["apt_mirror"] = apt_mirror_override
-    if "apt_mirror" not in context or context["apt_mirror"] is None:
-        context["apt_mirror"] = DEFAULT_APT_MIRROR
+    # OS package mirror for container templates; unset → USTC. Empty/"official"
+    # skip mirror rewrite. CLI override wins over env.yaml.
+    effective_mirror_override = pkg_mirror_override or apt_mirror_override
+    if effective_mirror_override:
+        context["pkg_mirror"] = effective_mirror_override
+        context["apt_mirror"] = effective_mirror_override
+    else:
+        if context.get("pkg_mirror") is not None:
+            if context.get("apt_mirror") is None:
+                context["apt_mirror"] = context["pkg_mirror"]
+        elif context.get("apt_mirror") is not None:
+            context["pkg_mirror"] = context["apt_mirror"]
+        else:
+            context["pkg_mirror"] = DEFAULT_PKG_MIRROR
+            context["apt_mirror"] = DEFAULT_PKG_MIRROR
 
     logger.debug("Build context keys: %s", list(context.keys()))
     return context
@@ -604,6 +627,7 @@ def generate_dockerfile(
     buildcache_url: str | None = None,
     buildcache_username_var: str | None = None,
     buildcache_password_var: str | None = None,
+    pkg_mirror_override: str | None = None,
     apt_mirror_override: str | None = None,
 ) -> Path:
     root = _layout(layout)
@@ -622,6 +646,7 @@ def generate_dockerfile(
         buildcache_url=buildcache_url,
         buildcache_username_var=buildcache_username_var,
         buildcache_password_var=buildcache_password_var,
+        pkg_mirror_override=pkg_mirror_override,
         apt_mirror_override=apt_mirror_override,
     )
     content = render_template(

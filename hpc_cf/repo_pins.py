@@ -65,9 +65,42 @@ def _environment_dirs(project_root: Path) -> list[Path]:
     ]
 
 
-def _dockerfile_text(env_dir: Path) -> str:
+def resolve_dockerfile_template(
+    env_dir: Path,
+    *,
+    spec: EnvironmentSpec | None = None,
+    project_root: Path | None = None,
+) -> Path | None:
+    """Resolve an env's per-env Dockerfile.j2 or its shared method template."""
     dockerfile = env_dir / "Dockerfile.j2"
-    if not dockerfile.is_file():
+    if dockerfile.is_file():
+        return dockerfile
+    if spec is None:
+        return None
+    name = spec.method.default_template
+    if not name:
+        return None
+    root = (
+        project_root
+        if project_root is not None
+        else (env_dir.parent.parent if env_dir.parent.name == "spack-envs" else None)
+    )
+    if root is None:
+        return None
+    shared = root / "templates" / name
+    return shared if shared.is_file() else None
+
+
+def _dockerfile_text(
+    env_dir: Path,
+    *,
+    spec: EnvironmentSpec | None = None,
+    project_root: Path | None = None,
+) -> str:
+    dockerfile = resolve_dockerfile_template(
+        env_dir, spec=spec, project_root=project_root
+    )
+    if dockerfile is None:
         return ""
     return dockerfile.read_text(encoding="utf-8")
 
@@ -690,7 +723,8 @@ def check_project(project_root: Path) -> list[str]:
     for env_dir in _environment_dirs(project_root):
         spec = load_environment_spec(env_dir)
         dockerfile_text = expand_partial_includes(
-            _dockerfile_text(env_dir), project_root
+            _dockerfile_text(env_dir, spec=spec, project_root=project_root),
+            project_root,
         )
         errors.extend(
             check_env_repo_pins(

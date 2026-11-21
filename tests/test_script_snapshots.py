@@ -299,3 +299,15 @@ def test_concretize_pipeline_prepares_environment_before_use(tmp_path: Path) -> 
 
     assert i_clean < i_repos < i_compiler < i_env < i_concretize
     assert "--scope env:cp2k-env" in ctr.scripts[i_env]
+
+
+def test_compiler_find_respects_spack_toolchain() -> None:
+    ops = SpackOps(
+        EnvConfig(
+            spack=SpackConfig(version="1.2.2", env_name="e", toolchain="gcc15")
+        ),
+        CapturingContainer(),
+    )
+    s = ops._build_compiler_find_script()
+    assert "CC=gcc-15 CXX=g++-15 FC=gfortran-15" in s
+    assert "spack compiler find" in s

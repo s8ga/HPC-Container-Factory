@@ -269,6 +269,7 @@ class BuildService:
                     buildcache_url=backend.url,
                     buildcache_username_var=backend.username_var,
                     buildcache_password_var=backend.password_var,
+                    pkg_mirror_override=request.pkg_mirror,
                     apt_mirror_override=request.apt_mirror,
                 )
             logger.info("Done")
@@ -313,6 +314,7 @@ class BuildService:
                     buildcache_url=backend.url,
                     buildcache_username_var=backend.username_var,
                     buildcache_password_var=backend.password_var,
+                    pkg_mirror_override=request.pkg_mirror,
                     apt_mirror_override=request.apt_mirror,
                 )
                 if effective_policy is BuildcachePolicy.ONLY:

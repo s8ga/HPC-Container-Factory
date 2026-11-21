@@ -15,13 +15,20 @@ IMAGE_SPACK_ROOT = "/opt/spack-exe"
 IMAGE_SPACK_SETUP_SCRIPT = f"{IMAGE_SPACK_ROOT}/share/spack/setup-env.sh"
 
 # Default Spack version assumed when an env.yaml omits `spack.version`.
-# Single source of truth — import this instead of hardcoding "1.1.0" everywhere.
-# (Previously scattered across env.py, spack_ops.py, template.py.)
-DEFAULT_SPACK_VERSION = "1.1.1"
+# Single source of truth — import this instead of hardcoding versions everywhere.
+DEFAULT_SPACK_VERSION = "1.2.2"
 
-# Default Debian APT mirror host for Dockerfile templates (template_vars.apt_mirror).
-# Empty string or "official" skips mirror rewrite and keeps Debian upstream.
-DEFAULT_APT_MIRROR = "mirrors.ustc.edu.cn"
+# Default Fedora minimal base OS pin for container builds (GA frozen repos).
+DEFAULT_FEDORA_RELEASE = "45"
+DEFAULT_FEDORA_IMAGE = (
+    "quay.io/fedora/fedora-minimal:45"
+    "@sha256:05477647a380afaacc612d14f8fad016a604a7ff444dbc0f6b5a55f68a93403f"
+)
+
+# Default package mirror host for Dockerfile templates (template_vars.pkg_mirror
+# / legacy apt_mirror). Empty string or "official" keeps upstream repos.
+DEFAULT_PKG_MIRROR = "mirrors.ustc.edu.cn"
+DEFAULT_APT_MIRROR = DEFAULT_PKG_MIRROR
 
 APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"
 APPTAINER_LOCAL_PREFIX = TOOLS_DIR / "apptainer"

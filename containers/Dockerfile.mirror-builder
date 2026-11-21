@@ -1,5 +1,5 @@
 # Mirror Builder Image for HPC-Container-Factory
-# Purpose: Generic Spack-only image shared by all environments.
+# Purpose: Generic Spack-only Fedora 45 GA image shared by all environments.
 #          System packages and mirror setup are installed at runtime by hpc_cf
 #          reading from spack-envs/<env>/env.yaml.
 #
@@ -8,33 +8,48 @@
 #
 # This image is env-agnostic — one build serves all spack-envs/.
 
-ARG BASE_IMAGE=debian:trixie
+ARG BASE_IMAGE=quay.io/fedora/fedora-minimal:45@sha256:05477647a380afaacc612d14f8fad016a604a7ff444dbc0f6b5a55f68a93403f
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="s8ga" \
-      description="Spack mirror builder — generic Spack-only image (shared by all envs)"
+      description="Spack mirror builder — generic Fedora 45 Spack-only image (shared by all envs)"
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-RUN sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list.d/*.sources 2>/dev/null || true && \
-    sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list 2>/dev/null || true && \
-    sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+ARG PKG_MIRROR=mirrors.ustc.edu.cn
 
-# ── Minimal system deps for Spack (it needs python3 + yaml to run) ─────────
-# Full system packages (compilers, libs, etc.) are installed at runtime
-# by hpc_cf (SpackOps.install_system_pkgs) reading env.yaml — NOT baked into this image.
-# However, build-essential is needed because spack bootstrap mirror
-# requires concretize (which needs a system compiler for target detection).
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends \
+# Freeze to Fedora GA repos (disable updates* so concretization toolchain never drifts)
+# and rewrite metalink/baseurl when a local PKG_MIRROR host is configured.
+# Note: fedora-minimal:45 stores repo definitions under /usr/share/dnf5/repos.d/.
+RUN sed -i 's|^enabled=1|enabled=0|g' /usr/share/dnf5/repos.d/*updates*.repo /etc/yum.repos.d/*updates*.repo 2>/dev/null || true && \
+    if [ -n "${PKG_MIRROR}" ] && [ "${PKG_MIRROR}" != "official" ]; then \
+        sed -i -e 's|^metalink=|#metalink=|g' \
+               -e "s|^#baseurl=https\?://download\.example/pub/fedora/linux|baseurl=https://${PKG_MIRROR}/fedora|g" \
+               -e "s|^baseurl=https\?://download\.fedoraproject\.org/pub/fedora/linux|baseurl=https://${PKG_MIRROR}/fedora|g" \
+               /usr/share/dnf5/repos.d/fedora*.repo /etc/yum.repos.d/fedora*.repo 2>/dev/null || true; \
+    fi && \
+    dnf5 install -y --setopt=install_weak_deps=0 --disablerepo='updates*' \
         python3 \
-        python3-yaml \
+        python3-pyyaml \
         ca-certificates \
         git \
         sudo \
-        build-essential \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+        gcc \
+        gcc-c++ \
+        gcc-gfortran \
+        make \
+        patch \
+        tar \
+        gzip \
+        bzip2 \
+        xz \
+        which \
+        findutils \
+        diffutils \
+        file \
+        procps-ng \
+    && dnf5 clean all && rm -rf /var/cache/libdnf5 /var/cache/dnf /var/cache/yum
 
 # Allow any user to sudo without password (needed for runtime system pkg install)
 RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers

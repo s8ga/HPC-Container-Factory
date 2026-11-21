@@ -103,12 +103,14 @@ def add_template_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--pkg-mirror",
         "--apt-mirror",
+        dest="pkg_mirror",
         default=None,
         help=(
-            "Debian apt mirror override for the rendered Dockerfile; pass "
-            "'official' to use deb.debian.org directly (default: env "
-            "template_vars.apt_mirror)"
+            "OS package mirror host override for the rendered Dockerfile; pass "
+            "'official' to use upstream repos directly (default: env "
+            "template_vars.pkg_mirror / apt_mirror)"
         ),
     )
     parser.add_argument(
@@ -347,11 +349,13 @@ def build_parser() -> argparse.ArgumentParser:
         )
     build_action_parser = buildcache_actions.choices["build"]
     build_action_parser.add_argument(
+        "--pkg-mirror",
         "--apt-mirror",
+        dest="pkg_mirror",
         default=None,
         help=(
-            "Debian apt mirror override for the producer Dockerfile; pass "
-            "'official' for deb.debian.org (default: env template_vars)"
+            "OS package mirror host override for the producer Dockerfile; pass "
+            "'official' to use upstream repos directly (default: env template_vars)"
         ),
     )
     build_action_parser.add_argument(

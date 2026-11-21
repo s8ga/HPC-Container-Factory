@@ -24,6 +24,7 @@ from hpc_cf.environment import (
     EnvironmentSpec,
     RepoScope,
     load_environment_spec,
+    toolchain_profile,
 )
 from hpc_cf.environment import (
     MirrorBuilderConfig as MirrorBuilderConfig,
@@ -701,7 +702,9 @@ spack -e {env_q} repo list
         logger.info("Compilers registered")
 
     def _build_compiler_find_script(self) -> str:
+        profile = toolchain_profile(self.env.spack.toolchain)
         return f"""{self._source_spack()}
+export CC={shell_quote(profile.cc)} CXX={shell_quote(profile.cxx)} FC={shell_quote(profile.fc)}
 spack compiler find
 """
 

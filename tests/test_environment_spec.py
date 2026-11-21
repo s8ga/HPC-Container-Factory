@@ -44,7 +44,7 @@ def _write_env(tmp_path: Path, body: str, *, nested: bool = True) -> Path:
 def test_build_method_spack_policy() -> None:
     m = BuildMethod.SPACK
     assert m.requires_spack_assets is True
-    assert m.default_template is None
+    assert m.default_template == "Dockerfile.spack.j2"
     assert m.allows_mirror is True
     assert m.runs_spack_validations is True
 
@@ -509,3 +509,32 @@ def test_as_dict_roundtrips_manual_package_spec() -> None:
         spec="vasp",
     )
     assert parse_environment_spec(spec.as_dict()) == spec
+
+
+@pytest.mark.parametrize("toolchain", ["gcc16", "gcc15", "clang"])
+def test_spack_toolchain_valid_and_roundtrips(toolchain: str) -> None:
+    spec = parse_environment_spec(
+        {
+            "schema_version": 1,
+            "spack": {"version": "1.2.2", "env_name": "e", "toolchain": toolchain},
+        }
+    )
+    assert spec.spack.toolchain == toolchain
+    assert parse_environment_spec(spec.as_dict()) == spec
+
+
+def test_spack_toolchain_defaults_to_gcc16() -> None:
+    spec = parse_environment_spec(
+        {"schema_version": 1, "spack": {"version": "1.2.2", "env_name": "e"}}
+    )
+    assert spec.spack.toolchain == "gcc16"
+
+
+def test_spack_toolchain_rejects_unknown_name() -> None:
+    with pytest.raises(ValueError, match="Unsupported spack.toolchain"):
+        parse_environment_spec(
+            {
+                "schema_version": 1,
+                "spack": {"version": "1.2.2", "env_name": "e", "toolchain": "gcc14"},
+            }
+        )

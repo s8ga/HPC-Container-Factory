@@ -21,7 +21,7 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError(f"Required package not installed: {exc}. Install: pip install pyyaml") from exc
 
-from hpc_cf.config import DEFAULT_SPACK_VERSION
+from hpc_cf.config import DEFAULT_FEDORA_IMAGE, DEFAULT_SPACK_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,11 @@ class BuildMethod(Enum):
         return self is BuildMethod.SPACK
 
     @property
-    def default_template(self) -> str | None:
+    def default_template(self) -> str:
         """Shared template filename under ``templates/`` when per-env is absent."""
         if self is BuildMethod.NO_SPACK:
             return "Dockerfile.nospack.j2"
-        return None
+        return "Dockerfile.spack.j2"
 
     @property
     def allows_mirror(self) -> bool:
@@ -270,10 +270,57 @@ class BuildcacheConfig:
     exclude: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ToolchainProfile:
+    """Declarative compiler toolchain profile mapped to Fedora RPMs and env vars."""
+
+    name: str
+    dnf_pkgs: tuple[str, ...]
+    cc: str
+    cxx: str
+    fc: str
+
+
+SUPPORTED_TOOLCHAINS: dict[str, ToolchainProfile] = {
+    "gcc16": ToolchainProfile(
+        name="gcc16",
+        dnf_pkgs=("gcc", "gcc-c++", "gcc-gfortran"),
+        cc="gcc",
+        cxx="g++",
+        fc="gfortran",
+    ),
+    "gcc15": ToolchainProfile(
+        name="gcc15",
+        dnf_pkgs=("gcc15", "gcc15-c++", "gcc15-gfortran"),
+        cc="gcc-15",
+        cxx="g++-15",
+        fc="gfortran-15",
+    ),
+    "clang": ToolchainProfile(
+        name="clang",
+        dnf_pkgs=("clang", "lld", "gcc-gfortran"),
+        cc="clang",
+        cxx="clang++",
+        fc="gfortran",
+    ),
+}
+
+
+def toolchain_profile(name: str) -> ToolchainProfile:
+    """Return the validated :class:`ToolchainProfile` for *name*."""
+    profile = SUPPORTED_TOOLCHAINS.get(name)
+    if profile is None:
+        allowed = ", ".join(sorted(SUPPORTED_TOOLCHAINS))
+        raise ValueError(
+            f"Unsupported spack.toolchain {name!r}; expected one of: {allowed}"
+        )
+    return profile
+
+
 @dataclass
 class ImageConfig:
-    builder: str = "debian:trixie"
-    runtime: str = "debian:trixie-slim"
+    builder: str = DEFAULT_FEDORA_IMAGE
+    runtime: str = DEFAULT_FEDORA_IMAGE
     output_name: str | None = None
     output_tag: str | None = None
 
@@ -308,6 +355,7 @@ class SpackPhasePolicy:
 class SpackConfig:
     version: str
     env_name: str
+    toolchain: str = "gcc16"
     custom_repos: list[CustomRepo] = field(default_factory=list)
     # Assets (concretize/mirror) default: env scope + update builtin.
     assets: SpackPhasePolicy = field(
@@ -464,6 +512,7 @@ class EnvironmentSpec:
             "spack": {
                 "version": self.spack.version,
                 "env_name": self.spack.env_name,
+                "toolchain": self.spack.toolchain,
                 "assets": {
                     "update_builtin": self.spack.assets.update_builtin,
                     "repo_scope": self.spack.assets.repo_scope.value,
@@ -523,8 +572,8 @@ _TOP_LEVEL_KEYS = frozenset({
 })
 _IMAGES_KEYS = frozenset({"builder", "runtime", "output_name", "output_tag"})
 _SPACK_KEYS = frozenset({
-    "version", "env_name", "custom_repos", "assets", "image", "buildcache",
-    "lock_source_commits",
+    "version", "env_name", "toolchain", "custom_repos", "assets", "image",
+    "buildcache", "lock_source_commits",
 })
 _PHASE_POLICY_KEYS = frozenset({"update_builtin", "repo_scope"})
 _BUILDCACHE_KEYS = frozenset({
@@ -786,8 +835,8 @@ def _parse_images(raw: Any) -> ImageConfig:
         return ImageConfig()
     data = _require_mapping(raw, path="images")
     _reject_unknown_keys(data, _IMAGES_KEYS, path="images")
-    builder = data.get("builder", "debian:trixie")
-    runtime = data.get("runtime", "debian:trixie-slim")
+    builder = data.get("builder", DEFAULT_FEDORA_IMAGE)
+    runtime = data.get("runtime", DEFAULT_FEDORA_IMAGE)
     return ImageConfig(
         builder=_require_str(builder, path="images.builder"),
         runtime=_require_str(runtime, path="images.runtime"),
@@ -828,6 +877,9 @@ def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
         env_name = ""
     else:
         env_name = _require_str(raw_env_name, path="spack.env_name")
+    raw_toolchain = data.get("toolchain", "gcc16")
+    toolchain = _require_str(raw_toolchain, path="spack.toolchain")
+    toolchain_profile(toolchain)
     assets_default = SpackPhasePolicy(
         update_builtin=True, repo_scope=RepoScope.ENV
     )
@@ -837,6 +889,7 @@ def _parse_spack(raw: Any, *, method: BuildMethod) -> SpackConfig:
     return SpackConfig(
         version=_require_str(version, path="spack.version"),
         env_name=env_name,
+        toolchain=toolchain,
         custom_repos=_parse_custom_repos(data.get("custom_repos")),
         assets=_parse_phase_policy(
             data.get("assets"), default=assets_default, label="assets",
@@ -878,6 +931,13 @@ RESERVED_CONTEXT_KEYS: frozenset[str] = frozenset({
     "manual_packages",
     "compatibility_mode",
     "allow_reconcretize",
+    "spack_toolchain",
+    "fedora_toolchain_pkgs",
+    "fedora_cc",
+    "fedora_cxx",
+    "fedora_fc",
+    "fedora_release",
+    "container_ident",
     # Factory-injected no_spack payload.
     "script",
     "runtime_copy_dirs",
