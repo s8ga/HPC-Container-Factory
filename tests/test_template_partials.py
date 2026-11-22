@@ -175,8 +175,9 @@ def test_pilot_build_only_skips_runtime() -> None:
     assert "local-mirror" not in rendered
 
 
-def test_build_context_defaults_apt_mirror() -> None:
-    """Unset apt_mirror becomes USTC default in build_context."""
+def test_build_context_defaults_apt_mirror(monkeypatch) -> None:
+    """Unset pkg/apt mirror defaults to official, with HPC_CF_PKG_MIRROR opt-in."""
+    monkeypatch.delenv("HPC_CF_PKG_MIRROR", raising=False)
     tpl = select_template(PILOT_ENV)
     ctx = build_context(
         use_mirror=True,
@@ -184,13 +185,24 @@ def test_build_context_defaults_apt_mirror() -> None:
         app_version=PILOT_ENV,
         template_path=tpl,
     )
-    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR
+    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR == "official"
+
+    monkeypatch.setenv("HPC_CF_PKG_MIRROR", "mirrors.ustc.edu.cn")
+    ctx_env = build_context(
+        use_mirror=True,
+        build_only=False,
+        app_version=PILOT_ENV,
+        template_path=tpl,
+    )
+    assert ctx_env["pkg_mirror"] == "mirrors.ustc.edu.cn"
 
 
-def test_pilot_render_uses_default_pkg_mirror() -> None:
+def test_pilot_render_uses_default_pkg_mirror(monkeypatch) -> None:
+    monkeypatch.delenv("HPC_CF_PKG_MIRROR", raising=False)
     rendered = _render_pilot(use_mirror=True, build_only=False)
-    assert "baseurl=https://mirrors.ustc.edu.cn/fedora" in rendered
-    assert "/usr/share/dnf5/repos.d/fedora*.repo" in rendered
+    assert "mirrors.ustc.edu.cn" not in rendered
+    assert "baseurl=https://" not in rendered
+    assert "/usr/share/dnf5/repos.d/*updates*.repo" in rendered
     assert "--disablerepo='updates*,fedora-cisco-openh264'" in rendered
 
 
@@ -206,9 +218,9 @@ def _render_rpm_partial(
     )
 
 
-def test_rpm_partial_default_ustc_mirror(tmp_path: Path) -> None:
+def test_rpm_partial_custom_ustc_mirror(tmp_path: Path) -> None:
     out = _render_rpm_partial(
-        tmp_path, "builder_rpm_fedora.j2", pkg_mirror=DEFAULT_APT_MIRROR
+        tmp_path, "builder_rpm_fedora.j2", pkg_mirror="mirrors.ustc.edu.cn"
     )
     assert "baseurl=https://mirrors.ustc.edu.cn/fedora" in out
     assert "/usr/share/dnf5/repos.d/*updates*.repo" in out
@@ -272,7 +284,9 @@ def test_upstream_clone_partial_honors_fork_url(
     assert UPSTREAM_CP2K not in out
 
 
-def test_nospack_dockerfile_honors_apt_mirror(tmp_path: Path) -> None:
+def test_nospack_dockerfile_honors_apt_mirror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Shared no_spack template rewrites or skips APT mirror like Debian partials."""
     import shutil
 
@@ -321,9 +335,17 @@ def test_nospack_dockerfile_honors_apt_mirror(tmp_path: Path) -> None:
         out = render_template(resolved.render_template, ctx, layout=layout)
         return ctx, out
 
+    monkeypatch.delenv("HPC_CF_PKG_MIRROR", raising=False)
     ctx, out = _render("")
-    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR
+    assert ctx["apt_mirror"] == DEFAULT_APT_MIRROR == "official"
+    assert "sed -i" not in out
+    assert "deb.debian.org" not in out
+
+    monkeypatch.setenv("HPC_CF_PKG_MIRROR", "mirrors.ustc.edu.cn")
+    ctx, out = _render("")
+    assert ctx["apt_mirror"] == "mirrors.ustc.edu.cn"
     assert out.count("mirrors.ustc.edu.cn") >= 2
+    monkeypatch.delenv("HPC_CF_PKG_MIRROR", raising=False)
 
     ctx, out = _render("template_vars:\n  apt_mirror: mirrors.example.com\n")
     assert ctx["apt_mirror"] == "mirrors.example.com"

@@ -1,5 +1,5 @@
 {# Fedora 45 GA builder RPM repo freeze/mirror + Spack compile dependencies. #}
-{# Template vars: pkg_mirror (default mirrors.ustc.edu.cn; empty/official keeps upstream), #}
+{# Template vars: pkg_mirror (default official; pass mirror host like mirrors.ustc.edu.cn locally), #}
 {#                fedora_toolchain_pkgs (from spack.toolchain profile). #}
 RUN sed -i 's|^enabled=1|enabled=0|g' \
         /usr/share/dnf5/repos.d/*updates*.repo /etc/yum.repos.d/*updates*.repo \

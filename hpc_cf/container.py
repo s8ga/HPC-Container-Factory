@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shlex
 import subprocess
 from collections import deque
@@ -112,10 +113,11 @@ class Container:
         if not dockerfile.exists():
             raise FileNotFoundError(f"Dockerfile not found: {dockerfile}")
 
-        self._run(
-            ["build", "--network=host", "-t", self.image,
-             "-f", str(dockerfile), str(self.project_root)],
-        )
+        cmd = ["build", "--network=host", "-t", self.image]
+        pkg_mirror = os.environ.get("HPC_CF_PKG_MIRROR", "").strip()
+        if pkg_mirror:
+            cmd += ["--build-arg", f"PKG_MIRROR={pkg_mirror}"]
+        self._run([*cmd, "-f", str(dockerfile), str(self.project_root)])
         self._run(["images", self.image, "--format",
                     "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"])
         logger.info("Image built: %s", self.image)

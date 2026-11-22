@@ -5,7 +5,7 @@
 #   prepare  - validate + concretize lock only (--lock-only) + host OCI probe
 #              (buildcache check-oci --write-state). If 0 specs are missing,
 #              `binaries` is skipped completely.
-#   binaries - producer build (--no-mirror --pkg-mirror official --buildcache-mode oci)
+#   binaries - producer build (--no-mirror --buildcache-mode oci)
 #              pushing directly to ghcr.io + wiping /opt/spack inside builder RUN.
 #   package  - consumer runtime image (--buildcache only --no-mirror) + push to
 #              GHCR + extreme zstd-22 SIF conversion + live cp2k.psmp --version
@@ -271,7 +271,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf buildcache build --env "${ENV_NAME}" \
-            --no-mirror --pkg-mirror official \
+            --no-mirror \
             --engine podman --operation-timeout-seconds 19800 \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
             --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
@@ -360,7 +360,6 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf build --env "${ENV_NAME}" --engine podman \
-            --pkg-mirror official \
             --image "${IMAGE_NAME}" --tag "nightly-${NIGHTLY_DATE}" \
             --buildcache only --no-mirror \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \

@@ -18,7 +18,7 @@ ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     SPACK_PYTHON=/usr/bin/python3.13
 
-ARG PKG_MIRROR=mirrors.ustc.edu.cn
+ARG PKG_MIRROR=official
 
 # Freeze to Fedora GA repos (disable updates* and openh264 so concretization
 # toolchain never drifts or hits third-party CDNs) and rewrite metalink/baseurl

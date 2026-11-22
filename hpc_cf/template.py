@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -544,8 +545,10 @@ def build_context(
         elif context.get("apt_mirror") is not None:
             context["pkg_mirror"] = context["apt_mirror"]
         else:
-            context["pkg_mirror"] = DEFAULT_PKG_MIRROR
-            context["apt_mirror"] = DEFAULT_PKG_MIRROR
+            env_mirror = os.environ.get("HPC_CF_PKG_MIRROR", "").strip()
+            default_mirror = env_mirror or DEFAULT_PKG_MIRROR
+            context["pkg_mirror"] = default_mirror
+            context["apt_mirror"] = default_mirror
 
     logger.debug("Build context keys: %s", list(context.keys()))
     return context

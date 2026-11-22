@@ -183,24 +183,18 @@ def _run_preamble_until_override(tmp_path, mirror_builder: str):
     return proc, tmp_path / "REACHED"
 
 
-def test_preamble_ustc_guard_stops_the_job(tmp_path) -> None:
-    """A ustc reference surviving the apt rewrite must fail the job. A bare
-    `! grep` mid-script is a no-op: set -e ignores negated commands (the
-    guard only worked as the last line of the old inline step)."""
-    proc, reached = _run_preamble_until_override(
-        tmp_path, "RUN echo mirrors.ustc.edu.cn\nRUN echo ustc.example\n"
+def test_preamble_does_not_rewrite_pkg_mirror_and_reaches_override(tmp_path) -> None:
+    """Repo defaults to official Fedora repos, so CI preamble never rewrites
+    mirrors or carries hardcoded ustc references."""
+    script_text = (PROJECT_ROOT / "scripts" / "ci_job_preamble.sh").read_text(
+        encoding="utf-8"
     )
-    assert proc.returncode != 0
-    assert not reached.exists(), "guard let the job continue past a ustc leftover"
-    assert "ustc" in proc.stderr
-
-
-def test_preamble_ustc_guard_passes_a_clean_rewrite(tmp_path) -> None:
+    assert "ustc" not in script_text.lower()
     proc, reached = _run_preamble_until_override(
-        tmp_path, "RUN echo mirrors.ustc.edu.cn\n"
+        tmp_path, "ARG PKG_MIRROR=official\n"
     )
     assert reached.exists(), proc.stderr
-    assert proc.returncode == 3  # stopped by the stub, not by the guard
+    assert proc.returncode == 3  # stopped by the stub, not by the preamble
 
 
 def _release_create_flags(tmp_path, *, channel: str, env_name: str) -> str:
@@ -265,7 +259,6 @@ def test_v3_pipeline_contract() -> None:
         "check-oci",
         "--write-state",
         "--no-mirror",
-        "--pkg-mirror official",
         "--smoke-cmd",
         "tools/apptainer",
     ):
@@ -273,5 +266,5 @@ def test_v3_pipeline_contract() -> None:
     active_lines = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
-    for forbidden in ("hpc-cf-inputs", "crane"):
+    for forbidden in ("hpc-cf-inputs", "crane", "ustc", "--pkg-mirror official"):
         assert forbidden not in active_lines, forbidden

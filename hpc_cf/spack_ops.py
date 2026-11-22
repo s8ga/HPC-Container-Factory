@@ -13,6 +13,7 @@ Replaces the Spack-specific portions of:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -438,7 +439,13 @@ spack bootstrap mirror{flag} "{container_dir}"
         mb = self.env.mirror_builder
         if mb.pkg_mirror_setup:
             logger.info("Configuring package mirrors...")
-            self.ctr.exec(f"sudo bash -c {shell_quote(mb.pkg_mirror_setup)}")
+            pkg_mirror = os.environ.get("HPC_CF_PKG_MIRROR", "").strip()
+            env_prefix = (
+                f"env HPC_CF_PKG_MIRROR={shell_quote(pkg_mirror)} "
+                if pkg_mirror
+                else ""
+            )
+            self.ctr.exec(f"sudo {env_prefix}bash -c {shell_quote(mb.pkg_mirror_setup)}")
 
         if mb.system_pkgs and mb.pkg_install_cmd:
             logger.info("Installing system packages...")

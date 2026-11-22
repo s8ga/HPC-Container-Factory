@@ -304,7 +304,7 @@ Uses shared `templates/Dockerfile.nospack.j2` (multi-stage: builder runs user sc
 
 Current `DEFAULT_SPACK_VERSION = "1.2.2"`. The v3 baseline targets
 `cp2k_opensource-master-force-avx512` on pinned Fedora 45 GA
-(`registry.fedoraproject.org/fedora-minimal:45` with GHCR self-mirror fallback, local default `ustc` mirror, CI `official`),
+(`registry.fedoraproject.org/fedora-minimal:45` with GHCR self-mirror fallback, default `official` Fedora repos, local opt-in via `--pkg-mirror` or `HPC_CF_PKG_MIRROR=mirrors.ustc.edu.cn`),
 `spack.toolchain` (`gcc16` / `gcc15` / `clang`), `SPACK_PYTHON=/usr/bin/python3.13`,
 shared 2-stage `templates/Dockerfile.spack.j2` with `scripts/spack_dag_query.py`
 and OCI inline finalize, `--lock-only` / `--no-mirror`, host OCI Distribution v2

@@ -26,8 +26,9 @@ DEFAULT_FEDORA_IMAGE = (
 )
 
 # Default package mirror host for Dockerfile templates (template_vars.pkg_mirror
-# / legacy apt_mirror). Empty string or "official" keeps upstream repos.
-DEFAULT_PKG_MIRROR = "mirrors.ustc.edu.cn"
+# / legacy apt_mirror). "official" (or empty string) keeps upstream repos; set
+# HPC_CF_PKG_MIRROR or pass --pkg-mirror locally to opt into a local mirror.
+DEFAULT_PKG_MIRROR = "official"
 DEFAULT_APT_MIRROR = DEFAULT_PKG_MIRROR
 
 APPTAINER_INSTALL_SCRIPT = TOOLS_DIR / "install-unprivileged.sh"

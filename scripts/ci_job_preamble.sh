@@ -25,19 +25,6 @@ df -h / || true
 FORK_URL="${FORK_URL:-}"
 FORK_BRANCH="${FORK_BRANCH:-}"
 
-# ── pkg mirror: point Fedora mirror-builder at official metalink on US CI ───
-# The USTC mirror is tuned for local builds; from GitHub's US runners it is
-# a cross-pacific flake source. Switch ARG PKG_MIRROR=official and clear the
-# env-level pkg_mirror_setup. Local builds stay untouched (ephemeral checkout).
-sed -i 's/mirrors.ustc.edu.cn/official/g' containers/Dockerfile.mirror-builder
-sed -i '/^  pkg_mirror_setup:/c\  pkg_mirror_setup: ""' \
-  "spack-envs/${BASE_ENV_NAME}/spack-env-file/env.yaml"
-# Explicit exit: set -e ignores a negated `! grep`.
-if grep -q "ustc" containers/Dockerfile.mirror-builder; then
-    echo "::error::containers/Dockerfile.mirror-builder still references ustc after the mirror rewrite" >&2
-    exit 1
-fi
-
 # ── fork identity + source override ────────────────────────────────────────
 if [[ "$CHANNEL" == "stable" && ( -n "$FORK_URL" || -n "$FORK_BRANCH" ) ]]; then
     echo "::error::fork inputs are nightly-only (stable consumes the committed lock)" >&2
