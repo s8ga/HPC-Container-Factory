@@ -361,3 +361,69 @@ def test_nospack_dockerfile_honors_apt_mirror(
     assert ctx["apt_mirror"] == ""
     assert "sed -i" not in out
     assert "deb.debian.org" not in out
+
+
+def test_spack_dockerfile_and_cleanup_partials_pass_shell_syntax(tmp_path: Path) -> None:
+    """Every RUN instruction (with Dockerfile backslash continuations collapsed)
+    must parse cleanly under POSIX sh / bash across all buildcache modes, and
+    no orphan quote line may trail behind a partial include."""
+    import re
+    import subprocess
+
+    from hpc_cf.template import build_context, render_template, resolve_build_input
+
+    def _check_run_blocks(dockerfile_text: str, label: str) -> None:
+        lines = dockerfile_text.splitlines()
+        i = 0
+        run_count = 0
+        while i < len(lines):
+            if lines[i].startswith("RUN"):
+                buf = [lines[i][3:].lstrip()]
+                while lines[i].rstrip().endswith("\\") and i + 1 < len(lines):
+                    i += 1
+                    buf.append(lines[i])
+                joined = "\n".join(buf)
+                cmd = re.sub(
+                    r"^(?:\s*--(?:mount|network|security|secret)=\S+\s*\\?\n?)*",
+                    "",
+                    joined,
+                    flags=re.MULTILINE,
+                )
+                collapsed = re.sub(r"\\\n", "", cmd)
+                proc = subprocess.run(["sh", "-n"], input=collapsed, text=True, capture_output=True)
+                assert proc.returncode == 0, f"{label} RUN #{run_count} sh -n failed:\n{proc.stderr}\n{collapsed}"
+                # Also syntax-check the inner bash -o pipefail -c '...' body when present.
+                m = re.search(r"bash -o pipefail -c '([^']*)'", collapsed)
+                if m:
+                    inner = subprocess.run(["bash", "-n"], input=m.group(1), text=True, capture_output=True)
+                    assert inner.returncode == 0, f"{label} RUN #{run_count} inner bash -n failed:\n{inner.stderr}"
+                run_count += 1
+            else:
+                assert lines[i].strip() != "'", f"{label} orphan quote line at line {i + 1}"
+            i += 1
+        assert run_count > 0
+
+    resolved = resolve_build_input("cp2k_opensource-master-force-avx512", None)
+    for policy in ("never", "auto", "only"):
+        for mode in ("local", "oci"):
+            if policy == "never" and mode == "oci":
+                continue
+            ctx = build_context(
+                use_mirror=True,
+                build_only=False,
+                app_version="cp2k_opensource-master-force-avx512",
+                template_path=resolved.render_template,
+                resolved=resolved,
+                buildcache_policy="never",
+                pkg_mirror_override="mirrors.ustc.edu.cn",
+            )
+            ctx["spack_buildcache_policy"] = policy
+            ctx["spack_buildcache_mode"] = mode
+            if mode == "oci":
+                ctx["spack_buildcache_url"] = "oci://ghcr.io/s8ga/cache"
+                ctx["spack_buildcache_oci_url"] = "oci://ghcr.io/s8ga/cache"
+            _check_run_blocks(render_template(resolved.render_template, ctx), f"{policy}/{mode}")
+
+    stub = tmp_path / "Dockerfile.j2"
+    stub.write_text("{% include 'partials/runtime_cleanup.j2' %}\n", encoding="utf-8")
+    _check_run_blocks(render_template(stub, {}), "runtime_cleanup.j2")

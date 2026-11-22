@@ -1,4 +1,4 @@
 {# Shared cleanup of /opt/spack* dev artifacts (headers, docs, tests, static libs, metadata). #}
 {# Keeps -path '*/site-packages/*' \( -name tests -o -name test \) -prune -exec rm -rf {} + contract. #}
 RUN find /opt/spack -type d -path '*/site-packages/*' \( -name tests -o -name test \) -prune -exec rm -rf {} + 2>/dev/null || true && \
-{% include 'partials/runtime_cleanup_body.j2' %} && true
+{% include 'partials/runtime_cleanup_body.j2' %} true

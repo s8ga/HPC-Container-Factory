@@ -16,4 +16,4 @@ echo "=== Cleanup: removing headers, Python tests, docs, metadata, cmake/pkgconf
     find /opt/spack -type d -name pkgconfig -exec rm -rf {} + 2>/dev/null || true; \
     rm -rf /opt/spack-view/cmake /opt/spack-view/lib/cmake /opt/spack-view/lib/pkgconfig; \
     find /opt -name "*.a" -delete 2>/dev/null || true; \
-    echo "=== Cleanup complete ==="
+    echo "=== Cleanup complete ===" && \

@@ -23,4 +23,4 @@
         | xargs -0 -r file 2>/dev/null \
         | grep "ELF.*executable" | cut -d: -f1 \
         | xargs -r strip --strip-all 2>/dev/null || true; \
-    {% include 'partials/runtime_cleanup_body.j2' %}
+    {% include 'partials/runtime_cleanup_body.j2' %} true \
