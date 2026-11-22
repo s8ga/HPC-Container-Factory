@@ -154,6 +154,7 @@ class BuildcacheService:
                         credentials=credentials,
                         timeout_seconds=request.operation_timeout_seconds,
                         exclude_specs=exclude_specs,
+                        lock_path=lock_path,
                     )
                 return publish(
                     engine=request.engine,

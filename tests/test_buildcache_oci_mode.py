@@ -368,7 +368,7 @@ def test_oci_publish_script_pins_registry_flow() -> None:
         "spack -e cp2k-env mirror add --unsigned binary-cache "
         f"{OCI_URL}" in normalized
     )
-    assert "buildcache push --unsigned --fail-fast binary-cache" in normalized
+    assert "buildcache push --unsigned --only package --fail-fast binary-cache" in normalized
     # Idempotent registration: the producer install step (autopush) has
     # already registered binary-cache in the env scope, and that config
     # persists inside the built image — mirror add would fail with
@@ -593,6 +593,62 @@ def test_publish_oci_reads_inline_summary_complete_and_fail_closed(
             mirror_url=OCI_URL,
         )
     assert "HPC_CF_OCI_INCOMPLETE_COVERAGE=1" in str(exc_info.value.output)
+
+    # Warm-cache buildcache hit path: install_rc=0 with build-only deps skipped
+    # on disk (installed_count < planned_count) succeeds once host OCI probe
+    # verifies 0 missing specs in the registry, and still fails closed when any
+    # spec is missing.
+    lock_file = tmp_path / "spack.lock"
+    lock_file.write_text('{"concrete_specs": {"h": {"name": "x", "version": "1"}}}', encoding="utf-8")
+    monkeypatch.setattr(
+        bc,
+        "run_in_installed_image",
+        lambda **kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=json.dumps(
+                {
+                    "checked_count": 42,
+                    "installed_count": 30,
+                    "planned_count": 42,
+                    "install_rc": 0,
+                    "complete": False,
+                }
+            ),
+        ),
+    )
+    import hpc_cf.oci_probe as probe_mod
+
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_oci_lock",
+        lambda **kwargs: SimpleNamespace(missing=0, present=42, total=42),
+    )
+    _, warm_count = publish_oci(
+        engine="podman",
+        image_ref="img",
+        env_name="e",
+        layout=ProjectLayout(project_root=tmp_path),
+        mirror_url=OCI_URL,
+        lock_path=lock_file,
+    )
+    assert warm_count == 42
+
+    monkeypatch.setattr(
+        probe_mod,
+        "probe_oci_lock",
+        lambda **kwargs: SimpleNamespace(missing=1, present=41, total=42),
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc_warm_fail:
+        publish_oci(
+            engine="podman",
+            image_ref="img",
+            env_name="e",
+            layout=ProjectLayout(project_root=tmp_path),
+            mirror_url=OCI_URL,
+            lock_path=lock_file,
+        )
+    assert "HPC_CF_OCI_INCOMPLETE_COVERAGE=1" in str(exc_warm_fail.value.output)
 
 
 def _oci_spec() -> SimpleNamespace:

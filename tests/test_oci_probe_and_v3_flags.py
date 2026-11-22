@@ -470,3 +470,32 @@ def test_buildcache_check_oci_write_state_enables_only_coverage(tmp_path: Path) 
         ),
         backend_mode=BuildcacheMode.OCI,
     )
+
+
+def test_expected_oci_tags_match_spack_sanitization(tmp_path: Path) -> None:
+    from hpc_cf.oci_probe import ensure_valid_oci_tag, expected_oci_tags_from_lock
+
+    raw = "dbcsr-git.8e8c7d469419a587bd4e597c4118557632991d8e=develop-m7ro3mgv4zxsbl4asd7ljprp3yt6vx4j.spack"
+    expected = "dbcsr-git.8e8c7d469419a587bd4e597c4118557632991d8e_develop-m7ro3mgv4zxsbl4asd7ljprp3yt6vx4j.spack"
+    assert ensure_valid_oci_tag(raw) == expected
+
+    long_raw = f"pkg-{'a' * 120}-{'z' * 32}.spack"
+    folded = ensure_valid_oci_tag(long_raw)
+    assert len(folded) == 128
+    assert folded == long_raw[:64] + long_raw[-64:]
+
+    lock = tmp_path / "spack.lock"
+    lock.write_text(
+        json.dumps(
+            {
+                "concrete_specs": {
+                    "m7ro3mgv4zxsbl4asd7ljprp3yt6vx4j": {
+                        "name": "dbcsr",
+                        "version": "git.8e8c7d469419a587bd4e597c4118557632991d8e=develop",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert expected_oci_tags_from_lock(lock) == [expected]

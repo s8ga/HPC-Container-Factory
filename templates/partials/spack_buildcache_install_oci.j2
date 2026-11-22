@@ -54,7 +54,7 @@ RUN \
         echo "Producer install left no non-external concrete specs on disk" >&2; \
         exit 1; \
     fi; \
-    spack -e {{ spack_env_name }} buildcache push --unsigned --fail-fast binary-cache "${_hpc_cf_installed[@]}"; \
+    spack -e {{ spack_env_name }} buildcache push --unsigned --only package --fail-fast binary-cache "${_hpc_cf_installed[@]}"; \
     spack -e {{ spack_env_name }} buildcache update-index binary-cache || true; \
     spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py summary{% for x in spack_buildcache_exclude_specs | default([]) %} --exclude "{{ x }}"{% endfor %} --install-rc "${_hpc_cf_install_rc}" --output /opt/hpc-cf-oci-publish.json; \
     rm -rf /opt/spack/* /tmp/spack-build/*; \

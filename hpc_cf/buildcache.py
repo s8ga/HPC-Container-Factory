@@ -696,6 +696,7 @@ def publish_oci(
     credentials: dict[str, str] | None = None,
     timeout_seconds: int = DEFAULT_OPERATION_TIMEOUT_SECONDS,
     exclude_specs: Sequence[str] = (),
+    lock_path: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     """OCI-mirror publisher: read inline publish summary or run push script.
 
@@ -746,6 +747,27 @@ def publish_oci(
         checked_count = int(payload["checked_count"])
         installed_count = int(payload.get("installed_count", 0))
         if not payload.get("complete", False):
+            # Under ``--use-buildcache auto``, Spack skips installing pure
+            # build-only dependencies of packages relocated from the cache
+            # (install_rc == 0 with installed_count < checked_count). When
+            # lock_path is provided and install finished cleanly, confirm via
+            # host-side OCI probe whether every planned spec is present in the
+            # registry before failing closed.
+            if lock_path is not None and payload.get("install_rc") == 0:
+                from hpc_cf.oci_probe import probe_oci_lock
+
+                creds = credentials or {}
+                username = creds.get(username_var) if username_var else None
+                password = creds.get(password_var) if password_var else None
+                report = probe_oci_lock(
+                    lock_path=lock_path,
+                    mirror_url=mirror_url,
+                    exclude_specs=exclude_specs,
+                    username=username,
+                    password=password,
+                )
+                if report.missing == 0:
+                    return result, checked_count
             detail = (
                 "HPC_CF_BUILDCACHE_STEP=oci-count-check\n"
                 "HPC_CF_OCI_INCOMPLETE_COVERAGE=1\n"

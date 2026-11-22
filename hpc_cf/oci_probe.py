@@ -85,6 +85,19 @@ def parse_oci_url(url: str) -> OciTarget:
     )
 
 
+def ensure_valid_oci_tag(tag: str) -> str:
+    """Sanitize a ``<name>-<version>-<hash>.spack`` tag to match Spack's OCI rules.
+
+    Mirrors ``spack.oci.image.ensure_valid_tag``: replace non-``[\\w.-]`` characters
+    (such as ``=`` in ``git.<sha>=<branch>`` versions) with ``_``, and fold tags
+    longer than 128 chars to ``tag[:64] + tag[-64:]``.
+    """
+    sanitized = re.sub(r"[^\w.-]", "_", tag)
+    if len(sanitized) > 128:
+        return sanitized[:64] + sanitized[-64:]
+    return sanitized
+
+
 def expected_oci_tags_from_lock(
     lock_path: Path,
     *,
@@ -110,7 +123,7 @@ def expected_oci_tags_from_lock(
             continue
         if str(name) in excluded:
             continue
-        tag = f"{name}-{version}-{dag_hash}.spack"
+        tag = ensure_valid_oci_tag(f"{name}-{version}-{dag_hash}.spack")
         if tag not in seen:
             seen.add(tag)
             tags.append(tag)
