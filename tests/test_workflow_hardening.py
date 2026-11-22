@@ -254,6 +254,9 @@ def test_v3_pipeline_contract() -> None:
     """v3 pipeline runs 3 streamlined jobs without hpc-cf-inputs or crane."""
     doc = _doc("pipeline-cp2k.yml")
     assert list(doc["jobs"].keys()) == ["prepare", "binaries", "package"]
+    pkg_if = str(doc["jobs"]["package"].get("if", ""))
+    assert "always()" in pkg_if or "cancelled()" in pkg_if
+    assert "needs.binaries.result == 'skipped'" in pkg_if
     text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
     for required in (
         "check-oci",

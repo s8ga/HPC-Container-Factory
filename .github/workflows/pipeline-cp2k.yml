@@ -289,7 +289,7 @@ jobs:
   package:
     name: package (runtime + SIF + smoke test + release)
     needs: [prepare, binaries]
-    if: ${{ !inputs.prepare_only && needs.prepare.result == 'success' && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
+    if: ${{ always() && !inputs.prepare_only && needs.prepare.result == 'success' && (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
