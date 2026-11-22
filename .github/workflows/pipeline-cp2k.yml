@@ -81,6 +81,11 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
 
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
       - name: Job preamble (pkg mirror, fork identity, venv, job vars)
         id: vars
         env:
@@ -88,6 +93,7 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           FORK_URL: ${{ inputs.fork_url }}
           FORK_BRANCH: ${{ inputs.fork_branch }}
+          PUSH_BASE_MIRROR: "true"
         run: scripts/ci_job_preamble.sh
 
       - name: Validate environment config
@@ -208,6 +214,11 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
 
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
       - name: Job preamble (pkg mirror, fork identity, venv, job vars)
         id: vars
         env:
@@ -290,6 +301,11 @@ jobs:
         with:
           ref: ${{ env.DEFAULT_REF || github.ref }}
 
+      - name: Log in to GHCR
+        run: |
+          echo "${{ github.token }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
       - name: Job preamble (pkg mirror, fork identity, venv, job vars)
         id: vars
         env:
@@ -311,11 +327,6 @@ jobs:
         with:
           path: assets/bootstrap-${{ env.SPACK_VER }}
           key: bootstrap-${{ env.SPACK_VER }}-v1
-
-      - name: Log in to GHCR
-        run: |
-          echo "${{ github.token }}" | podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
 
       - name: Download buildcache sidecar state
         uses: actions/download-artifact@v8

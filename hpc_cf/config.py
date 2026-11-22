@@ -21,7 +21,7 @@ DEFAULT_SPACK_VERSION = "1.2.2"
 # Default Fedora minimal base OS pin for container builds (GA frozen repos).
 DEFAULT_FEDORA_RELEASE = "45"
 DEFAULT_FEDORA_IMAGE = (
-    "quay.io/fedora/fedora-minimal:45"
+    "registry.fedoraproject.org/fedora-minimal:45"
     "@sha256:05477647a380afaacc612d14f8fad016a604a7ff444dbc0f6b5a55f68a93403f"
 )
 

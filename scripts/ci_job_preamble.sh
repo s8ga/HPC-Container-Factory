@@ -80,6 +80,35 @@ PY
 # GHCR rejects image references containing uppercase characters.
 OWNER="${GITHUB_REPOSITORY_OWNER,,}"
 NIGHTLY_DATE="${NIGHTLY_DATE_IN:-$(date -u +%Y%m%d)}"
+
+# Base image self-mirror: prefer immutable digest-keyed GHCR mirror tag so
+# upstream registry GC cannot break old locks; fall back to upstream and
+# populate GHCR on miss when PUSH_BASE_MIRROR=true.
+UPSTREAM_BASE="$(./venv/bin/python - <<'PY'
+import os, yaml
+spec = yaml.safe_load(open(os.environ["ENV_FILE"]))
+print((spec.get("images") or {}).get("builder", ""))
+PY
+)"
+if [[ "${UPSTREAM_BASE}" == *"@sha256:"* ]]; then
+    DIGEST="${UPSTREAM_BASE#*@sha256:}"
+    PRE="${UPSTREAM_BASE%%@sha256:*}"
+    LAST="${PRE##*/}"
+    [[ "${LAST}" == *:* ]] && REL="${LAST#*:}-" || REL=""
+    MIRROR_BASE="ghcr.io/${OWNER}/fedora-minimal:${REL}sha256-${DIGEST:0:12}"
+    if podman pull -q "${MIRROR_BASE}" >/dev/null 2>&1; then
+        echo "base image mirror hit: ${MIRROR_BASE}"
+        sed -i "s|${UPSTREAM_BASE}|${MIRROR_BASE}|g" containers/Dockerfile.mirror-builder "${ENV_FILE}"
+    elif podman pull -q "${UPSTREAM_BASE}"; then
+        echo "base image mirror miss; pulled upstream ${UPSTREAM_BASE}"
+        if [[ "${PUSH_BASE_MIRROR:-}" == "true" ]] \
+            && podman tag "${UPSTREAM_BASE}" "${MIRROR_BASE}" \
+            && podman push -q "${MIRROR_BASE}"; then
+            echo "populated base image mirror: ${MIRROR_BASE}"
+            sed -i "s|${UPSTREAM_BASE}|${MIRROR_BASE}|g" containers/Dockerfile.mirror-builder "${ENV_FILE}"
+        fi
+    fi
+fi
 {
     echo "ENV_NAME=${ENV_NAME}"
     echo "SPACK_VER=${SPACK_VER}"

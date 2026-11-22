@@ -8,7 +8,7 @@
 #
 # This image is env-agnostic — one build serves all spack-envs/.
 
-ARG BASE_IMAGE=quay.io/fedora/fedora-minimal:45@sha256:05477647a380afaacc612d14f8fad016a604a7ff444dbc0f6b5a55f68a93403f
+ARG BASE_IMAGE=registry.fedoraproject.org/fedora-minimal:45@sha256:05477647a380afaacc612d14f8fad016a604a7ff444dbc0f6b5a55f68a93403f
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="s8ga" \
