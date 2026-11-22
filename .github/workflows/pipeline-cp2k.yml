@@ -417,7 +417,7 @@ jobs:
       - name: Build SIF (zstd -22) and run live cp2k.psmp + 2-rank MPI smoke test
         run: |
           set -euo pipefail
-          SMOKE='cp2k.psmp --version && cat <<'"'"'INP'"'"' > /tmp/h2o_smoke.inp
+          SMOKE='set -euo pipefail; cp2k.psmp --version >/dev/null && cat <<'"'"'INP'"'"' > /tmp/h2o_smoke.inp
           &GLOBAL
             PROJECT H2O_SMOKE
             RUN_TYPE ENERGY
@@ -435,7 +435,8 @@ jobs:
               &END MGRID
               &SCF
                 SCF_GUESS ATOMIC
-                MAX_SCF 5
+                EPS_SCF 1.0E-5
+                MAX_SCF 30
               &END SCF
               &XC
                 &XC_FUNCTIONAL PBE
@@ -462,7 +463,11 @@ jobs:
             &END SUBSYS
           &END FORCE_EVAL
           INP
-          OMP_NUM_THREADS=1 mpirun --oversubscribe --bind-to none -np 2 cp2k.psmp -i /tmp/h2o_smoke.inp | grep -q "PROGRAM ENDED NORMALLY"'
+          cd /tmp
+          OMP_NUM_THREADS=1 mpirun --oversubscribe --bind-to none -np 2 cp2k.psmp -i /tmp/h2o_smoke.inp > /tmp/h2o_smoke.out
+          grep -E "SCF run converged|ENERGY\| Total FORCE_EVAL|PROGRAM ENDED AT" /tmp/h2o_smoke.out
+          grep -q "PROGRAM ENDED AT" /tmp/h2o_smoke.out
+          rm -f /tmp/h2o_smoke.inp /tmp/h2o_smoke.out /tmp/H2O_SMOKE*'
           ./venv/bin/python -m hpc_cf build-sif \
             --env "${ENV_NAME}" \
             --docker-image "${IMAGE_NAME}" \
