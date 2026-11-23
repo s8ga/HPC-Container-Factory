@@ -533,15 +533,19 @@ jobs:
         run: |
           set -euo pipefail
           # Re-resolve identity with baked RELEASE_IDENT so the title includes the resolved sha.
-          ./venv/bin/python -m hpc_cf.release_notes identity \
+          # Parse KEY=VALUE via IFS read (never `source`, since RELEASE_TITLE holds spaces/parens).
+          IDENT_LINES="$(./venv/bin/python -m hpc_cf.release_notes identity \
             --env-name "${ENV_NAME}" \
             --channel "${{ inputs.channel }}" \
             --date "${NIGHTLY_DATE}" \
             --flagship-env "${FLAGSHIP_ENV}" \
-            --ident "${RELEASE_IDENT:-}" >> "$GITHUB_ENV"
-          set -a
-          source <(grep -E '^(RELEASE_TITLE|RELEASE_TAG|SIF_NAME|FLOATING_SIF_NAME|META_BUNDLE_NAME|RELEASE_STEM|RELEASE_CREATE_FLAGS)=' "$GITHUB_ENV")
-          set +a
+            --ident "${RELEASE_IDENT:-}")"
+          printf '%s\n' "${IDENT_LINES}" >> "$GITHUB_ENV"
+          while IFS='=' read -r k v; do
+            if [ -n "${k}" ]; then
+              export "${k}=${v}"
+            fi
+          done <<< "${IDENT_LINES}"
 
           BUNDLE_ARGS=(
             --output "${META_BUNDLE_NAME}"

@@ -274,3 +274,96 @@ def test_v3_pipeline_contract() -> None:
         assert forbidden not in active_lines, forbidden
     assert "hpc_cf.release_notes" in active_lines
     assert "--keep-dates" in active_lines
+
+
+def test_attach_sif_step_runs_with_parentheses_in_title(tmp_path) -> None:
+    """Attach SIF step must parse KEY=VALUE lines with spaces/parens in RELEASE_TITLE
+    without sourcing $GITHUB_ENV."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    doc = _doc("pipeline-cp2k.yml")
+    step = next(
+        s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Attach SIF to its release channel"
+    )
+    script = (
+        step["run"]
+        .replace("${{ inputs.channel }}", "nightly")
+        .replace("./venv/bin/python", sys.executable)
+    )
+    assert "${{" not in script
+
+    work = tmp_path / "work"
+    env_dir = work / "spack-envs" / "cp2k_opensource-master-force-avx512" / "spack-env-file"
+    env_dir.mkdir(parents=True)
+    (env_dir / "env.yaml").write_text(
+        "schema_version: 1\nspack:\n  version: '1.2.2'\n  toolchain: gcc16\n",
+        encoding="utf-8",
+    )
+    (env_dir / "spack.lock").write_text(
+        json.dumps(
+            {
+                "concrete_specs": {
+                    "h1": {
+                        "name": "cp2k",
+                        "version": "master",
+                        "parameters": {"commit": "a" * 40},
+                        "arch": {"platform_os": "fedora45", "target": "x86_64_v3"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (work / "cp2k-master-20261123.sif").write_bytes(b"sif")
+    (work / "BUILD_MANIFEST-cp2k_opensource-master-force-avx512-20261123.txt").write_text(
+        "manifest\n", encoding="utf-8"
+    )
+    (work / "DependencyGraph-cp2k_opensource-master-force-avx512-20261123.dot").write_text(
+        "digraph {}\n", encoding="utf-8"
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    gh_calls = tmp_path / "gh_calls.log"
+    gh_script = fake_bin / "gh"
+    gh_script.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{gh_calls}"\n'
+        'if [ "$1" = "release" ] && [ "$2" = "view" ]; then exit 1; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    gh_script.chmod(0o755)
+    github_env = tmp_path / "github_env"
+    github_env.write_text("", encoding="utf-8")
+
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", script],
+        cwd=work,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+            "PYTHONPATH": str(PROJECT_ROOT),
+            "ENV_NAME": "cp2k_opensource-master-force-avx512",
+            "NIGHTLY_DATE": "20261123",
+            "FLAGSHIP_ENV": doc["env"]["FLAGSHIP_ENV"],
+            "RELEASE_IDENT": "master@aaaaaaaaaaaa",
+            "GITHUB_REPOSITORY": "s8ga/HPC-Container-Factory",
+            "GITHUB_SHA": "b" * 40,
+            "IMG_REPO": "ghcr.io/s8ga/cp2k_opensource",
+            "ENV_SUFFIX": "master-force-avx512",
+            "TAG_PREFIX": "nightly",
+            "FORK_URL": "",
+            "FORK_BRANCH": "",
+            "GITHUB_ENV": str(github_env),
+        },
+        check=True,
+    )
+    logged = gh_calls.read_text(encoding="utf-8")
+    assert "release create cp2k-nightly " in logged
+    assert "CP2K Nightly · 2026-11-23 (master@aaaaaaaaaaaa)" in logged
+    assert (work / "cp2k-master.sif").is_file()
+    assert (work / "cp2k-master-20261123-meta.tar.gz").is_file()
