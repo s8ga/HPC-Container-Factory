@@ -283,7 +283,7 @@ def test_oci_producer_render_keeps_soft_fail_and_counts() -> None:
     assert "HPC_CF_PARTIAL_INSTALL=1" in install
     assert "/usr/local/bin/spack_dag_query.py" in install
     assert "/opt/hpc-cf-oci-publish.json" in install
-    assert "buildcache update-index binary-cache || true" in install
+    assert "update-index" not in install
     assert "rm -rf /opt/spack/* /tmp/spack-build/*" in install
     # Producer-only autopush: a killed install keeps every completed
     # package in the registry, so retries converge strictly.

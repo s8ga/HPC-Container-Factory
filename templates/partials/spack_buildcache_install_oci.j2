@@ -1,8 +1,9 @@
 {# Install from the OCI registry binary cache (consumer or producer).
-   OCI producer pushes installed specs inline (on top of --autopush), updates
-   the index best-effort, writes /opt/hpc-cf-oci-publish.json, and deletes
-   /opt/spack/* /tmp/spack-build/* in the same RUN to avoid multi-GB layer
-   commits. Consumers do NOT run _hpc_cf_missing loops or autopush.
+   OCI producer pushes installed specs inline (on top of --autopush), writes
+   /opt/hpc-cf-oci-publish.json, and deletes /opt/spack/* /tmp/spack-build/*
+   in the same RUN to avoid multi-GB layer commits. Skips update-index on
+   OCI mirrors (every consumer/check-oci probes exact tags directly). Consumers
+   do NOT run _hpc_cf_missing loops or autopush.
 
    Never emit bash array-length expansions or single quotes inside bash -c '...'. #}
 RUN \
@@ -55,7 +56,6 @@ RUN \
         exit 1; \
     fi; \
     spack -e {{ spack_env_name }} buildcache push --unsigned --only package --fail-fast binary-cache "${_hpc_cf_installed[@]}"; \
-    spack -e {{ spack_env_name }} buildcache update-index binary-cache || true; \
     spack -e {{ spack_env_name }} python /usr/local/bin/spack_dag_query.py summary{% for x in spack_buildcache_exclude_specs | default([]) %} --exclude "{{ x }}"{% endfor %} --install-rc "${_hpc_cf_install_rc}" --output /opt/hpc-cf-oci-publish.json; \
     rm -rf /opt/spack/* /tmp/spack-build/*; \
     if [ "${_hpc_cf_install_rc}" -ne 0 ]; then \
