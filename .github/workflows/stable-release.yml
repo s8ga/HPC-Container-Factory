@@ -3,7 +3,7 @@
 # branch at the dispatch commit before building, so no manual branch
 # management is needed:
 #
-#   gh workflow run stable-release.yml --ref v2 -f env_name=<env>
+#   gh workflow run stable-release.yml --ref v3 -f env_name=<env>
 #
 # Why a frozen branch at all: stable builds take hours, and the Actions
 # token may only create a release whose --target commit is the CURRENT
@@ -15,11 +15,11 @@
 # concurrency family; the re-cut of the next queued run happens only
 # after the previous run finishes.
 #
-# Master moved after a release? Default: fix on v2, re-dispatch — the
+# Master moved after a release? Default: fix on v3, re-dispatch — the
 # re-cut rebuild is mostly buildcache hits (~40 min warm). True hotfix
 # without a full re-cut: cherry-pick onto release/<env> and dispatch
 # from that branch (input left empty); supported but diverges the
-# branch from v2 — use sparingly.
+# branch from v3 — use sparingly.
 #
 # Consumes the committed spack.lock fail-closed (no re-concretize) and
 # attaches the SIF to a permanent per-build release that is never pruned.

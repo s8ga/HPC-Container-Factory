@@ -360,7 +360,7 @@ jobs:
             OCI_PASS=${{ github.token }}
         run: |
           ./venv/bin/python -m hpc_cf build --env "${ENV_NAME}" --engine podman \
-            --image "${IMAGE_NAME}" --tag "nightly-${NIGHTLY_DATE}" \
+            --image "${IMAGE_NAME}" --tag "${TAG_PREFIX}-${NIGHTLY_DATE}" \
             --buildcache only --no-mirror \
             --buildcache-mode oci --buildcache-url "${OCI_MIRROR}" \
             --buildcache-username-var OCI_USER --buildcache-password-var OCI_PASS \
@@ -370,27 +370,18 @@ jobs:
         run: |
           podman images --format '{{.Repository}}:{{.Tag}}' \
             | grep -E '^localhost/' \
-            | grep -v ":nightly-${NIGHTLY_DATE}$" \
+            | grep -v ":${TAG_PREFIX}-${NIGHTLY_DATE}$" \
             | xargs -r podman rmi -f || true
 
       - name: Resolve release identity
         run: |
           ENV_NAME="${ENV_NAME:?must be resolved by the preamble}"
           NIGHTLY_DATE="${NIGHTLY_DATE:?must be resolved by the preamble}"
-          {
-            echo "SIF_NAME=${ENV_NAME%%-*}-${ENV_NAME#*-}-${{ inputs.channel }}-${NIGHTLY_DATE}.sif"
-            if [ "${{ inputs.channel }}" = "stable" ]; then
-              echo "RELEASE_TAG=stable-${ENV_NAME}-${NIGHTLY_DATE}"
-              if [ "${ENV_NAME}" = "${FLAGSHIP_ENV}" ]; then
-                echo "RELEASE_CREATE_FLAGS=--latest"
-              else
-                echo "RELEASE_CREATE_FLAGS=--latest=false"
-              fi
-            else
-              echo "RELEASE_TAG=nightly-${ENV_NAME}"
-              echo "RELEASE_CREATE_FLAGS=--prerelease"
-            fi
-          } >> "$GITHUB_ENV"
+          ./venv/bin/python -m hpc_cf.release_notes identity \
+            --env-name "${ENV_NAME}" \
+            --channel "${{ inputs.channel }}" \
+            --date "${NIGHTLY_DATE}" \
+            --flagship-env "${FLAGSHIP_ENV}" >> "$GITHUB_ENV"
 
       - name: Cache Apptainer unprivileged install
         id: apptainer-cache
@@ -471,7 +462,7 @@ jobs:
           ./venv/bin/python -m hpc_cf build-sif \
             --env "${ENV_NAME}" \
             --docker-image "${IMAGE_NAME}" \
-            --docker-tag "nightly-${NIGHTLY_DATE}" \
+            --docker-tag "${TAG_PREFIX}-${NIGHTLY_DATE}" \
             --output "${SIF_NAME}" \
             --smoke-cmd "${SMOKE}" \
             --yes
@@ -481,7 +472,7 @@ jobs:
         run: |
           set -euo pipefail
           podman create --name manifest-extract \
-            "localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}" >/dev/null
+            "localhost/${IMAGE_NAME}:${TAG_PREFIX}-${NIGHTLY_DATE}" >/dev/null
           podman cp manifest-extract:/opt/spack-view/BUILD_MANIFEST.txt \
             "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt"
           podman cp manifest-extract:/opt/spack-view/DependencyGraph.dot \
@@ -497,7 +488,7 @@ jobs:
       - name: Push runtime image and float verified -release tag
         run: |
           set -euo pipefail
-          SRC="localhost/${IMAGE_NAME}:nightly-${NIGHTLY_DATE}"
+          SRC="localhost/${IMAGE_NAME}:${TAG_PREFIX}-${NIGHTLY_DATE}"
           DATED="${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}"
           podman tag "$SRC" "$DATED"
           podman push "$DATED"
@@ -541,51 +532,70 @@ jobs:
           FORK_BRANCH: ${{ inputs.fork_branch }}
         run: |
           set -euo pipefail
-          if [ -n "${RELEASE_IDENT}" ]; then
-            BUILD_LINE="Build: ${RELEASE_IDENT} (full sha in BUILD_MANIFEST)"
-          else
-            BUILD_LINE="Build: ${ENV_NAME} — source pinned by the repository git tag"
-          fi
-          SOURCE_BLOCK=""
-          if [ -n "${FORK_URL}" ]; then
-            FULL_SHA="$(grep -m1 -E 'cp2k@master.*commit=[0-9a-f]{40}' BUILD_MANIFEST-*.txt \
-              | grep -oE 'commit=[0-9a-f]{40}' | cut -d= -f2 || true)"
-            SOURCE_BLOCK="Source: fork ${FORK_URL} (branch ${FORK_BRANCH:-<pinned>}, commit ${FULL_SHA:-unknown})"
-            if [ -n "${FULL_SHA}" ] && [[ "${FORK_URL}" == *github.com* ]]; then
-              SOURCE_BLOCK="${SOURCE_BLOCK}
-          https://github.com/${FORK_URL#*github.com/}/commit/${FULL_SHA}"
-            fi
-          fi
-          cat > release-notes.md <<NOTES
-          Automated build of CP2K (Fedora 45 GA / GCC 16 / Spack 1.2.2, force-avx512 track).
+          # Re-resolve identity with baked RELEASE_IDENT so the title includes the resolved sha.
+          ./venv/bin/python -m hpc_cf.release_notes identity \
+            --env-name "${ENV_NAME}" \
+            --channel "${{ inputs.channel }}" \
+            --date "${NIGHTLY_DATE}" \
+            --flagship-env "${FLAGSHIP_ENV}" \
+            --ident "${RELEASE_IDENT:-}" >> "$GITHUB_ENV"
+          set -a
+          source <(grep -E '^(RELEASE_TITLE|RELEASE_TAG|SIF_NAME|FLOATING_SIF_NAME|META_BUNDLE_NAME|RELEASE_STEM|RELEASE_CREATE_FLAGS)=' "$GITHUB_ENV")
+          set +a
 
-          Binary baseline: AVX2 (x86_64_v3) with AVX-512 runtime CPU dispatch
-          (openblas, fftw, elpa). Converted to SIF with zstd level 22 and
-          verified with cp2k.psmp --version + 2-rank MPI H2O smoke test.
-
-          ${BUILD_LINE}
-          ${SOURCE_BLOCK}
-
-          Run it:
-            apptainer exec ${SIF_NAME} cp2k.psmp --version
-
-          OCI image on GHCR:
-            ${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}
-            ${IMG_REPO}:${ENV_SUFFIX}-release
-          NOTES
-          if gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
-          else
-            gh release create "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
-                 --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
-                 --title "${RELEASE_TAG}" --notes-file release-notes.md
-          fi
-          RELEASE_ASSETS=("${SIF_NAME}" "BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt")
+          BUNDLE_ARGS=(
+            --output "${META_BUNDLE_NAME}"
+            --item "BUILD_MANIFEST.txt=BUILD_MANIFEST-${ENV_NAME}-${NIGHTLY_DATE}.txt"
+            --item "spack.lock=spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+          )
           if [ -f "DependencyGraph-${ENV_NAME}-${NIGHTLY_DATE}.dot" ]; then
-            RELEASE_ASSETS+=("DependencyGraph-${ENV_NAME}-${NIGHTLY_DATE}.dot")
+            BUNDLE_ARGS+=(--item "DependencyGraph.dot=DependencyGraph-${ENV_NAME}-${NIGHTLY_DATE}.dot")
           fi
-          gh release upload "${RELEASE_TAG}" "${RELEASE_ASSETS[@]}" \
-            --repo "$GITHUB_REPOSITORY" --clobber
+          ./venv/bin/python -m hpc_cf.release_notes bundle "${BUNDLE_ARGS[@]}"
+
+          NOTES_ARGS=(
+            --env-name "${ENV_NAME}"
+            --channel "${{ inputs.channel }}"
+            --date "${NIGHTLY_DATE}"
+            --flagship-env "${FLAGSHIP_ENV}"
+            --repository "${GITHUB_REPOSITORY}"
+            --lock "spack-envs/${ENV_NAME}/spack-env-file/spack.lock"
+            --env-yaml "spack-envs/${ENV_NAME}/spack-env-file/env.yaml"
+            --sif "${SIF_NAME}"
+            --oci-dated "${IMG_REPO}:${ENV_SUFFIX}-${TAG_PREFIX}-${NIGHTLY_DATE}"
+            --oci-floating "${IMG_REPO}:${ENV_SUFFIX}-release"
+            --fork-url "${FORK_URL:-}"
+            --fork-branch "${FORK_BRANCH:-}"
+            --ident "${RELEASE_IDENT:-}"
+            --output release-notes.md
+          )
+          ./venv/bin/python -m hpc_cf.release_notes notes "${NOTES_ARGS[@]}"
+          cat release-notes.md
+
+          RELEASE_ASSETS=("${SIF_NAME}" "${META_BUNDLE_NAME}")
+          if [ -n "${FLOATING_SIF_NAME:-}" ]; then
+            cp -f "${SIF_NAME}" "${FLOATING_SIF_NAME}"
+            RELEASE_ASSETS+=("${FLOATING_SIF_NAME}")
+          fi
+
+          if gh release view "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Move tag ref to today's commit, upload assets, and republish so
+            # GitHub's published_at timestamp stays fresh at the top of Releases.
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
+              -f sha="${GITHUB_SHA}" -F force=true >/dev/null 2>&1 || true
+            gh release upload "${RELEASE_TAG}" "${RELEASE_ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
+              --draft=true
+            gh release edit "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" \
+              --draft=false ${RELEASE_CREATE_FLAGS} \
+              --title "${RELEASE_TITLE}" --notes-file release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" "${RELEASE_ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" ${RELEASE_CREATE_FLAGS} \
+              --title "${RELEASE_TITLE}" --notes-file release-notes.md
+          fi
 
       - name: Prune old SIF assets (nightly channel only, best-effort)
         if: ${{ always() && inputs.channel == 'nightly' }}
@@ -594,16 +604,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           case "${ENV_NAME}" in
-            *-fork*) KEEP_SIF=1; KEEP_MAN=1 ;;
-            *)       KEEP_SIF=5; KEEP_MAN=5 ;;
+            *-fork*) KEEP_DATES=1 ;;
+            *)       KEEP_DATES=3 ;;
           esac
           IDS=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("\\.sif$"))] | sort_by(.created_at) | reverse | .['"$KEEP_SIF"':][] | .id')
-          IDS_MANIFEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
-            --jq '[.assets[] | select(.name | test("(BUILD_MANIFEST|DependencyGraph)-"))] | sort_by(.created_at) | reverse | .['"$KEEP_MAN"':][] | .id')
-          for id in $IDS_MANIFEST; do
-            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
-          done
+            | ./venv/bin/python -m hpc_cf.release_notes prune-plan --keep-dates "${KEEP_DATES}")
           for id in $IDS; do
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}"
           done
@@ -617,9 +622,9 @@ jobs:
           KEEP=5
           mapfile -t OLD_TAGS < <(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
             --json tagName \
-            --jq "[.[] | select(.tagName | test(\"^stable-${ENV_NAME}-[0-9]{8}$\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
+            --jq "[.[] | select(.tagName | test(\"^${RELEASE_STEM}-[0-9]{8}$\"))] | sort_by(.tagName) | reverse | .[${KEEP}:][] | .tagName")
           for tag in "${OLD_TAGS[@]}"; do
             echo "pruning stable release + tag: ${tag}"
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
           done
-          echo "stable releases kept: newest ${KEEP} for ${ENV_NAME}"
+          echo "stable releases kept: newest ${KEEP} for ${RELEASE_STEM}"

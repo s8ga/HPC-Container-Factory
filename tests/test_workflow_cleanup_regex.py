@@ -92,9 +92,10 @@ def test_runtime_filter_covers_every_caller_channel() -> None:
 
 def test_stable_release_filter_is_exact() -> None:
     text = _text()
-    literal = 'test(\\"^stable-${ENV_NAME}-[0-9]{8}$\\")'
-    assert literal in text, "stable-release prune must anchor the tag exactly"
-    pat = _substitute("^stable-${ENV_NAME}-[0-9]{8}$", ENV_NAME=ENV)
-    assert _matches(pat, f"stable-{ENV}-20261101")
-    assert not _matches(pat, f"stable-{ENV}-force-avx512-20261101")
-    assert not _matches(pat, f"stable-{ENV}-fork-alice-feat-20261101")
+    literal = 'test("^${RELEASE_STEM}-[0-9]{8}$")'
+    # YAML escapes the double quotes inside the jq string argument.
+    assert 'test(\\"^${RELEASE_STEM}-[0-9]{8}$\\")' in text, literal
+    pat = _substitute("^${RELEASE_STEM}-[0-9]{8}$", RELEASE_STEM="cp2k-2025.2")
+    assert _matches(pat, "cp2k-2025.2-20261101")
+    assert not _matches(pat, "cp2k-2025.2-force-avx512-20261101")
+    assert not _matches(pat, "cp2k-fork-alice-feat-20261101")

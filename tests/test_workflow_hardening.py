@@ -110,11 +110,12 @@ def test_build_lock_artifact_carries_the_manifest() -> None:
 
 
 def test_dependency_graph_ships_and_prunes_with_the_manifest() -> None:
-    """The extracted DependencyGraph-*.dot must be uploaded to the release
-    and share the manifest assets' retention budget (2.15c)."""
+    """The extracted DependencyGraph-*.dot must be bundled alongside BUILD_MANIFEST
+    and spack.lock inside META_BUNDLE_NAME and pruned by date via prune-plan."""
     text = (WORKFLOWS_DIR / "pipeline-cp2k.yml").read_text(encoding="utf-8")
-    assert 'RELEASE_ASSETS+=("DependencyGraph-' in text
-    assert 'test("(BUILD_MANIFEST|DependencyGraph)-")' in text
+    assert 'BUNDLE_ARGS+=(--item "DependencyGraph.dot=DependencyGraph-' in text
+    assert 'RELEASE_ASSETS=("${SIF_NAME}" "${META_BUNDLE_NAME}")' in text
+    assert "python -m hpc_cf.release_notes prune-plan --keep-dates" in text
 
 
 def test_pipeline_preamble_is_deduplicated() -> None:
@@ -269,5 +270,7 @@ def test_v3_pipeline_contract() -> None:
     active_lines = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
-    for forbidden in ("hpc-cf-inputs", "crane", "ustc", "--pkg-mirror official"):
+    for forbidden in ("hpc-cf-inputs", "crane", "ustc", "--pkg-mirror official", ":nightly-${NIGHTLY_DATE}", "--tag \"nightly-${NIGHTLY_DATE}\""):
         assert forbidden not in active_lines, forbidden
+    assert "hpc_cf.release_notes" in active_lines
+    assert "--keep-dates" in active_lines
