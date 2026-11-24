@@ -144,3 +144,40 @@ def test_unknown_env_refused(tmp_path: Path) -> None:
         env="nope", old_version="1", new_version="2"
     )
     assert run_env_set_version(request, layout=ProjectLayout(project_root=tmp_path)) == 1
+
+
+def test_env_set_version_resolves_shared_template_without_per_env_dockerfile(
+    tmp_path: Path,
+) -> None:
+    env_dir = tmp_path / "spack-envs" / "cp2k-2026.2"
+    conf = env_dir / "spack-env-file"
+    conf.mkdir(parents=True)
+    (conf / "env.yaml").write_text(
+        "schema_version: 1\nmethod: spack\n"
+        "spack:\n"
+        "  version: '1.2.2'\n"
+        "  env_name: cp2k-env\n"
+        "  custom_repos:\n"
+        "    - url: https://github.com/cp2k/cp2k.git\n"
+        "      branch: release-2026.2\n"
+        "      sparse_path: tools/spack/spack_repo/cp2k_dev\n"
+        "      namespace: cp2k_dev\n"
+        "template_vars:\n"
+        "  cp2k_branch: release-2026.2\n"
+        "  cp2k_dev_repo_path: tools/spack/spack_repo/cp2k_dev\n",
+        encoding="utf-8",
+    )
+    (conf / "spack.yaml").write_text(
+        "spack:\n  specs:\n    - cp2k@2026.2\n", encoding="utf-8"
+    )
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "Dockerfile.spack.j2").write_text(
+        "FROM fedora:45\n"
+        "RUN git clone --branch {{ cp2k_branch }} https://github.com/cp2k/cp2k.git\n"
+        "RUN cp -a /opt/cp2k/{{ cp2k_dev_repo_path }} /opt/spack-repo/\n",
+        encoding="utf-8",
+    )
+
+    assert run_env_set_version(_request(env_dir), layout=_layout(env_dir)) == 0
+    assert "branch: release-2026.3" in (conf / "env.yaml").read_text(encoding="utf-8")

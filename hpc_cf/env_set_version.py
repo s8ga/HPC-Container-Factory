@@ -23,7 +23,11 @@ import yaml
 from hpc_cf.env import find_env_yaml
 from hpc_cf.environment import load_environment_spec
 from hpc_cf.execution import ProjectLayout
-from hpc_cf.repo_pins import check_env_repo_pins, expand_partial_includes
+from hpc_cf.repo_pins import (
+    check_env_repo_pins,
+    expand_partial_includes,
+    resolve_dockerfile_template,
+)
 from hpc_cf.requests import EnvSetVersionRequest
 
 logger = logging.getLogger(__name__)
@@ -155,14 +159,18 @@ def run_env_set_version(
             parsed = yaml.safe_load(spack_yaml.read_text(encoding="utf-8"))
             if not isinstance(parsed, dict):
                 raise ValueError(f"{spack_yaml.name} no longer parses to a mapping")
-        dockerfile = env_dir / "Dockerfile.j2"
-        dockerfile_text = (
-            dockerfile.read_text(encoding="utf-8") if dockerfile.is_file() else ""
-        )
         project_root = (
             env_dir.parent.parent
             if env_dir.parent.name == "spack-envs"
             else ProjectLayout.default().project_root
+        )
+        dockerfile = resolve_dockerfile_template(
+            env_dir, spec=spec, project_root=project_root
+        )
+        dockerfile_text = (
+            dockerfile.read_text(encoding="utf-8")
+            if dockerfile is not None and dockerfile.is_file()
+            else ""
         )
         dockerfile_text = expand_partial_includes(dockerfile_text, project_root)
         guard_errors = check_env_repo_pins(env_dir.name, spec, dockerfile_text)

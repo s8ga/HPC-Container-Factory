@@ -264,3 +264,18 @@ def test_pin_set_cli_dispatch(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN
     )
     assert rc == 0
     assert seen and seen[0].all_envs is True and seen[0].repo == "s8ga"
+
+
+def test_pin_set_resolves_shared_template_without_per_env_dockerfile(
+    tmp_path: Path,
+) -> None:
+    env_root = _write_env(tmp_path, "demo")
+    (env_root / "Dockerfile.j2").unlink()
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "Dockerfile.spack.j2").write_text(_DOCKERFILE, encoding="utf-8")
+
+    rc = run_pin_set(_request(), layout=ProjectLayout(project_root=tmp_path))
+    assert rc == 0
+    text = (env_root / "spack-env-file" / "env.yaml").read_text(encoding="utf-8")
+    assert NEW_PIN in text
