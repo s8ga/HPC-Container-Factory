@@ -427,3 +427,14 @@ def test_spack_dockerfile_and_cleanup_partials_pass_shell_syntax(tmp_path: Path)
     stub = tmp_path / "Dockerfile.j2"
     stub.write_text("{% include 'partials/runtime_cleanup.j2' %}\n", encoding="utf-8")
     _check_run_blocks(render_template(stub, {}), "runtime_cleanup.j2")
+
+
+def test_cp2k_retires_mpi_runvar() -> None:
+    """CP2K runtime image and MOTD must not inject or advertise legacy MPI_RUNVAR."""
+    rendered = _render_pilot(use_mirror=True, build_only=False)
+    assert "MPI_RUNVAR" not in rendered
+
+    motd = (TEMPLATES_DIR.parent / "scripts" / "cp2k-motd.sh").read_text(encoding="utf-8")
+    assert "MPI_RUNVAR" not in motd
+    assert "--bind-to core" in motd
+    assert "likwid-mpirun" in motd

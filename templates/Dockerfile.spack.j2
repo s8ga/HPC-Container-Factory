@@ -125,8 +125,7 @@ COPY --from=builder /opt/cp2k/src/grid/sample_tasks /opt/cp2k/src/grid/sample_ta
 COPY --from=builder /opt/cp2k/tools/regtesting /opt/cp2k/tools/regtesting
 
 ENV GAUXC_SKALA_MODEL="{{ gauxc_skala_model | default('/opt/spack-view/share/gauxc/onedft_models/skala-1.1-rev1.fun') }}" \
-    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data" \
-    MPI_RUNVAR=" --bind-to none "
+    CP2K_DATA_DIR="/opt/spack-view/share/cp2k/data"
 
 RUN test -f "${GAUXC_SKALA_MODEL}" \
     || test "$(find /opt/spack-view/share/gauxc/onedft_models -maxdepth 1 -name 'skala-*.fun' | wc -l)" -eq 1
