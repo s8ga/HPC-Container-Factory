@@ -267,6 +267,9 @@ spack:
     # CPU stack: +ace/+libfci/+mimic/+spla wired in local package.py; LibGint needs +cuda.
     # NLCG omitted (CP2K not officially supported; empty-enum crash if enabled).
     - "cp2k@master+ace+cosma+tblite+deepmd+dftd4~dlaf+elpa+greenx+grpp+hdf5+libfci+libint+libxc+mimic+pexsi+plumed+pytorch+sirius+smeagol+spglib+spla+trexio+vcsqnm+vdwxc+libvori+mpi_f08+gauxc+openpmd-api+shared smm=libxs lmax=7"
+    # Small tool needed for mpi binding things
+    - "likwid@5.5.2~cuda~rocm"
+
 
   # Create the unified view after `spack gc` in the Dockerfile (overlayfs +
   # spack v1.2.0 rename hits EXDEV if the env view updates during install).
